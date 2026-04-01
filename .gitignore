@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# TODO list
+TODO.txt
+
 # Sqlite database
 *.sqlite
 
