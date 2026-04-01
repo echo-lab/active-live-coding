@@ -11,7 +11,6 @@ import {
   SOCKET_MESSAGE_TYPE,
   USER_ACTIONS,
 } from "../shared-constants.js";
-// import { replayChanges } from "./recorder.js"; // Uncomment for stress testing
 
 const codeContainer = document.querySelector("#code-container");
 const studentDetailsContainer = document.querySelector("#student-email");

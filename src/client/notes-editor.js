@@ -8,7 +8,6 @@ import {
 
 import Quill from "quill";
 import { POST_JSON_REQUEST } from "./utils.js";
-import { Recorder } from "./recorder.js";
 Quill.register(CodeSnapshotBlot);
 
 const Delta = Quill.import("delta");
@@ -19,7 +18,6 @@ export class NotesEditor {
     deltas,
     sessionNumber,
     email,
-    shouldRecord = false,
     readOnly = false,
   }) {
     this.queuedDeltas = [];
@@ -29,7 +27,6 @@ export class NotesEditor {
     this.active = true;
     this.email = email;
     this.lastSyncTime = Date.now();
-    this.recorder = shouldRecord ? new Recorder() : null;
 
     this.quill = new Quill(nodeId, {
       readOnly,
@@ -178,17 +175,7 @@ export class NotesEditor {
       ts: Date.now(),
       changeNumber: this.localVersionNum,
     });
-    this.recorder?.record(delta);
     this.localVersionNum++;
-  }
-
-  dumpRecording(name) {
-    this.recorder?.dump(name);
-  }
-
-  replayFn(delta) {
-    let doc = this.quill.getContents();
-    this.quill.setContents(doc.compose(delta), Quill.sources.USER);
   }
 
   async flushChangesToServer() {

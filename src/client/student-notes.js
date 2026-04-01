@@ -19,7 +19,6 @@ import {
   USER_ACTIONS,
 } from "../shared-constants.js";
 import { NotesEditor } from "./notes-editor.js";
-// import { replayChanges } from "./recorder.js"; // Uncomment for stress testing
 
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
@@ -81,7 +80,6 @@ async function initialize({
     deltas: notesDocChanges,
     sessionNumber,
     email,
-    shouldRecord: true,
   });
 
   let instructorEditor = new CodeFollowingEditor(
@@ -102,20 +100,8 @@ async function initialize({
     email,
     flushUrl: "/record-playground-changes",
     onNewSnapshot: notesEditor.createAnchor.bind(notesEditor, "playground.py"),
-    // shouldRecord: true, // Uncomment for stress testing
   });
   playgroundCodeContainer.style.display = "none"; // Not sure why we have to do this again...
-
-  // Uncomment for stress testing
-  // window.dumpRecordings = () => {
-  //   playgroundEditor.dumpRecording("playground");
-  //   notesEditor.dumpRecording("notes");
-  // };
-
-  // window.replayRecording = () => {
-  //   replayChanges("playground", playgroundEditor.replayFn.bind(playgroundEditor));
-  //   replayChanges("notes", notesEditor.replayFn.bind(notesEditor));
-  // };
 
   // Set up the run button for the playground tab.
   let codeRunner = new PythonCodeRunner();

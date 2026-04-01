@@ -14,7 +14,6 @@ import { CLIENT_TYPE } from "../../shared-constants.js";
 import { NotesEditor } from "../notes-editor.js";
 import { GET_JSON_REQUEST } from "../utils.js";
 import { setupTimeline } from "./timeline.js";
-// import { replayChanges } from "./recorder.js"; // Uncomment for stress testing
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -48,7 +47,6 @@ async function initialize({ sessionNumber, email, actions, changes }) {
     deltas: [],
     sessionNumber,
     email,
-    shouldRecord: false,
     readOnly: true,
   });
 

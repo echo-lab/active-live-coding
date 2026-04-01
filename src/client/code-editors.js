@@ -9,7 +9,6 @@ import {
 } from "./cm-extensions.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { Recorder } from "./recorder.js";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
 
@@ -39,7 +38,6 @@ export class StudentCodeEditor {
     email,
     flushUrl,
     onNewSnapshot = null,
-    shouldRecord = false,
   }) {
     this.email = email;
     this.docVersion = docVersion;
@@ -49,7 +47,6 @@ export class StudentCodeEditor {
     this.flushUrl = flushUrl;
     this.fileName = fileName;
     this.mostRecentSync = Date.now();
-    this.recorder = shouldRecord ? new Recorder() : null;
 
     let snapshotExtensions = onNewSnapshot
       ? codeSnapshotFields(onNewSnapshot)
@@ -94,16 +91,7 @@ export class StudentCodeEditor {
         fileName: this.fileName,
       });
       this.docVersion++;
-      this.recorder?.record(tr.changes.toJSON());
     });
-  }
-
-  dumpRecording(name) {
-    this.recorder?.dump(name);
-  }
-
-  replayFn(change) {
-    this.view.dispatch({ changes: ChangeSet.fromJSON(change) });
   }
 
   replaceContents(newCode) {

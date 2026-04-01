@@ -18,7 +18,6 @@ import {
   SOCKET_MESSAGE_TYPE,
   USER_ACTIONS,
 } from "../shared-constants.js";
-// import { replayChanges } from "./recorder.js"; // Uncomment for stress testing
 
 const TAB_NAMES = ["notes.py", "notes2.py", "notes3.py"];
 const codeContainers = ["", "2", "3"].map((n) =>
@@ -62,22 +61,8 @@ async function initialize({ docs, sessionNumber, typealongSessionId }) {
       email,
       fileName,
       flushUrl: "/record-typealong-changes",
-      // shouldRecord: true,  // Uncomment for stress testing
     });
   });
-
-  // Uncomment for stress testing
-  // window.dumpRecordings = () => {
-  //   codeEditors[0].dumpRecording("typealong-tab1");
-  //   codeEditors[1].dumpRecording("typealong-tab2");
-  //   codeEditors[2].dumpRecording("typealong-tab3");
-  // };
-
-  // window.replayRecording = () => {
-  //   codeEditors.forEach((editor, idx) => {
-  //     replayChanges(`typealong-tab${idx+1}`, editor.replayFn.bind(editor));
-  //   });
-  // };
 
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(outputCodeContainer);
