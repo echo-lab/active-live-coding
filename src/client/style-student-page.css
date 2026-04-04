@@ -1,0 +1,150 @@
+/* Styles for the student activity page */
+
+#student-page-interface #app {
+  min-width: 1200px;
+  width: 97vw;
+  max-width: 1800px;
+  padding-top: 0px;
+}
+
+#student-page-interface .parent-container {
+  display: grid;
+  grid-template-columns: [code-start] 49% [gutter-start] 12px [activities-start] calc(51% - 12px) [activities-end];
+  grid-template-rows: [toolbar] 40px [code] auto [resizer] 6px [console] 200px;
+  grid-template-areas:
+    "code-tabs gutter activities-display"
+    "code-display gutter activities-display"
+    "resizer gutter activities-display"
+    "code-output gutter activities-display";
+
+  min-width: 800px;
+  width: 100%;
+  height: 90vh;
+  position: relative;
+}
+
+#code-tabs {
+  grid-area: code-tabs;
+}
+
+#student-page-interface .code-container {
+  grid-area: code-display;
+}
+
+#student-page-interface #output-container {
+  grid-area: code-output;
+}
+
+/* Vertical resizer between the code panel and activities panel */
+#resize-activities {
+  grid-area: gutter;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgb(236, 236, 236);
+  border-left: solid 1px lightgrey;
+  border-right: solid 1px lightgrey;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 10;
+}
+
+#resize-activities:hover {
+  background-color: rgb(214, 212, 226);
+}
+
+#resize-activities.is-dragging {
+  background-color: rgb(192, 189, 206);
+}
+
+#toggle-activities-panel {
+  padding: 2px 0px;
+  font-size: 9px;
+  min-width: 0;
+  width: 10px;
+  height: 40px;
+  border: solid 1px lightgrey;
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+  line-height: 1;
+  color: #555;
+}
+
+#toggle-activities-panel:hover {
+  background-color: #e8e8ff;
+  border-color: #646cff;
+}
+
+#toggle-activities-panel:focus:not(:focus-visible) {
+  outline: none;
+}
+
+#activities-container {
+  grid-area: activities-display;
+  border: solid 1px lightgrey;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#activities-placeholder {
+  color: lightgrey;
+  font-size: x-large;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* --- Shared styles also needed for this page (copied from style-notes.css) --- */
+
+.try-it-out {
+  background-color: #d3d3ff;
+  color: #800080;
+  font-weight: bold;
+}
+
+.code-container button {
+  border-radius: 5px;
+  font-size: 0.7em;
+
+  position: absolute;
+  top: 10px;
+  right: 25px;
+  z-index: 999;
+  opacity: 95%;
+}
+
+@keyframes flash-tab-change {
+  from {
+    background-color: #d3d3ff;
+  }
+  to {
+    background-color: white;
+  }
+}
+
+.just-changed-tab {
+  animation-name: flash-tab-change;
+  animation-duration: 1.2s;
+}
+
+@keyframes flash-instructor-tab {
+  from {
+    background-color: #d3d3ff;
+  }
+  to {
+    background-color: rgb(244, 244, 244);
+  }
+}
+
+.blink-tab {
+  animation-name: flash-instructor-tab;
+  animation-duration: 0.8s;
+}
+
+.uneditable {
+  background-color: #f5f5f9;
+}

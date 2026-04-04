@@ -200,6 +200,70 @@ export function setupJoinLectureModal({ url, email, onSuccess }) {
   sessionNameInput.focus();
 }
 
+/**
+ * Makes a side panel horizontally resizable and togglable via a gutter element.
+ *
+ * @param {HTMLElement} parentContainer - The grid container whose column widths are adjusted.
+ * @param {HTMLElement} resizer - The gutter element used as the drag handle.
+ * @param {HTMLElement} activitiesPanel - The panel to show/hide on toggle.
+ * @param {HTMLElement} toggleBtn - The button inside the gutter that collapses/expands the panel.
+ * @param {number} gutterWidth - Width of the gutter column in pixels.
+ */
+export function makeActivitiesPanelResizable(
+  parentContainer,
+  resizer,
+  activitiesPanel,
+  toggleBtn,
+  gutterWidth = 12
+) {
+  const MIN_PANEL_WIDTH = 150;
+  let isDragging = false;
+  let collapsed = false;
+  let savedActivitiesWidth = null;
+
+  resizer.addEventListener("mousedown", (e) => {
+    if (collapsed) return;
+    if (e.target === toggleBtn) return;
+    isDragging = true;
+    resizer.classList.add("is-dragging");
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    let rect = parentContainer.getBoundingClientRect();
+    let totalWidth = rect.width;
+    let codeWidth = e.clientX - rect.left - gutterWidth / 2;
+    codeWidth = Math.max(MIN_PANEL_WIDTH, Math.min(codeWidth, totalWidth - gutterWidth - MIN_PANEL_WIDTH));
+    let activitiesWidth = totalWidth - codeWidth - gutterWidth;
+    parentContainer.style.gridTemplateColumns =
+      `${codeWidth}px ${gutterWidth}px ${activitiesWidth}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!isDragging) return;
+    isDragging = false;
+    resizer.classList.remove("is-dragging");
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    if (collapsed) {
+      let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
+      savedActivitiesWidth = cols[2] || null;
+      activitiesPanel.style.display = "none";
+      parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
+      toggleBtn.textContent = "◀";
+      resizer.style.cursor = "default";
+    } else {
+      activitiesPanel.style.display = "";
+      let restoreWidth = savedActivitiesWidth || `calc(51% - ${gutterWidth}px)`;
+      parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
+      toggleBtn.textContent = "▶";
+      resizer.style.cursor = "col-resize";
+    }
+  });
+}
 // Hacky hack hack lol !!! TODO: CHANGE
 const QUIZ_NAMES = [
   "genquiz",
