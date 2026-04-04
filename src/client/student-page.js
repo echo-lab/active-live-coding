@@ -42,7 +42,10 @@ makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
   activitiesResizer,
   activitiesContainer,
-  toggleActivitiesBtn
+  toggleActivitiesBtn,
+  /*gutterWidth=*/ 12,
+  /*minCodeWidth=*/ 400,
+  /*minActivitiesWidth=*/ 300
 );
 
 // Handle the email stuff.

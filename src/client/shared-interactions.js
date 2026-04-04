@@ -214,9 +214,10 @@ export function makeActivitiesPanelResizable(
   resizer,
   activitiesPanel,
   toggleBtn,
-  gutterWidth = 12
+  gutterWidth = 12,
+  minCodeWidth = 150,
+  minActivitiesWidth = 150
 ) {
-  const MIN_PANEL_WIDTH = 150;
   let isDragging = false;
   let collapsed = false;
   let savedActivitiesWidth = null;
@@ -234,7 +235,7 @@ export function makeActivitiesPanelResizable(
     let rect = parentContainer.getBoundingClientRect();
     let totalWidth = rect.width;
     let codeWidth = e.clientX - rect.left - gutterWidth / 2;
-    codeWidth = Math.max(MIN_PANEL_WIDTH, Math.min(codeWidth, totalWidth - gutterWidth - MIN_PANEL_WIDTH));
+    codeWidth = Math.max(minCodeWidth, Math.min(codeWidth, totalWidth - gutterWidth - minActivitiesWidth));
     let activitiesWidth = totalWidth - codeWidth - gutterWidth;
     parentContainer.style.gridTemplateColumns =
       `${codeWidth}px ${gutterWidth}px ${activitiesWidth}px`;
