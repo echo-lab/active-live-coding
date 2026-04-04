@@ -84,11 +84,20 @@
 #activities-container {
   grid-area: activities-display;
   border: solid 1px lightgrey;
-  border-radius: 15px;
+  border-radius: 0px 15px 15px 0px; /* only round the outer right corners */
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+#student-page-interface #code-tabs {
+  border-radius: 5px 0px 0px 0px; /* only round the outer top-left corner */
+}
+
+#student-page-interface #output-container {
+  border-radius: 0px 0px 0px 15px; /* only round the outer bottom-left corner */
+  height: auto; /* let the grid row control height so borders don't overflow */
 }
 
 #activities-placeholder {

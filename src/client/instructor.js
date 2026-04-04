@@ -30,7 +30,7 @@ makeActivitiesPanelResizable(
   /*gutterWidth=*/ 12,
   /*minCodeWidth=*/ 400,
   /*minActivitiesWidth=*/ 300,
-  /*initiallyCollapsed=*/ true
+  /*initiallyCollapsed=*/ true,
 );
 
 const socket = io();
