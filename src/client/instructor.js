@@ -7,6 +7,7 @@ import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
   RunInteractions,
+  makeActivitiesPanelResizable,
   makeConsoleResizable,
 } from "./shared-interactions.js";
 import { InstructorCodeEditor } from "./code-editors.js";
@@ -20,7 +21,17 @@ const runButtonEl = document.querySelector("#run-button");
 const outputCodeContainer = document.querySelector("#all-code-outputs");
 const consoleResizer = document.querySelector("#resize-console");
 const codeOutputsContainer = document.querySelector("#output-container");
-makeConsoleResizable(codeOutputsContainer, consoleResizer);
+makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
+makeActivitiesPanelResizable(
+  document.querySelector(".parent-container"),
+  document.querySelector("#resize-activities"),
+  document.querySelector("#activities-container"),
+  document.querySelector("#toggle-activities-panel"),
+  /*gutterWidth=*/ 12,
+  /*minCodeWidth=*/ 400,
+  /*minActivitiesWidth=*/ 300,
+  /*initiallyCollapsed=*/ true
+);
 
 const socket = io();
 // Change ID X gets you to doc version X+1

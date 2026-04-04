@@ -208,6 +208,7 @@ export function setupJoinLectureModal({ url, email, onSuccess }) {
  * @param {HTMLElement} activitiesPanel - The panel to show/hide on toggle.
  * @param {HTMLElement} toggleBtn - The button inside the gutter that collapses/expands the panel.
  * @param {number} gutterWidth - Width of the gutter column in pixels.
+ * @param {boolean} initiallyCollapsed - Whether the panel starts collapsed.
  */
 export function makeActivitiesPanelResizable(
   parentContainer,
@@ -216,11 +217,20 @@ export function makeActivitiesPanelResizable(
   toggleBtn,
   gutterWidth = 12,
   minCodeWidth = 150,
-  minActivitiesWidth = 150
+  minActivitiesWidth = 150,
+  initiallyCollapsed = false
 ) {
   let isDragging = false;
   let collapsed = false;
   let savedActivitiesWidth = null;
+
+  if (initiallyCollapsed) {
+    activitiesPanel.style.display = "none";
+    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
+    toggleBtn.textContent = "◀";
+    resizer.style.cursor = "default";
+    collapsed = true;
+  }
 
   resizer.addEventListener("mousedown", (e) => {
     if (collapsed) return;
