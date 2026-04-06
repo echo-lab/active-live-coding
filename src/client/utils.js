@@ -18,6 +18,14 @@ export function clearEmail() {
   localStorage.removeItem("user_email");
 }
 
+export function getUserID() {
+  let userId = localStorage.getItem("user_id");
+  if (userId) return userId;
+  userId = crypto.randomUUID();
+  localStorage.setItem("user_id", userId);
+  return userId;
+}
+
 export const EXAMPLE_CODE = `# Here is some example code
 
 # Slow version

@@ -1,7 +1,7 @@
 import "./style.css";
 
 import { io } from "socket.io-client";
-import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
+import { GET_JSON_REQUEST, POST_JSON_REQUEST, getUserID } from "./utils.js";
 
 import { PythonCodeRunner } from "./code-runner.js";
 import {
@@ -33,6 +33,8 @@ makeActivitiesPanelResizable(
   /*initiallyCollapsed=*/ true,
 );
 
+const userId = getUserID();
+
 const socket = io();
 // Change ID X gets you to doc version X+1
 
@@ -42,28 +44,34 @@ const socket = io();
 
 async function getOrCreateSession(sessionName) {
   const response = await fetch("/lecture-session", {
-    body: JSON.stringify({ sessionName }),
+    body: JSON.stringify({ sessionName, userId }),
     ...POST_JSON_REQUEST,
   });
   let res = await response.json();
-  // TODO: what if this fails? lol. It really shouldn't :)
+  if (res.error) {
+    alert(res.error);
+    return null;
+  }
   document.querySelector(
     "#session-name-display"
   ).innerText = `Lecture ID: ${sessionName}`;
-  res.sessionNumber && initialize(res);
+  initialize(res);
   return res.sessionNumber;
 }
 
 // If it's not disabled already, start button should create a new session
 startButton.addEventListener("click", async () => {
   startButton.disabled = true;
-  endButton.disabled = false;
   let sessionName = prompt("Session name: ");
   if (!sessionName) {
     alert("Please enter a valid session name");
+    startButton.disabled = false;
     return;
   }
-  await getOrCreateSession(sessionName);
+  let sessionNumber = await getOrCreateSession(sessionName);
+  if (!sessionNumber) {
+    startButton.disabled = false;
+  }
 });
 
 // Start up the editor and hook up the end session button.
@@ -89,6 +97,7 @@ function initialize({ doc = null, docVersion = null, sessionNumber = null }) {
     consoleOutput,
     sessionNumber,
     source: CLIENT_TYPE.INSTRUCTOR,
+    userId,
     broadcastResult: (msg) =>
       socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg),
   });

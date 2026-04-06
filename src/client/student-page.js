@@ -1,7 +1,7 @@
 import "./style.css";
 import "./style-student-page.css";
 
-import { getEmail, POST_JSON_REQUEST } from "./utils.js";
+import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
 import { CodeFollowingEditor, StudentCodeEditor } from "./code-editors.js";
@@ -50,6 +50,7 @@ makeActivitiesPanelResizable(
 
 // Handle the email stuff.
 const email = getEmail();
+const userId = getUserID();
 const studentDetailsContainer = document.querySelector("#student-email");
 const changeEmailLink = document.querySelector("#change-email");
 studentDetailsContainer.textContent = email;

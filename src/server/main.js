@@ -4,7 +4,13 @@ import ViteExpress from "vite-express";
 import * as http from "http";
 import { Server } from "socket.io";
 import { db } from "./database.js";
-import { LectureSession, NotesSession, ClassExercise, ExerciseResponse, StudentSession } from "./models.js";
+import {
+  LectureSession,
+  NotesSession,
+  ClassExercise,
+  ExerciseResponse,
+  StudentSession,
+} from "./models.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -32,7 +38,7 @@ app.get("/lecture-sessions", async (req, res) => {
         {
           order: [["createdAt", "DESC"]],
         },
-        { transaction: t }
+        { transaction: t },
       );
       sessions = sessions.map((sesh) => ({
         id: sesh.id,
@@ -80,23 +86,33 @@ app.get("/session-details", async (req, res) => {
 
 // Get or create a lecture session
 app.post("/lecture-session", async (req, res) => {
-  let sessionName = req.body?.sessionName;
+  let { sessionName, userId } = req.body;
+  if (!userId) return res.json({ error: "userId is required" });
 
   await flushInstructorChanges();
 
   try {
     let response = await db.transaction(async (t) => {
-      let sesh = await LectureSession.current(sessionName, t);
-      sesh =
-        sesh ||
+      let sesh =
+        (await LectureSession.current(sessionName, t)) ??
         (await LectureSession.create(
-          { name: sessionName },
-          { transaction: t }
+          { name: sessionName, instructor_id: userId },
+          { transaction: t },
         ));
+      if (sesh.instructor_id !== userId) {
+        return {
+          error: "Lecture name not available.",
+        };
+      }
 
       let { doc, docVersion } = await sesh.getDoc(t);
       let exercises = await sesh.getExercisesForInstructor(t);
-      return { doc: doc.toJSON(), docVersion, sessionNumber: sesh.id, exercises };
+      return {
+        doc: doc.toJSON(),
+        docVersion,
+        sessionNumber: sesh.id,
+        exercises,
+      };
     });
     res.json(response);
   } catch (error) {
@@ -172,7 +188,7 @@ app.post("/current-session-notes", async (req, res) => {
       if (!lecture) return {};
       let notesSession = await lecture.getNotesSessions(
         { where: { email } },
-        { transaction: t }
+        { transaction: t },
       );
       let sesh =
         notesSession.length > 0
@@ -210,7 +226,9 @@ app.post("/current-session-notes", async (req, res) => {
 app.post("/current-session-student", async (req, res) => {
   let { student_id, student_identifier, sessionName } = req.body;
   if (!student_id || !student_identifier) {
-    return res.json({ error: "student_id and student_identifier are required" });
+    return res.json({
+      error: "student_id and student_identifier are required",
+    });
   }
 
   await flushInstructorChanges();
@@ -222,17 +240,18 @@ app.post("/current-session-student", async (req, res) => {
 
       let existing = await lecture.getStudentSessions(
         { where: { student_id } },
-        { transaction: t }
+        { transaction: t },
       );
       let sesh =
         existing.length > 0
           ? existing[0]
           : await lecture.createStudentSession(
               { student_id, student_identifier },
-              { transaction: t }
+              { transaction: t },
             );
 
-      let { doc: lectureDoc, docVersion: lectureDocVersion } = await lecture.getDoc(t);
+      let { doc: lectureDoc, docVersion: lectureDocVersion } =
+        await lecture.getDoc(t);
       let exercises = await lecture.getExercisesForStudent(student_id, t);
 
       return {
@@ -266,7 +285,7 @@ app.post("/record-notes-changes", async (req, res) => {
       if (!lecture) return { error: `invalid session: ${sessionNumber}` };
       let sesh = await lecture.getNotesSessions(
         { where: { email } },
-        { transaction: t }
+        { transaction: t },
       );
       if (sesh.length === 0) return { error: "notes session not started?" };
       sesh = sesh[0];
@@ -361,6 +380,7 @@ app.post("/record-user-action", async (req, res) => {
     source,
     email,
     details,
+    userId,
   } = req.body;
   if (!source) return;
 
@@ -371,7 +391,7 @@ app.post("/record-user-action", async (req, res) => {
       });
       if (!lecture)
         throw new Error(
-          `Can't record user action for non-existing session #${sessionNumber}`
+          `Can't record user action for non-existing session #${sessionNumber}`,
         );
 
       const record = {
@@ -383,11 +403,16 @@ app.post("/record-user-action", async (req, res) => {
       };
 
       if (source === CLIENT_TYPE.INSTRUCTOR) {
+        if (lecture.instructor_id !== userId) {
+          throw new Error(
+            "Unauthorized: user ID does not match session instructor",
+          );
+        }
         await lecture.createInstructorAction(record, { transaction: t });
       } else if (source === CLIENT_TYPE.NOTES) {
         let sesh = await lecture.getNotesSessions(
           { where: { email } },
-          { transaction: t }
+          { transaction: t },
         );
         await sesh[0].createNotesAction(record, { transaction: t });
       } else {
@@ -419,13 +444,13 @@ async function recordBatchCodeChanges(req, res) {
 
       // TODO: we should just pass the pk, but eh.
       let sesh = await lecture.getNotesSessions(
-            { where: { email } },
-            { transaction: t }
-          );
+        { where: { email } },
+        { transaction: t },
+      );
 
       if (sesh.length === 0) {
         throw new Error(
-          "Can't record changes for session which hasn't started"
+          "Can't record changes for session which hasn't started",
         );
       }
       sesh = sesh[0];
@@ -443,13 +468,20 @@ async function recordBatchCodeChanges(req, res) {
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
   const { lectureId, type, instructions } = req.body;
-  if (!lectureId || !type) return res.json({ error: "lectureId and type are required" });
+  if (!lectureId || !type)
+    return res.json({ error: "lectureId and type are required" });
 
   try {
     let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.findByPk(lectureId, { transaction: t });
+      let lecture = await LectureSession.findByPk(lectureId, {
+        transaction: t,
+      });
       if (!lecture) return { error: `Session #${lectureId} not found` };
-      let exercise = await ClassExercise.createForLecture(lectureId, { type, instructions }, t);
+      let exercise = await ClassExercise.createForLecture(
+        lectureId,
+        { type, instructions },
+        t,
+      );
       return { exerciseId: exercise.id };
     });
     res.json(response);
@@ -467,7 +499,9 @@ app.post("/exercise/finish", async (req, res) => {
 
   try {
     let response = await db.transaction(async (t) => {
-      let exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      let exercise = await ClassExercise.findByPk(exerciseId, {
+        transaction: t,
+      });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
       await exercise.finish(t);
       return { success: true };
@@ -483,14 +517,22 @@ app.post("/exercise/finish", async (req, res) => {
 app.post("/exercise/response", async (req, res) => {
   const { exerciseId, student_id, answer } = req.body;
   if (!exerciseId || !student_id || answer == null) {
-    return res.json({ error: "exerciseId, student_id, and answer are required" });
+    return res.json({
+      error: "exerciseId, student_id, and answer are required",
+    });
   }
 
   try {
     let response = await db.transaction(async (t) => {
-      let exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      let exercise = await ClassExercise.findByPk(exerciseId, {
+        transaction: t,
+      });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
-      let record = await ExerciseResponse.submitOrUpdate(exerciseId, { student_id, answer }, t);
+      let record = await ExerciseResponse.submitOrUpdate(
+        exerciseId,
+        { student_id, answer },
+        t,
+      );
       return { responseId: record.id };
     });
     res.json(response);

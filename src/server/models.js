@@ -125,6 +125,10 @@ LectureSession.init(
       primaryKey: true,
     },
     name: DataTypes.STRING,
+    instructor_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
     isFinished: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

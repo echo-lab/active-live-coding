@@ -13,6 +13,7 @@ export class RunInteractions {
     sessionNumber,
     source,
     email,
+    userId,
     logRuns = true,
     broadcastResult = () => {},
   }) {
@@ -26,6 +27,7 @@ export class RunInteractions {
     this.sessionNumber = sessionNumber;
     this.source = source;
     this.email = email;
+    this.userId = userId;
     this.broadcastResult = broadcastResult;
 
     runButtonEl.addEventListener("click", this.runCode.bind(this));
@@ -51,6 +53,7 @@ export class RunInteractions {
         sessionNumber: this.sessionNumber,
         source: this.source,
         email: this.email,
+        userId: this.userId,
       };
       fetch("/record-user-action", {
         body: JSON.stringify(payload),
