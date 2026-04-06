@@ -6,13 +6,18 @@ import { db as sequelize } from "./database.js";
 LectureSession
   InstructorChange
   InstructorAction
-  TypealongSession
+  TypealongSession        (legacy student interface)
     TypealongChange
     TypealongAction
-  NotesSession
+  NotesSession            (legacy student interface)
     NotesChange
     PlaygroundCodeChange
     NotesAction
+  ClassExercise
+    ExerciseResponse
+  StudentSession          (new student interface: student-page.html)
+    StudentAction
+    ExerciseResponse
 */
 
 const CODE_CHANGE_SCHEMA = {
@@ -86,6 +91,31 @@ export class LectureSession extends Model {
       { transaction }
     );
     return reconstructCMDoc(changes);
+  }
+
+  // Returns all exercises for this lecture with every student's responses.
+  async getExercisesForInstructor(transaction) {
+    return this.getClassExercises(
+      { include: [{ model: ExerciseResponse }], order: [["start_ts", "ASC"]] },
+      { transaction }
+    );
+  }
+
+  // Returns all exercises for this lecture with only the given student's response (if any).
+  async getExercisesForStudent(studentId, transaction) {
+    return this.getClassExercises(
+      {
+        include: [
+          {
+            model: ExerciseResponse,
+            where: { student_id: studentId },
+            required: false,
+          },
+        ],
+        order: [["start_ts", "ASC"]],
+      },
+      { transaction }
+    );
   }
 }
 
@@ -397,7 +427,7 @@ ClassExercise.belongsTo(LectureSession);
 
 export class ExerciseResponse extends Model {
   // Creates a new response, or updates the existing one (stashing prior answer in history).
-  static async submitOrUpdate(exerciseId, { student_id, answer }, transaction) {
+  static async submitOrUpdate(exerciseId, { student_id, answer, studentSessionId }, transaction) {
     let existing = await ExerciseResponse.findOne({
       where: { ClassExerciseId: exerciseId, student_id },
       transaction,
@@ -405,7 +435,13 @@ export class ExerciseResponse extends Model {
 
     if (!existing) {
       return ExerciseResponse.create(
-        { ClassExerciseId: exerciseId, student_id, answer, submitted_ts: Date.now() },
+        {
+          ClassExerciseId: exerciseId,
+          StudentSessionId: studentSessionId ?? null,
+          student_id,
+          answer,
+          submitted_ts: Date.now(),
+        },
         { transaction }
       );
     }
@@ -447,3 +483,43 @@ ExerciseResponse.init(
 
 ClassExercise.hasMany(ExerciseResponse, { foreignKey: "ClassExerciseId" });
 ExerciseResponse.belongsTo(ClassExercise);
+
+export class StudentSession extends Model {}
+StudentSession.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    student_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    student_identifier: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+  },
+  { sequelize }
+);
+
+LectureSession.hasMany(StudentSession, { foreignKey: "LectureSessionId" });
+StudentSession.belongsTo(LectureSession);
+
+export class StudentAction extends Model {}
+StudentAction.init(
+  {
+    action_ts: DataTypes.INTEGER,
+    code_version: DataTypes.INTEGER,
+    action_type: DataTypes.STRING,
+    details: DataTypes.STRING,
+  },
+  { sequelize }
+);
+
+StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
+StudentAction.belongsTo(StudentSession);
+
+StudentSession.hasMany(ExerciseResponse, { foreignKey: "StudentSessionId" });
+ExerciseResponse.belongsTo(StudentSession);

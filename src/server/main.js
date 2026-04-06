@@ -4,7 +4,7 @@ import ViteExpress from "vite-express";
 import * as http from "http";
 import { Server } from "socket.io";
 import { db } from "./database.js";
-import { LectureSession, NotesSession, TypealongSession, ClassExercise, ExerciseResponse } from "./models.js";
+import { LectureSession, NotesSession, TypealongSession, ClassExercise, ExerciseResponse, StudentSession } from "./models.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -105,7 +105,8 @@ app.post("/lecture-session", async (req, res) => {
         ));
 
       let { doc, docVersion } = await sesh.getDoc(t);
-      return { doc: doc.toJSON(), docVersion, sessionNumber: sesh.id };
+      let exercises = await sesh.getExercisesForInstructor(t);
+      return { doc: doc.toJSON(), docVersion, sessionNumber: sesh.id, exercises };
     });
     res.json(response);
   } catch (error) {
@@ -206,6 +207,55 @@ app.post("/current-session-notes", async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("Failed to get or create the current notes session: ", error);
+    res.json({ error: error.message });
+  }
+});
+
+// Get or create a StudentSession for student-page.html.
+// Returns info about:
+//   1) the instructor's code (doc/version)
+//   2) the student's playground code (doc/version)
+//   3) all exercises for this lecture, with this student's response for each
+//   4) the session number and student session id
+app.post("/current-session-student", async (req, res) => {
+  let { student_id, student_identifier, sessionName } = req.body;
+  if (!student_id || !student_identifier) {
+    return res.json({ error: "student_id and student_identifier are required" });
+  }
+
+  await flushInstructorChanges();
+
+  try {
+    let response = await db.transaction(async (t) => {
+      let lecture = await LectureSession.current(sessionName, t);
+      if (!lecture) return {};
+
+      let existing = await lecture.getStudentSessions(
+        { where: { student_id } },
+        { transaction: t }
+      );
+      let sesh =
+        existing.length > 0
+          ? existing[0]
+          : await lecture.createStudentSession(
+              { student_id, student_identifier },
+              { transaction: t }
+            );
+
+      let { doc: lectureDoc, docVersion: lectureDocVersion } = await lecture.getDoc(t);
+      let exercises = await lecture.getExercisesForStudent(student_id, t);
+
+      return {
+        sessionNumber: lecture.id,
+        studentSessionId: sesh.id,
+        lectureDoc,
+        lectureDocVersion,
+        exercises,
+      };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to get or create student session:", error);
     res.json({ error: error.message });
   }
 });
