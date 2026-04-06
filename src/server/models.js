@@ -342,3 +342,108 @@ export class NotesAction extends Model {}
 NotesAction.init(USER_ACTION_SCHEMA, { sequelize });
 NotesSession.hasMany(NotesAction, { foreignKey: "NotesChangeId" });
 NotesAction.belongsTo(NotesSession);
+
+export const EXERCISE_TYPE = Object.freeze({
+  POLL: "POLL",
+  CODE: "CODE",
+  CODE_FORK: "CODE_FORK",
+});
+
+export class ClassExercise extends Model {
+  static async createForLecture(lectureId, { type, instructions } = {}, transaction) {
+    return ClassExercise.create(
+      { LectureSessionId: lectureId, type, instructions, start_ts: Date.now() },
+      { transaction }
+    );
+  }
+
+  async finish(transaction) {
+    return this.update({ end_ts: Date.now() }, { transaction });
+  }
+}
+ClassExercise.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    type: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    start_ts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    end_ts: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    instructions: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    summary: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+  },
+  { sequelize }
+);
+
+LectureSession.hasMany(ClassExercise, { foreignKey: "LectureSessionId" });
+ClassExercise.belongsTo(LectureSession);
+
+export class ExerciseResponse extends Model {
+  // Creates a new response, or updates the existing one (stashing prior answer in history).
+  static async submitOrUpdate(exerciseId, { student_id, answer }, transaction) {
+    let existing = await ExerciseResponse.findOne({
+      where: { ClassExerciseId: exerciseId, student_id },
+      transaction,
+    });
+
+    if (!existing) {
+      return ExerciseResponse.create(
+        { ClassExerciseId: exerciseId, student_id, answer, submitted_ts: Date.now() },
+        { transaction }
+      );
+    }
+
+    let history = existing.history ? JSON.parse(existing.history) : [];
+    history.push({ timestamp: existing.submitted_ts, answer: existing.answer });
+    return existing.update(
+      { answer, submitted_ts: Date.now(), history: JSON.stringify(history) },
+      { transaction }
+    );
+  }
+}
+ExerciseResponse.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    student_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    submitted_ts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    answer: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    history: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+  },
+  { sequelize }
+);
+
+ClassExercise.hasMany(ExerciseResponse, { foreignKey: "ClassExerciseId" });
+ExerciseResponse.belongsTo(ClassExercise);

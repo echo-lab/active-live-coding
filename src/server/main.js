@@ -4,7 +4,7 @@ import ViteExpress from "vite-express";
 import * as http from "http";
 import { Server } from "socket.io";
 import { db } from "./database.js";
-import { LectureSession, NotesSession, TypealongSession } from "./models.js";
+import { LectureSession, NotesSession, TypealongSession, ClassExercise, ExerciseResponse } from "./models.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -515,6 +515,66 @@ async function recordBatchCodeChanges(req, res, isTypealong) {
     return { error: error.message };
   }
 }
+
+// Create a new exercise for a lecture session.
+app.post("/exercise", async (req, res) => {
+  const { lectureId, type, instructions } = req.body;
+  if (!lectureId || !type) return res.json({ error: "lectureId and type are required" });
+
+  try {
+    let response = await db.transaction(async (t) => {
+      let lecture = await LectureSession.findByPk(lectureId, { transaction: t });
+      if (!lecture) return { error: `Session #${lectureId} not found` };
+      let exercise = await ClassExercise.createForLecture(lectureId, { type, instructions }, t);
+      return { exerciseId: exercise.id };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to create exercise:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// Finish an exercise (sets end timestamp).
+// TODO: gather student responses and generate an automatic summary.
+app.post("/exercise/finish", async (req, res) => {
+  const { exerciseId } = req.body;
+  if (!exerciseId) return res.json({ error: "exerciseId is required" });
+
+  try {
+    let response = await db.transaction(async (t) => {
+      let exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      await exercise.finish(t);
+      return { success: true };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to finish exercise:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// Submit (or update) a student's response to an exercise.
+app.post("/exercise/response", async (req, res) => {
+  const { exerciseId, student_id, answer } = req.body;
+  if (!exerciseId || !student_id || answer == null) {
+    return res.json({ error: "exerciseId, student_id, and answer are required" });
+  }
+
+  try {
+    let response = await db.transaction(async (t) => {
+      let exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      let record = await ExerciseResponse.submitOrUpdate(exerciseId, { student_id, answer }, t);
+      return { responseId: record.id };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to submit exercise response:", error);
+    res.json({ error: error.message });
+  }
+});
 
 // ViteExpress.listen(app, 3000, () =>
 //   console.log("Server is listening on port 3000..."),
