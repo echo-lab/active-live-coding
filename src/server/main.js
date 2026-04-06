@@ -4,7 +4,7 @@ import ViteExpress from "vite-express";
 import * as http from "http";
 import { Server } from "socket.io";
 import { db } from "./database.js";
-import { LectureSession, NotesSession, TypealongSession, ClassExercise, ExerciseResponse, StudentSession } from "./models.js";
+import { LectureSession, NotesSession, ClassExercise, ExerciseResponse, StudentSession } from "./models.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -55,18 +55,8 @@ app.get("/session-details", async (req, res) => {
   try {
     let response = await db.transaction(async (t) => {
       const sesh = await LectureSession.findByPk(id, { transaction: t });
-      let typealongSessions = await sesh.getTypealongSessions(
-        {},
-        { transaction: t }
-      );
       let notesSessions = await sesh.getNotesSessions({}, { transaction: t });
 
-      typealongSessions = typealongSessions.map(({ id, email }) => ({
-        email,
-        condition: "typealong",
-        studentUrl: `/pages/review-typealong.html?id=${id}`,
-        instructorUrl: `/pages/analysis/typealong.html?id=${id}`,
-      }));
       notesSessions = notesSessions.map(({ id, email }) => ({
         email,
         condition: "notes",
@@ -75,7 +65,7 @@ app.get("/session-details", async (req, res) => {
       }));
 
       return {
-        sessions: [...typealongSessions, ...notesSessions],
+        sessions: notesSessions,
         lectureId: sesh.id,
         lectureName: sesh.name,
         lectureStatus: sesh.isFinished ? "CLOSED" : "OPEN",
@@ -290,67 +280,6 @@ app.post("/record-notes-changes", async (req, res) => {
   }
 });
 
-app.get("/typealong-session", async (req, res) => {
-  const id = req.query?.id;
-  if (!id) {
-    return res.json({ error: "No id provided" });
-  }
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let sesh = await TypealongSession.findByPk(id, { transaction: t });
-      return {
-        typealongSessionId: id,
-        docs: await sesh.getCurrentDocs(t),
-        sessionNumber: sesh.LectureSessionsId, // sad -.- [needs cleanup]
-        email: sesh.email,
-      };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to retrieve typealong session", error);
-    return { error: error.message };
-  }
-});
-
-app.get("/typealong-session-events", async (req, res) => {
-  const id = req.query?.id;
-  if (!id) return res.json({ error: "No id provided..." });
-
-  // Let's go w/o a transaction lol
-  let sesh = await TypealongSession.findByPk(id);
-  if (!sesh) return res.json({ error: "Couldn't find session" });
-
-  let changes = await sesh.getTypealongChanges({
-    attributes: ["change", "change_number", "file_name", "change_ts"],
-    order: ["change_ts"],
-  });
-
-  let actions = await sesh.getTypealongActions({
-    attributes: [
-      "action_ts",
-      "action_type",
-      "details",
-      "code_version",
-      "doc_version", // not needed
-    ],
-    order: ["action_ts"],
-  });
-
-  // womp womp -- typo lol.
-  let lectureId = sesh.LectureSessionsId;
-
-  let lecture = await LectureSession.findByPk(lectureId);
-
-  res.json({
-    email: sesh.email,
-    sessionNumber: sesh.id,
-    sessionName: lecture.name,
-    changes,
-    actions,
-  });
-});
-
 app.get("/notes-session-events", async (req, res) => {
   const id = req.query?.id;
   if (!id) return res.json({ error: "No id provided..." });
@@ -418,49 +347,8 @@ app.get("/notes-session-events", async (req, res) => {
   });
 });
 
-app.post("/current-session-typealong", async (req, res) => {
-  let email = req.body?.email;
-  let sessionName = req.body?.sessionName;
-  if (!email) {
-    res.json({ error: "no email received" });
-    return;
-  }
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.current(sessionName, t);
-      if (!lecture) return {};
-
-      let typealongSessions = await lecture.getTypealongSessions(
-        {
-          where: { email },
-        },
-        { transaction: t }
-      );
-
-      let sesh =
-        typealongSessions.length > 0
-          ? typealongSessions[0]
-          : await lecture.createTypealongSession({ email }, { transaction: t });
-      return {
-        sessionNumber: lecture.id,
-        typealongSessionId: sesh.id,
-        docs: await sesh.getCurrentDocs(t),
-      };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to retrieve current typealong session", error);
-    return { error: error.message };
-  }
-});
-
-app.post("/record-typealong-changes", async (req, res) => {
-  await recordBatchCodeChanges(req, res, true);
-});
-
 app.post("/record-playground-changes", async (req, res) => {
-  await recordBatchCodeChanges(req, res, false);
+  await recordBatchCodeChanges(req, res);
 });
 
 app.post("/record-user-action", async (req, res) => {
@@ -496,15 +384,6 @@ app.post("/record-user-action", async (req, res) => {
 
       if (source === CLIENT_TYPE.INSTRUCTOR) {
         await lecture.createInstructorAction(record, { transaction: t });
-      } else if (
-        source === CLIENT_TYPE.TYPEALONG ||
-        source === CLIENT_TYPE.QUIZ
-      ) {
-        let sesh = await lecture.getTypealongSessions(
-          { where: { email } },
-          { transaction: t }
-        );
-        await sesh[0].createTypealongAction(record, { transaction: t });
       } else if (source === CLIENT_TYPE.NOTES) {
         let sesh = await lecture.getNotesSessions(
           { where: { email } },
@@ -523,7 +402,7 @@ app.post("/record-user-action", async (req, res) => {
   }
 });
 
-async function recordBatchCodeChanges(req, res, isTypealong) {
+async function recordBatchCodeChanges(req, res) {
   try {
     let response = await db.transaction(async (t) => {
       // code goes here
@@ -539,12 +418,7 @@ async function recordBatchCodeChanges(req, res, isTypealong) {
       if (!lecture) throw new Error(`Couldn't find session #${sessionNumber}`);
 
       // TODO: we should just pass the pk, but eh.
-      let sesh = isTypealong
-        ? await lecture.getTypealongSessions(
-            { where: { email } },
-            { transaction: t }
-          )
-        : await lecture.getNotesSessions(
+      let sesh = await lecture.getNotesSessions(
             { where: { email } },
             { transaction: t }
           );

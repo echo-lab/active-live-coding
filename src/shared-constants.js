@@ -10,9 +10,7 @@ export const USER_ACTIONS = Object.freeze({
 
 export const CLIENT_TYPE = Object.freeze({
   INSTRUCTOR: "INSTRUCTOR",
-  TYPEALONG: "TYPEALONG",
   NOTES: "NOTES",
-  QUIZ: "QUIZ",
 });
 
 export const SOCKET_MESSAGE_TYPE = Object.freeze({

@@ -6,9 +6,6 @@ import { db as sequelize } from "./database.js";
 LectureSession
   InstructorChange
   InstructorAction
-  TypealongSession        (legacy student interface)
-    TypealongChange
-    TypealongAction
   NotesSession            (legacy student interface)
     NotesChange
     PlaygroundCodeChange
@@ -147,115 +144,6 @@ export class InstructorAction extends Model {}
 InstructorAction.init(USER_ACTION_SCHEMA, { sequelize });
 LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionsId" });
 InstructorAction.belongsTo(LectureSession);
-
-export class TypealongSession extends Model {
-  // Get a map: {fileName: {doc, docVersion}}
-  async getCurrentDocs(transaction) {
-    let changes = await this.getTypealongChanges(
-      {
-        attributes: ["change", "change_number", "file_name"],
-        order: ["change_number"],
-      },
-      { transaction }
-    );
-    let changesByFile = {};
-    for (let { change, file_name } of changes) {
-      if (!changesByFile[file_name]) {
-        changesByFile[file_name] = [{ change }];
-      } else {
-        changesByFile[file_name].push({ change });
-      }
-    }
-    let docsByFile = {};
-    Object.entries(changesByFile).forEach(([file, changes]) => {
-      let { doc, docVersion } = reconstructCMDoc(changes);
-      docsByFile[file] = { doc: doc.toJSON(), docVersion };
-    });
-    return docsByFile;
-  }
-
-  async recordCodeChanges(changes, transaction) {
-    let fileAndVersion = await this.getTypealongChanges(
-      {
-        group: ["file_name"],
-        attributes: [
-          "file_name",
-          [sequelize.fn("COUNT", "file_name"), "docVersion"],
-        ],
-      },
-      { transaction }
-    );
-
-    let fileToVersion = {};
-    for (let {
-      file_name,
-      dataValues: { docVersion },
-    } of fileAndVersion) {
-      fileToVersion[file_name] = docVersion;
-    }
-
-    // Stupid hack -- there should only be one file for all the changes.
-    let theFileName;
-
-    // Should probs check more lol
-    // But: we assume it's in order and that there are no gaps :P
-    for (let { fileName, changeNumber, changesetJSON, ts } of changes) {
-      theFileName = fileName;
-      if (!fileToVersion[fileName]) fileToVersion[fileName] = 0;
-
-      if (changeNumber < fileToVersion[fileName]) {
-        console.warn(`Skipping already seen code change: #${changeNumber}`);
-        continue;
-      } else if (changeNumber > fileToVersion[fileName]) {
-        console.warn(
-          `Expected typealong change #${fileToVersion[fileName]} but got #${changeNumber}`
-        );
-        return fileToVersion[fileName];
-      }
-      await this.createTypealongChange(
-        {
-          file_name: fileName,
-          change_number: changeNumber,
-          change: JSON.stringify(changesetJSON),
-          change_ts: ts,
-        },
-        { transaction }
-      );
-      fileToVersion[fileName]++;
-    }
-    return fileToVersion[theFileName];
-  }
-}
-
-TypealongSession.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      allowNull: false,
-      primaryKey: true,
-    },
-    email: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-  },
-  { sequelize }
-);
-
-LectureSession.hasMany(TypealongSession, { foreignKey: "LectureSessionsId" }); // Typo: should not be plural...
-TypealongSession.belongsTo(LectureSession);
-
-export class TypealongChange extends Model {}
-TypealongChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-
-TypealongSession.hasMany(TypealongChange, { foreignKey: "TypealongChangeId" }); // This should be TypealongSessionId lol
-TypealongChange.belongsTo(TypealongSession);
-
-export class TypealongAction extends Model {}
-TypealongAction.init(USER_ACTION_SCHEMA, { sequelize });
-TypealongSession.hasMany(TypealongAction, { foreignKey: "TypealongChangeId" }); // This is an error lol -- foreignKey should be TypealongSessionId...
-TypealongAction.belongsTo(TypealongSession);
 
 export class NotesSession extends Model {
   // Returns all the deltas, in order.
