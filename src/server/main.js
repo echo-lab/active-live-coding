@@ -574,6 +574,18 @@ io.on("connection", async (socket) => {
     io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
   });
 
+  socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
+  });
+
   // Forward/push this so the students stop writing.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately

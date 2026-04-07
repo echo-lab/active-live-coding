@@ -54,7 +54,18 @@
           <button id="toggle-activities-panel" title="Toggle Activities Panel">▶</button>
         </div>
         <div id="activities-container">
-          <div id="activities-placeholder">Activities Panel</div>
+          <div id="student-activities-list">
+            <div id="student-activities-list-header">Activities</div>
+            <div id="student-activities-list-items"></div>
+            <div id="student-activities-placeholder">No activities yet</div>
+          </div>
+          <div id="student-activity" hidden>
+            <button id="student-activity-back">← Back</button>
+            <div id="student-activity-instructions"></div>
+            <div id="student-answer-display" hidden></div>
+            <textarea id="student-answer-input" placeholder="Your answer..."></textarea>
+            <button id="student-submit-btn">Submit</button>
+          </div>
         </div>
       </div>
     </div>

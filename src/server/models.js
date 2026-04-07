@@ -93,7 +93,10 @@ export class LectureSession extends Model {
   // Returns all exercises for this lecture with every student's responses.
   async getExercisesForInstructor(transaction) {
     return this.getClassExercises(
-      { include: [{ model: ExerciseResponse }], order: [["start_ts", "ASC"]] },
+      {
+        include: [{ model: ExerciseResponse, include: [{ model: StudentSession, required: false }] }],
+        order: [["start_ts", "ASC"]],
+      },
       { transaction }
     );
   }

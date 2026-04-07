@@ -13,7 +13,10 @@
           <h3 id="session-name-display"></h3>
           <!-- <h2>Instructor's Code</h2> -->
         </div>
-        <button id="run-button" class="run-button-grid">▶ ️Run</button>
+        <div class="run-button-grid">
+          <button id="run-button">▶ ️Run</button>
+          <button id="poll-button">Poll</button>
+        </div>
         <div class="topbar-right">
           <span id="session-info">
             <span id="session-details"></span>
@@ -41,7 +44,28 @@
           <button id="toggle-activities-panel" title="Toggle Activities Panel">▶</button>
         </div>
         <div id="activities-container">
-          <div id="activities-placeholder">Activities Panel</div>
+          <div id="activities-list">
+            <div id="activities-list-header">Activities</div>
+            <div id="activities-list-items"></div>
+          </div>
+          <div id="activities-create" hidden>
+            <button id="activities-back">← Back</button>
+            <h3>New Poll</h3>
+            <textarea id="activity-instructions" placeholder="Describe the activity..."></textarea>
+            <button id="activity-submit-create">Start Activity</button>
+          </div>
+          <div id="activities-active" hidden>
+            <button id="activities-active-back">← Back</button>
+            <div id="activity-timer">0:00</div>
+            <div id="activity-active-instructions"></div>
+            <div id="activity-response-count">0 responses</div>
+            <button id="activity-finish">Finish</button>
+          </div>
+          <div id="activities-summary" hidden>
+            <button id="activities-summary-back">← Back</button>
+            <div id="activity-summary-instructions"></div>
+            <div id="activity-summary-responses"></div>
+          </div>
         </div>
       </div>
     </div>

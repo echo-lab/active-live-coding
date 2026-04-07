@@ -173,6 +173,7 @@ export function setUpChangeEmail(el) {
   });
 }
 
+// Legacy: used by student-notes.js. Can be removed when that interface is retired.
 export function setupJoinLectureModal({ url, email, onSuccess }) {
   let sessionNameInput = document.querySelector(".modal input");
   let fetchSessionbutton = document.querySelector("#fetch-session");
@@ -192,11 +193,42 @@ export function setupJoinLectureModal({ url, email, onSuccess }) {
     } else {
       modal.style.display = "none";
       sessionNameDisplay.innerText = `Lecture ID: ${sessionName}`;
-      onSuccess(res);
+      onSuccess({ ...res, sessionName });
     }
   };
 
   fetchSessionbutton.addEventListener("click", try_connecting);
+  sessionNameInput.addEventListener("keypress", (ev) => {
+    ev.key === "Enter" && try_connecting();
+  });
+  sessionNameInput.focus();
+}
+
+// NOTE: buildBody is a function that builds the parameters for the correct API call.
+export function setupJoinLectureModalV2({ url, buildBody, onSuccess }) {
+  let sessionNameInput = document.querySelector(".modal input");
+  let fetchSessionButton = document.querySelector("#fetch-session");
+  let errorMessage = document.querySelector("#load-session-error");
+  let modal = document.querySelector(".modal-background");
+  let sessionNameDisplay = document.querySelector("#session-name-display");
+
+  const try_connecting = async () => {
+    let sessionName = sessionNameInput.value;
+    const response = await fetch(url, {
+      body: JSON.stringify(buildBody(sessionName)),
+      ...POST_JSON_REQUEST,
+    });
+    let res = await response.json();
+    if (!res.sessionNumber) {
+      errorMessage.textContent = `Lecture with ID "${sessionName}" does not exist. Please try again.`;
+    } else {
+      modal.style.display = "none";
+      sessionNameDisplay.innerText = `Lecture ID: ${sessionName}`;
+      onSuccess({ ...res, sessionName });
+    }
+  };
+
+  fetchSessionButton.addEventListener("click", try_connecting);
   sessionNameInput.addEventListener("keypress", (ev) => {
     ev.key === "Enter" && try_connecting();
   });
@@ -260,6 +292,15 @@ export function makeActivitiesPanelResizable(
     resizer.classList.remove("is-dragging");
   });
 
+  function expand() {
+    collapsed = false;
+    activitiesPanel.style.display = "";
+    let restoreWidth = savedActivitiesWidth || `calc(51% - ${gutterWidth}px)`;
+    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
+    toggleBtn.textContent = "▶";
+    resizer.style.cursor = "col-resize";
+  }
+
   toggleBtn.addEventListener("click", () => {
     collapsed = !collapsed;
     if (collapsed) {
@@ -270,11 +311,13 @@ export function makeActivitiesPanelResizable(
       toggleBtn.textContent = "◀";
       resizer.style.cursor = "default";
     } else {
-      activitiesPanel.style.display = "";
-      let restoreWidth = savedActivitiesWidth || `calc(51% - ${gutterWidth}px)`;
-      parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
-      toggleBtn.textContent = "▶";
-      resizer.style.cursor = "col-resize";
+      expand();
     }
   });
+
+  return {
+    openPanel() {
+      if (collapsed) expand();
+    },
+  };
 }
