@@ -19,6 +19,7 @@ import {
   SOCKET_MESSAGE_TYPE,
   USER_ACTIONS,
 } from "../shared-constants.js";
+import { StudentActivitiesPanel } from "./activities-panel.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -61,146 +62,6 @@ const socket = io();
 // TODO: change the tabs system :)
 const INSTRUCTOR_TAB = 0;
 const PLAYGROUND_TAB = 1;
-
-// TODO: move this to a new file?
-class StudentActivitiesPanel {
-  constructor({ sessionNumber, exercises, student_id, socket }) {
-    console.log("EXERCISES:", exercises);
-    this.sessionNumber = sessionNumber;
-    this.exercises = exercises.map((ex) => ({
-      ...ex,
-      ExerciseResponses: ex.ExerciseResponses ?? [],
-    }));
-    this.student_id = student_id;
-    this.socket = socket;
-    this.currentExerciseId = null;
-
-    // DOM refs
-    this.listEl = document.querySelector("#student-activities-list");
-    this.listItemsEl = document.querySelector("#student-activities-list-items");
-    this.placeholderEl = document.querySelector("#student-activities-placeholder");
-    this.exerciseEl = document.querySelector("#student-activity");
-    this.instructionsEl = document.querySelector("#student-activity-instructions");
-    this.answerDisplayEl = document.querySelector("#student-answer-display");
-    this.answerInputEl = document.querySelector("#student-answer-input");
-    this.submitBtn = document.querySelector("#student-submit-btn");
-
-    document.querySelector("#student-activity-back").addEventListener("click", () => this._showList());
-    this.submitBtn.addEventListener("click", () => this._submitAnswer());
-
-    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
-      if (msg.sessionNumber !== sessionNumber) return;
-      let ex = { ...msg.exercise, end_ts: null, ExerciseResponses: [] };
-      this.exercises.push(ex);
-      this._renderList();
-      openActivitiesPanel();
-      this._showExercise(ex);
-    });
-
-    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => {
-      if (msg.sessionNumber !== sessionNumber) return;
-      let ex = this.exercises.find((e) => e.id === msg.exerciseId);
-      if (ex) ex.end_ts = Date.now();
-      if (this.currentExerciseId === msg.exerciseId) {
-        this.submitBtn.hidden = true;
-        this.answerInputEl.hidden = true;
-      }
-      this._renderList();
-    });
-
-    // If there's an active exercise on load, open it
-    let active = this.exercises.find((ex) => ex.end_ts == null);
-    if (active) {
-      openActivitiesPanel();
-      this._showExercise(active);
-    } else {
-      this._showList();
-    }
-    this._renderList();
-  }
-
-  _showList() {
-    this.currentExerciseId = null;
-    this.exerciseEl.hidden = true;
-    this.listEl.hidden = false;
-  }
-
-  _renderList() {
-    this.listItemsEl.innerHTML = "";
-    let hasItems = this.exercises.length > 0;
-    this.placeholderEl.hidden = hasItems;
-    [...this.exercises].reverse().forEach((ex) => {
-      let myResponse = ex.ExerciseResponses.find((r) => r.student_id === this.student_id);
-      let isActive = ex.end_ts == null;
-      let item = document.createElement("div");
-      item.className = "activity-list-item";
-      let badge = isActive ? "Active" : "Done";
-      let preview = ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
-      let answerSnippet = myResponse ? ` — "${myResponse.answer.slice(0, 30)}"` : " — no answer";
-      item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span><span class="activity-item-answer">${answerSnippet}</span>`;
-      item.addEventListener("click", () => this._showExercise(ex));
-      this.listItemsEl.appendChild(item);
-    });
-  }
-
-  _showExercise(ex) {
-    this.currentExerciseId = ex.id;
-    let myResponse = ex.ExerciseResponses.find((r) => r.student_id === this.student_id);
-    let isActive = ex.end_ts == null;
-
-    this.instructionsEl.textContent = ex.instructions ?? "";
-
-    if (myResponse) {
-      this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
-      this.answerDisplayEl.hidden = false;
-      this.answerInputEl.value = myResponse.answer;
-    } else {
-      this.answerDisplayEl.hidden = true;
-      this.answerInputEl.value = "";
-    }
-
-    this.answerInputEl.hidden = !isActive;
-    this.submitBtn.hidden = !isActive;
-    this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
-
-    this.listEl.hidden = true;
-    this.exerciseEl.hidden = false;
-  }
-
-  async _submitAnswer() {
-    let answer = this.answerInputEl.value.trim();
-    if (!answer) return;
-    let exerciseId = this.currentExerciseId;
-    let res = await fetch("/exercise/response", {
-      body: JSON.stringify({ exerciseId, student_id: this.student_id, answer }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json());
-    if (res.error) { alert(res.error); return; }
-
-    let ex = this.exercises.find((e) => e.id === exerciseId);
-    if (ex) {
-      let idx = ex.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
-      if (idx >= 0) {
-        ex.ExerciseResponses[idx].answer = answer;
-      } else {
-        ex.ExerciseResponses.push({ student_id: this.student_id, answer });
-      }
-    }
-
-    this.answerDisplayEl.textContent = `Your answer: ${answer}`;
-    this.answerDisplayEl.hidden = false;
-    this.submitBtn.textContent = "Resubmit";
-    this._renderList();
-
-    this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
-      sessionNumber: this.sessionNumber,
-      exerciseId,
-      student_id: this.student_id,
-      student_identifier: email,
-      answer,
-    });
-  }
-}
 
 //////////////////////////////////////////////////////
 // OKAY: wait until a session starts to initialize
@@ -323,6 +184,8 @@ async function initialize({
     exercises,
     student_id: userId,
     socket,
+    openActivitiesPanel,
+    studentIdentifier: email,
   });
 }
 
