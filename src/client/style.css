@@ -316,7 +316,7 @@ pre {
 #session-info button {
   border-color: darkgrey;
   /* border-radius: */
-  padding: 8px;
+  padding: 6px 12px;
 }
 
 #session-info button:first-of-type {
@@ -357,14 +357,37 @@ pre {
   grid-area: run-button;
   justify-self: center;
   align-self: center; */
+  padding: 6px 12px;
   background-color: #7aeb7d;
+  border: 1px solid #ccc;
   border-radius: 8px;
   color: #004a0d;
+}
+
+#run-button:hover {
+  background-color: #5ec962;
+  border: 1px solid #1df25d;
 }
 
 #run-button.in-progress {
   background-color: lightgrey;
   color: grey;
+}
+
+/* Poll button */
+#poll-button {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  /* background-color: rgba(249, 194, 249, 0.944); */
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#poll-button:hover {
+  background: #e8e8ff;
+  border-color: #646cff;
 }
 
 .topbar-left {
@@ -724,19 +747,4 @@ td {
   box-sizing: border-box;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-/* Poll button */
-#poll-button {
-  padding: 4px 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: white;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-#poll-button:hover {
-  background: #e8e8ff;
-  border-color: #646cff;
 }

@@ -265,7 +265,7 @@ export function makeActivitiesPanelResizable(
   function expand() {
     collapsed = false;
     activitiesPanel.style.display = "";
-    let restoreWidth = savedActivitiesWidth || `calc(51% - ${gutterWidth}px)`;
+    let restoreWidth = savedActivitiesWidth || `calc(31% - ${gutterWidth}px)`;
     parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
     toggleBtn.textContent = "▶";
     resizer.style.cursor = "col-resize";

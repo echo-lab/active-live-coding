@@ -56,7 +56,7 @@ app.get("/lecture-sessions", async (req, res) => {
 
 // Returns all the student sessions associated w/ a lecture.
 app.get("/session-details", async (req, res) => {
-  res.json({error: "Not implemented"});
+  res.json({ error: "Not implemented" });
 });
 
 // Get or create a lecture session
@@ -82,6 +82,7 @@ app.post("/lecture-session", async (req, res) => {
 
       let { doc, docVersion } = await sesh.getDoc(t);
       let exercises = await sesh.getExercisesForInstructor(t);
+      console.log("exercises: ", exercises);
       return {
         doc: doc.toJSON(),
         docVersion,
@@ -172,7 +173,7 @@ app.post("/current-session-student", async (req, res) => {
 });
 
 app.post("/record-playground-changes", async (req, res) => {
-  return res.json({error: "no longer supported"});
+  return res.json({ error: "no longer supported" });
 });
 
 app.post("/record-user-action", async (req, res) => {
@@ -289,9 +290,13 @@ app.post("/exercise/response", async (req, res) => {
         transaction: t,
       });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      let studentSession = await StudentSession.findOne({
+        where: { student_id, LectureSessionId: exercise.LectureSessionId },
+        transaction: t,
+      });
       let record = await ExerciseResponse.submitOrUpdate(
         exerciseId,
-        { student_id, answer },
+        { student_id, answer, studentSessionId: studentSession?.id },
         t,
       );
       return { responseId: record.id };

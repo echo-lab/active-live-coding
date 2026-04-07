@@ -94,7 +94,7 @@ export class LectureSession extends Model {
         include: [
           {
             model: ExerciseResponse,
-            include: [{ model: StudentSession, required: false }],
+            include: [{ model: StudentSession, attributes: ["student_id", "student_identifier"], required: false }],
           },
         ],
         order: [["start_ts", "ASC"]],
@@ -255,7 +255,12 @@ export class ExerciseResponse extends Model {
     let history = existing.history ? JSON.parse(existing.history) : [];
     history.push({ timestamp: existing.submitted_ts, answer: existing.answer });
     return existing.update(
-      { answer, submitted_ts: Date.now(), history: JSON.stringify(history) },
+      {
+        answer,
+        submitted_ts: Date.now(),
+        history: JSON.stringify(history),
+        ...(studentSessionId != null && { StudentSessionId: studentSessionId }),
+      },
       { transaction },
     );
   }
