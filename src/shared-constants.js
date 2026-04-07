@@ -10,7 +10,7 @@ export const USER_ACTIONS = Object.freeze({
 
 export const CLIENT_TYPE = Object.freeze({
   INSTRUCTOR: "INSTRUCTOR",
-  NOTES: "NOTES",
+  STUDENT: "STUDENT",
 });
 
 export const SOCKET_MESSAGE_TYPE = Object.freeze({

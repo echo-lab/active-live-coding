@@ -119,20 +119,6 @@ app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
   }
 });
 
-app.get("/notes-session", async (req, res) => {
-  return res.json({error: "Notes interface no longer supported"});
-});
-
-// Create a session if it doesn't exist.
-// Returns info about:
-//   1) the instructor's code (doc/version)
-//   2) the student's playground code (doc/version)
-//   3) the student's notes (list of changes (Deltas))
-//   4) the session Number
-app.post("/current-session-notes", async (req, res) => {
-  return res.json({ error: "no longer supported" });
-});
-
 // Get or create a StudentSession for student-page.html.
 // Returns info about:
 //   1) the instructor's code (doc/version)
@@ -185,14 +171,6 @@ app.post("/current-session-student", async (req, res) => {
   }
 });
 
-app.post("/record-notes-changes", async (req, res) => {
-  return res.json({error: "no longer supported"});
-});
-
-app.get("/notes-session-events", async (req, res) => {
-  return res.json({error: "no longer supported"});
-});
-
 app.post("/record-playground-changes", async (req, res) => {
   return res.json({error: "no longer supported"});
 });
@@ -236,8 +214,6 @@ app.post("/record-user-action", async (req, res) => {
           );
         }
         await lecture.createInstructorAction(record, { transaction: t });
-      } else if (source === CLIENT_TYPE.NOTES) {
-        throw new Error("Notes action types no longer supported");
       } else {
         throw new Error(`User action with unknown source: ${source}`);
       }
