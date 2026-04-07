@@ -111,8 +111,14 @@ export class StudentActivitiesPanel {
 
     if (myResponse) {
       this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
+      this.answerDisplayEl.classList.remove("no-answer");
       this.answerDisplayEl.hidden = false;
       this.answerInputEl.value = myResponse.answer;
+    } else if (!isActive) {
+      this.answerDisplayEl.textContent = "You didn't submit an answer.";
+      this.answerDisplayEl.classList.add("no-answer");
+      this.answerDisplayEl.hidden = false;
+      this.answerInputEl.value = "";
     } else {
       this.answerDisplayEl.hidden = true;
       this.answerInputEl.value = "";
