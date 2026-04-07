@@ -6,10 +6,6 @@ import { db as sequelize } from "./database.js";
 LectureSession
   InstructorChange
   InstructorAction
-  NotesSession            (legacy student interface)
-    NotesChange
-    PlaygroundCodeChange
-    NotesAction
   ClassExercise
     ExerciseResponse
   StudentSession          (new student interface: student-page.html)
@@ -45,6 +41,7 @@ function reconstructCMDoc(changes) {
   return { doc, docVersion };
 }
 
+// MARK: LectureSession
 // NOTE: this class is written for a SINGLE THREADED SERVER!!! Consider rewriting :)
 export class LectureSession extends Model {
   // Get the active session w/ the given name
@@ -54,7 +51,7 @@ export class LectureSession extends Model {
         where: { isFinished: false, name },
         order: [["id", "DESC"]],
       },
-      { transaction }
+      { transaction },
     );
     // TODO: Probably try to make sure there's not more than one session lol.
     return sesh.length > 0 ? sesh[0] : null;
@@ -71,7 +68,7 @@ export class LectureSession extends Model {
         },
         order: ["change_number"],
       },
-      { transaction }
+      { transaction },
     );
     return changes.map(({ change, change_number }) => ({
       change: JSON.parse(change),
@@ -85,7 +82,7 @@ export class LectureSession extends Model {
         attributes: ["change", "change_number"],
         order: ["change_number"],
       },
-      { transaction }
+      { transaction },
     );
     return reconstructCMDoc(changes);
   }
@@ -94,10 +91,15 @@ export class LectureSession extends Model {
   async getExercisesForInstructor(transaction) {
     return this.getClassExercises(
       {
-        include: [{ model: ExerciseResponse, include: [{ model: StudentSession, required: false }] }],
+        include: [
+          {
+            model: ExerciseResponse,
+            include: [{ model: StudentSession, required: false }],
+          },
+        ],
         order: [["start_ts", "ASC"]],
       },
-      { transaction }
+      { transaction },
     );
   }
 
@@ -114,7 +116,7 @@ export class LectureSession extends Model {
         ],
         order: [["start_ts", "ASC"]],
       },
-      { transaction }
+      { transaction },
     );
   }
 }
@@ -138,135 +140,34 @@ LectureSession.init(
       defaultValue: false,
     },
   },
-  { sequelize }
+  { sequelize },
 );
 
-export class InstructorChange extends Model {}
-InstructorChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-
-LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionsId" });
-InstructorChange.belongsTo(LectureSession);
-
-export class InstructorAction extends Model {}
-InstructorAction.init(USER_ACTION_SCHEMA, { sequelize });
-LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionsId" });
-InstructorAction.belongsTo(LectureSession);
-
-export class NotesSession extends Model {
-  // Returns all the deltas, in order.
-  // TODO: consider calculating the resulting Delta (i.e., the current document)
-  // on server-side.
-  async getDeltas(transaction) {
-    return await this.getNotesChanges(
-      {
-        attributes: ["change", "change_number"],
-        order: ["change_number"],
-      },
-      { transaction }
-    );
-  }
-
-  async addChanges(changes, transaction) {
-    let currentVersion = await this.countNotesChanges({ transaction });
-    // TODO: check more?
-    for (let { changeNumber, delta, ts } of changes) {
-      if (changeNumber < currentVersion) {
-        console.warn(`Skipping already seen notes change: #${changeNumber}`);
-        continue;
-      } else if (changeNumber > currentVersion) {
-        // Missed a change, somehow!
-        console.warn(
-          `Received notes change #${changeNumber}, but expected ${currentVersion}`
-        );
-        return currentVersion;
-      }
-      await this.createNotesChange(
-        {
-          change_number: changeNumber,
-          change: JSON.stringify(delta),
-          change_ts: ts,
-        },
-        { transaction }
-      );
-      currentVersion++;
-    }
-    return currentVersion;
-  }
-
-  async currentPlaygroundCode(transaction) {
-    let changes = await this.getPlaygroundCodeChanges(
-      {
-        attributes: ["change", "change_number"],
-        order: ["change_number"],
-      },
-      { transaction }
-    );
-    return reconstructCMDoc(changes);
-  }
-
-  async recordCodeChanges(changes, transaction) {
-    let currentVersion = await this.countPlaygroundCodeChanges();
-    for (let { changeNumber, changesetJSON, ts } of changes) {
-      if (changeNumber < currentVersion) {
-        console.warn(`Skipping already seen playground change: #${changeNumber}`);
-        continue;
-      } else if (changeNumber > currentVersion) {
-        console.warn(
-          `Expected playground code change #${currentVersion}; got #${changeNumber}`
-        );
-        return currentVersion;
-      }
-      await this.createPlaygroundCodeChange(
-        {
-          change_number: changeNumber,
-          change: JSON.stringify(changesetJSON),
-          change_ts: ts,
-        },
-        { transaction }
-      );
-      currentVersion++;
-    }
-    return currentVersion;
-  }
-}
-
-NotesSession.init(
+// MARK: StudentSession
+// TODO: probably want to refactor this at some point...
+// But for now: StudentSession is just a convenient way to aggregate ExerciseResponses and StudentActions.
+export class StudentSession extends Model {}
+StudentSession.init(
   {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      allowNull: false,
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
       primaryKey: true,
     },
-    email: {
+    student_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    student_identifier: {
       type: DataTypes.STRING,
       allowNull: false,
     },
   },
-  { sequelize }
+  { sequelize },
 );
 
-LectureSession.hasMany(NotesSession, { foreignKey: "LectureSessionsId" });
-NotesSession.belongsTo(LectureSession);
-
-export class NotesChange extends Model {}
-
-NotesChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-
-NotesSession.hasMany(NotesChange, { foreignKey: "NotesChangeId" });
-NotesChange.belongsTo(NotesSession);
-
-export class PlaygroundCodeChange extends Model {}
-
-PlaygroundCodeChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-
-NotesSession.hasMany(PlaygroundCodeChange, { foreignKey: "NotesChangeId" });
-PlaygroundCodeChange.belongsTo(NotesSession);
-
-export class NotesAction extends Model {}
-NotesAction.init(USER_ACTION_SCHEMA, { sequelize });
-NotesSession.hasMany(NotesAction, { foreignKey: "NotesChangeId" });
-NotesAction.belongsTo(NotesSession);
+LectureSession.hasMany(StudentSession, { foreignKey: "LectureSessionId" });
+StudentSession.belongsTo(LectureSession);
 
 export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
@@ -274,11 +175,16 @@ export const EXERCISE_TYPE = Object.freeze({
   CODE_FORK: "CODE_FORK",
 });
 
+// MARK: ClassExercise
 export class ClassExercise extends Model {
-  static async createForLecture(lectureId, { type, instructions } = {}, transaction) {
+  static async createForLecture(
+    lectureId,
+    { type, instructions } = {},
+    transaction,
+  ) {
     return ClassExercise.create(
       { LectureSessionId: lectureId, type, instructions, start_ts: Date.now() },
-      { transaction }
+      { transaction },
     );
   }
 
@@ -314,15 +220,20 @@ ClassExercise.init(
       allowNull: true,
     },
   },
-  { sequelize }
+  { sequelize },
 );
 
 LectureSession.hasMany(ClassExercise, { foreignKey: "LectureSessionId" });
 ClassExercise.belongsTo(LectureSession);
 
+// MARK: ExerciseResponse
 export class ExerciseResponse extends Model {
   // Creates a new response, or updates the existing one (stashing prior answer in history).
-  static async submitOrUpdate(exerciseId, { student_id, answer, studentSessionId }, transaction) {
+  static async submitOrUpdate(
+    exerciseId,
+    { student_id, answer, studentSessionId },
+    transaction,
+  ) {
     let existing = await ExerciseResponse.findOne({
       where: { ClassExerciseId: exerciseId, student_id },
       transaction,
@@ -337,7 +248,7 @@ export class ExerciseResponse extends Model {
           answer,
           submitted_ts: Date.now(),
         },
-        { transaction }
+        { transaction },
       );
     }
 
@@ -345,7 +256,7 @@ export class ExerciseResponse extends Model {
     history.push({ timestamp: existing.submitted_ts, answer: existing.answer });
     return existing.update(
       { answer, submitted_ts: Date.now(), history: JSON.stringify(history) },
-      { transaction }
+      { transaction },
     );
   }
 }
@@ -373,48 +284,29 @@ ExerciseResponse.init(
       allowNull: true,
     },
   },
-  { sequelize }
+  { sequelize },
 );
 
 ClassExercise.hasMany(ExerciseResponse, { foreignKey: "ClassExerciseId" });
 ExerciseResponse.belongsTo(ClassExercise);
 
-export class StudentSession extends Model {}
-StudentSession.init(
-  {
-    id: {
-      type: DataTypes.INTEGER,
-      autoIncrement: true,
-      primaryKey: true,
-    },
-    student_id: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    student_identifier: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-  },
-  { sequelize }
-);
-
-LectureSession.hasMany(StudentSession, { foreignKey: "LectureSessionId" });
-StudentSession.belongsTo(LectureSession);
-
-export class StudentAction extends Model {}
-StudentAction.init(
-  {
-    action_ts: DataTypes.INTEGER,
-    code_version: DataTypes.INTEGER,
-    action_type: DataTypes.STRING,
-    details: DataTypes.STRING,
-  },
-  { sequelize }
-);
-
-StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
-StudentAction.belongsTo(StudentSession);
-
 StudentSession.hasMany(ExerciseResponse, { foreignKey: "StudentSessionId" });
 ExerciseResponse.belongsTo(StudentSession);
+
+// MARK: Code Changes
+export class InstructorChange extends Model {}
+InstructorChange.init(CODE_CHANGE_SCHEMA, { sequelize });
+LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionsId" });
+InstructorChange.belongsTo(LectureSession);
+
+// MARK: Action Logging
+export class InstructorAction extends Model {}
+InstructorAction.init(USER_ACTION_SCHEMA, { sequelize });
+LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionsId" });
+InstructorAction.belongsTo(LectureSession);
+
+// TODO: Figure out if this is used, and possibly NIX/edit
+export class StudentAction extends Model {}
+StudentAction.init(USER_ACTION_SCHEMA, { sequelize });
+StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
+StudentAction.belongsTo(StudentSession);

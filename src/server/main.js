@@ -6,7 +6,6 @@ import { Server } from "socket.io";
 import { db } from "./database.js";
 import {
   LectureSession,
-  NotesSession,
   ClassExercise,
   ExerciseResponse,
   StudentSession,
@@ -57,31 +56,7 @@ app.get("/lecture-sessions", async (req, res) => {
 
 // Returns all the student sessions associated w/ a lecture.
 app.get("/session-details", async (req, res) => {
-  const id = req.query.id;
-  try {
-    let response = await db.transaction(async (t) => {
-      const sesh = await LectureSession.findByPk(id, { transaction: t });
-      let notesSessions = await sesh.getNotesSessions({}, { transaction: t });
-
-      notesSessions = notesSessions.map(({ id, email }) => ({
-        email,
-        condition: "notes",
-        studentUrl: `/pages/review-notes.html?id=${id}`,
-        instructorUrl: `/pages/analysis/notes.html?id=${id}`,
-      }));
-
-      return {
-        sessions: notesSessions,
-        lectureId: sesh.id,
-        lectureName: sesh.name,
-        lectureStatus: sesh.isFinished ? "CLOSED" : "OPEN",
-      };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Error:", error);
-    res.json({ error: error.message });
-  }
+  res.json({error: "Not implemented"});
 });
 
 // Get or create a lecture session
@@ -145,25 +120,7 @@ app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
 });
 
 app.get("/notes-session", async (req, res) => {
-  const id = req.query?.id;
-  if (!id) return res.json({ error: "No id provided" });
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let sesh = await NotesSession.findByPk(id, { transaction: t });
-      let notesDocChanges = await sesh.getDeltas(t);
-      return {
-        notesDocChanges,
-        notesSessionId: sesh.id,
-        sessionNumber: sesh.LectureSessionsId, // sad -.- [needs cleanup]
-        email: sesh.email,
-      };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to retrieve notes session", error);
-    return { error: error.message };
-  }
+  return res.json({error: "Notes interface no longer supported"});
 });
 
 // Create a session if it doesn't exist.
@@ -173,48 +130,7 @@ app.get("/notes-session", async (req, res) => {
 //   3) the student's notes (list of changes (Deltas))
 //   4) the session Number
 app.post("/current-session-notes", async (req, res) => {
-  let email = req.body?.email;
-  let sessionName = req.body?.sessionName;
-  if (!email) {
-    res.json({ error: "no email received" });
-    return;
-  }
-
-  await flushInstructorChanges();
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.current(sessionName, t);
-      if (!lecture) return {};
-      let notesSession = await lecture.getNotesSessions(
-        { where: { email } },
-        { transaction: t },
-      );
-      let sesh =
-        notesSession.length > 0
-          ? notesSession[0]
-          : await lecture.createNotesSession({ email }, { transaction: t });
-
-      let notesDocChanges = await sesh.getDeltas(t);
-
-      let { doc, docVersion } = await sesh.currentPlaygroundCode(t);
-
-      let { doc: lectureDoc, docVersion: lectureDocVersion } =
-        await lecture.getDoc(t);
-      return {
-        playgroundCodeInfo: { doc, docVersion },
-        notesDocChanges,
-        sessionNumber: lecture.id,
-        lectureDoc,
-        lectureDocVersion,
-        notesSessionId: sesh.id,
-      };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to get or create the current notes session: ", error);
-    res.json({ error: error.message });
-  }
+  return res.json({ error: "no longer supported" });
 });
 
 // Get or create a StudentSession for student-page.html.
@@ -270,104 +186,15 @@ app.post("/current-session-student", async (req, res) => {
 });
 
 app.post("/record-notes-changes", async (req, res) => {
-  let email = req.body?.email;
-  let sessionNumber = req.body?.sessionNumber;
-  let changes = req.body?.changes;
-  if (!email || !sessionNumber || !changes) {
-    return res.json({ error: "malformed request" });
-  }
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.findByPk(sessionNumber, {
-        transaction: t,
-      });
-      if (!lecture) return { error: `invalid session: ${sessionNumber}` };
-      let sesh = await lecture.getNotesSessions(
-        { where: { email } },
-        { transaction: t },
-      );
-      if (sesh.length === 0) return { error: "notes session not started?" };
-      sesh = sesh[0];
-      let committedVersion = await sesh.addChanges(changes, t);
-      return { committedVersion };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to record notes change: ", error);
-    return { error: error.message };
-  }
+  return res.json({error: "no longer supported"});
 });
 
 app.get("/notes-session-events", async (req, res) => {
-  const id = req.query?.id;
-  if (!id) return res.json({ error: "No id provided..." });
-
-  let sesh = await NotesSession.findByPk(id);
-  if (!sesh) return res.json({ error: "Couldn't find session" });
-
-  let actions = await sesh.getNotesActions({
-    attributes: [
-      "action_ts",
-      "action_type",
-      "details",
-      // "code_version",
-      // "doc_version",
-    ],
-    order: ["action_ts"],
-  });
-
-  let changes = (
-    await sesh.getPlaygroundCodeChanges({
-      attributes: ["change", "change_number", "file_name", "change_ts"],
-      order: ["change_ts"],
-    })
-  ).map((c) => ({
-    change: c.change,
-    change_ts: c.change_ts,
-    change_number: c.change_number,
-    file_name: "playground.py",
-  }));
-
-  let notesChanges = (
-    await sesh.getNotesChanges({
-      attributes: ["change", "change_ts", "change_number"],
-      order: ["change_ts"],
-    })
-  ).map((c) => ({
-    change: c.change, // Why??? shouldn't this be automatic??
-    change_ts: c.change_ts, // Why???
-    change_number: c.change_number,
-    file_name: "notes",
-  }));
-  let lectureId = sesh.LectureSessionsId;
-  let lecture = await LectureSession.findByPk(lectureId);
-
-  let instructorChanges = (
-    await lecture.getInstructorChanges({
-      attributes: ["change", "file_name", "change_ts", "change_number"],
-      order: ["change_ts"],
-    })
-  ).map((c) => ({
-    change: c.change, // Why??? shouldn't this be automatic??
-    change_ts: c.change_ts, // Why???
-    change_number: c.change_number,
-    file_name: "instructor.py",
-  }));
-
-  res.json({
-    email: sesh.email,
-    sessionNumber: sesh.id,
-    sessionName: lecture.name,
-    changes: [...changes, ...instructorChanges, ...notesChanges],
-    instructorChanges,
-    // notesChanges,
-    actions,
-  });
+  return res.json({error: "no longer supported"});
 });
 
 app.post("/record-playground-changes", async (req, res) => {
-  await recordBatchCodeChanges(req, res);
+  return res.json({error: "no longer supported"});
 });
 
 app.post("/record-user-action", async (req, res) => {
@@ -410,11 +237,7 @@ app.post("/record-user-action", async (req, res) => {
         }
         await lecture.createInstructorAction(record, { transaction: t });
       } else if (source === CLIENT_TYPE.NOTES) {
-        let sesh = await lecture.getNotesSessions(
-          { where: { email } },
-          { transaction: t },
-        );
-        await sesh[0].createNotesAction(record, { transaction: t });
+        throw new Error("Notes action types no longer supported");
       } else {
         throw new Error(`User action with unknown source: ${source}`);
       }
@@ -426,44 +249,6 @@ app.post("/record-user-action", async (req, res) => {
     return { error: error.message };
   }
 });
-
-async function recordBatchCodeChanges(req, res) {
-  try {
-    let response = await db.transaction(async (t) => {
-      // code goes here
-      let email = req.body?.email;
-      let sessionNumber = req.body?.sessionNumber;
-      let changes = req.body?.changes;
-      if (!email || !sessionNumber || !changes)
-        throw new Error(`Missing email, session, or changes: ${req}`);
-
-      let lecture = await LectureSession.findByPk(sessionNumber, {
-        transaction: t,
-      });
-      if (!lecture) throw new Error(`Couldn't find session #${sessionNumber}`);
-
-      // TODO: we should just pass the pk, but eh.
-      let sesh = await lecture.getNotesSessions(
-        { where: { email } },
-        { transaction: t },
-      );
-
-      if (sesh.length === 0) {
-        throw new Error(
-          "Can't record changes for session which hasn't started",
-        );
-      }
-      sesh = sesh[0];
-
-      let committedVersion = await sesh.recordCodeChanges(changes, t);
-      return { committedVersion };
-    });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to record batch code changes", error);
-    return { error: error.message };
-  }
-}
 
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
@@ -574,6 +359,7 @@ io.on("connection", async (socket) => {
     io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
   });
 
+  // Exercises
   socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, msg);
   });
