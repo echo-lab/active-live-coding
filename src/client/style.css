@@ -655,6 +655,43 @@ td {
   color: #777;
 }
 
+/* Activity panel header rows (back button + optional timer) */
+#activity-active-header,
+#student-activity-header {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+#student-submit-btn {
+  margin-top: 4px;
+}
+
+/* Back buttons — subtle link style */
+#activities-back,
+#activities-active-back,
+#activities-summary-back,
+#student-activity-back {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #646cff;
+  cursor: pointer;
+  border-radius: 0;
+  font-weight: 400;
+  margin-bottom: 10px;
+  align-self: flex-start;
+}
+
+#activities-back:hover,
+#activities-active-back:hover,
+#activities-summary-back:hover,
+#student-activity-back:hover {
+  color: #4a50cc;
+  text-decoration: underline;
+  border-color: transparent;
+}
+
 /* List headers */
 #activities-list-header,
 #student-activities-list-header {
@@ -689,11 +726,18 @@ td {
 }
 
 /* Active view */
+#activity-active-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
 #activity-timer {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: bold;
   color: #444;
-  margin-bottom: 10px;
 }
 
 #activity-active-instructions,
@@ -701,8 +745,12 @@ td {
 #student-activity-instructions {
   font-size: 14px;
   color: #333;
-  margin-bottom: 12px;
   white-space: pre-wrap;
+  padding: 12px 0;
+  border-top: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8e8e8;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
 #activity-response-count {
