@@ -82,7 +82,7 @@ app.post("/lecture-session", async (req, res) => {
 
       let { doc, docVersion } = await sesh.getDoc(t);
       let exercises = await sesh.getExercisesForInstructor(t);
-      console.log("exercises: ", exercises);
+      // console.log("exercises: ", exercises);
       return {
         doc: doc.toJSON(),
         docVersion,

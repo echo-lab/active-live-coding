@@ -1,9 +1,9 @@
-import { basicSetup, EditorView } from "codemirror";
+import { basicSetup, minimalSetup, EditorView } from "codemirror";
 import { EditorState, StateEffect, StateField, Facet } from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
 
-import { showTooltip, Decoration, WidgetType } from "@codemirror/view";
+import { showTooltip, Decoration, WidgetType, lineNumbers, highlightActiveLine } from "@codemirror/view";
 
 const CONTEXT_LINES = 1; // How many lines above/below the selected code to capture
 const MAX_DOC_LENGTH = 100000;
@@ -239,3 +239,13 @@ export let codeSnapshotFields = (onNewSnapshot) => [
 export const capLength = [
   EditorState.changeFilter.of((tr) => tr.newDoc.length < MAX_DOC_LENGTH),
 ];
+
+export function reviewEditorExtensions({ isEditable = false, showLineNumbers = false }) {
+  return [
+    minimalSetup,
+    python(),
+    indentUnit.of("    "),
+    ...(showLineNumbers ? [lineNumbers()] : []),
+    ...(isEditable ? [highlightActiveLine()] : []),
+  ];
+}

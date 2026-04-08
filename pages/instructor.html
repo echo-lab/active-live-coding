@@ -50,7 +50,11 @@
           </div>
           <div id="activities-create" hidden>
             <button id="activities-back">← Back to list</button>
-            <h3>New Poll</h3>
+            <div id="activity-type-toggle">
+              <button class="type-btn active" data-type="POLL">Text</button>
+              <button class="type-btn" data-type="CODE">Code</button>
+              <button class="type-btn" data-type="CODE_FORK" disabled>Fork</button>
+            </div>
             <textarea id="activity-instructions" placeholder="Describe the activity..."></textarea>
             <button id="activity-submit-create">Start Activity</button>
           </div>

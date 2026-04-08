@@ -5,6 +5,7 @@ import {
   capLength,
   codeSnapshotFields,
   followInstructorExtensions,
+  reviewEditorExtensions,
   setInstructorSelection,
 } from "./cm-extensions.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
@@ -351,11 +352,12 @@ export class InstructorCodeEditor {
 }
 
 export class ReviewCodeEditor {
-  constructor({ node, doc, isEditable = false }) {
+  constructor({ node, doc, isEditable = false, showLineNumbers = false }) {
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
-        ...basicExtensions,
+        ...reviewEditorExtensions({ isEditable, showLineNumbers }),
+        ...(isEditable ? [keymap.of([indentWithTab])] : []),
         EditorView.editable.of(isEditable),
         capLength,
       ],

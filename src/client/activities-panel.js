@@ -1,5 +1,6 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST } from "./utils.js";
+import { ReviewCodeEditor } from "./code-editors.js";
 
 export class StudentActivitiesPanel {
   constructor({
@@ -31,8 +32,11 @@ export class StudentActivitiesPanel {
       "#student-activity-instructions",
     );
     this.answerDisplayEl = document.querySelector("#student-answer-display");
+    this.codeSubmittedEl = document.querySelector("#student-code-submitted");
     this.answerInputEl = document.querySelector("#student-answer-input");
+    this.codeEditorEl = document.querySelector("#student-code-editor");
     this.submitBtn = document.querySelector("#student-submit-btn");
+    this._codeEditors = {}; // keyed by exerciseId, preserves in-progress code
 
     document
       .querySelector("#student-activity-back")
@@ -52,9 +56,8 @@ export class StudentActivitiesPanel {
       if (msg.sessionNumber !== sessionNumber) return;
       let ex = this.exercises.find((e) => e.id === msg.exerciseId);
       if (ex) ex.end_ts = Date.now();
-      if (this.currentExerciseId === msg.exerciseId) {
-        this.submitBtn.hidden = true;
-        this.answerInputEl.hidden = true;
+      if (this.currentExerciseId === msg.exerciseId && ex) {
+        this._showExercise(ex);
       }
       this._renderList();
     });
@@ -106,36 +109,113 @@ export class StudentActivitiesPanel {
       (r) => r.student_id === this.student_id,
     );
     let isActive = ex.end_ts == null;
+    let isCode = ex.type === "CODE";
 
     this.instructionsEl.textContent = ex.instructions ?? "";
 
-    if (myResponse) {
-      this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
-      this.answerDisplayEl.classList.remove("no-answer");
-      this.answerDisplayEl.hidden = false;
-      this.answerInputEl.value = myResponse.answer;
-    } else if (!isActive) {
-      this.answerDisplayEl.textContent = "You didn't submit an answer.";
-      this.answerDisplayEl.classList.add("no-answer");
-      this.answerDisplayEl.hidden = false;
-      this.answerInputEl.value = "";
-    } else {
+    if (isCode) {
+      this.answerInputEl.hidden = true;
       this.answerDisplayEl.hidden = true;
-      this.answerInputEl.value = "";
-    }
+      this.codeSubmittedEl.hidden = true;
 
-    this.answerInputEl.hidden = !isActive;
-    this.submitBtn.hidden = !isActive;
-    this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
+      if (!isActive) {
+        // Exercise finished — show read-only CodeMirror or "no answer" message
+        if (myResponse) {
+          this.codeEditorEl.innerHTML = "";
+          this.codeEditorEl.hidden = false;
+          new ReviewCodeEditor({
+            node: this.codeEditorEl,
+            doc: myResponse.answer.split("\n"),
+            isEditable: false,
+          });
+        } else {
+          this.codeEditorEl.hidden = true;
+          this.answerDisplayEl.textContent = "You didn't submit an answer.";
+          this.answerDisplayEl.classList.add("no-answer");
+          this.answerDisplayEl.hidden = false;
+        }
+        this.submitBtn.hidden = true;
+      } else {
+        // Exercise active — show editable CodeMirror, persisting in-progress code
+        if (!this._codeEditors[ex.id]) {
+          let container = document.createElement("div");
+          this._codeEditors[ex.id] = {
+            editor: new ReviewCodeEditor({
+              node: container,
+              doc: myResponse ? myResponse.answer.split("\n") : [""],
+              isEditable: true,
+              showLineNumbers: true,
+            }),
+            container,
+          };
+        }
+        this.codeEditorEl.innerHTML = "";
+        this.codeEditorEl.appendChild(this._codeEditors[ex.id].container);
+        this.codeEditorEl.hidden = false;
+
+        // If already submitted, show read-only snapshot of what was sent
+        if (myResponse) {
+          this._showCodeSubmitted(myResponse.answer);
+        }
+
+        this.submitBtn.hidden = false;
+        this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
+      }
+    } else {
+      // POLL — existing text behaviour
+      this.codeEditorEl.hidden = true;
+      this.codeSubmittedEl.hidden = true;
+
+      if (myResponse) {
+        this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
+        this.answerDisplayEl.classList.remove("no-answer");
+        this.answerDisplayEl.hidden = false;
+        this.answerInputEl.value = myResponse.answer;
+      } else if (!isActive) {
+        this.answerDisplayEl.textContent = "You didn't submit an answer.";
+        this.answerDisplayEl.classList.add("no-answer");
+        this.answerDisplayEl.hidden = false;
+        this.answerInputEl.value = "";
+      } else {
+        this.answerDisplayEl.hidden = true;
+        this.answerInputEl.value = "";
+      }
+
+      this.answerInputEl.hidden = !isActive;
+      this.submitBtn.hidden = !isActive;
+      this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
+    }
 
     this.listEl.hidden = true;
     this.exerciseEl.hidden = false;
   }
 
+  _showCodeSubmitted(code) {
+    this.codeSubmittedEl.innerHTML = "";
+    let label = document.createElement("span");
+    label.className = "code-submitted-label";
+    label.textContent = "Your submission:";
+    this.codeSubmittedEl.appendChild(label);
+    let editorContainer = document.createElement("div");
+    this.codeSubmittedEl.appendChild(editorContainer);
+    new ReviewCodeEditor({
+      node: editorContainer,
+      doc: code.split("\n"),
+      isEditable: false,
+    });
+    this.codeSubmittedEl.hidden = false;
+  }
+
   async _submitAnswer() {
-    let answer = this.answerInputEl.value.trim();
-    if (!answer) return;
     let exerciseId = this.currentExerciseId;
+    let ex = this.exercises.find((e) => e.id === exerciseId);
+    let answer;
+    if (ex?.type === "CODE") {
+      answer = this._codeEditors[exerciseId]?.editor.currentCode() ?? "";
+    } else {
+      answer = this.answerInputEl.value.trim();
+    }
+    if (!answer) return;
     let res = await fetch("/exercise/response", {
       body: JSON.stringify({ exerciseId, student_id: this.student_id, answer }),
       ...POST_JSON_REQUEST,
@@ -145,7 +225,6 @@ export class StudentActivitiesPanel {
       return;
     }
 
-    let ex = this.exercises.find((e) => e.id === exerciseId);
     if (ex) {
       let idx = ex.ExerciseResponses.findIndex(
         (r) => r.student_id === this.student_id,
@@ -157,8 +236,12 @@ export class StudentActivitiesPanel {
       }
     }
 
-    this.answerDisplayEl.textContent = `Your answer: ${answer}`;
-    this.answerDisplayEl.hidden = false;
+    if (ex?.type === "CODE") {
+      this._showCodeSubmitted(answer);
+    } else {
+      this.answerDisplayEl.textContent = `Your answer: ${answer}`;
+      this.answerDisplayEl.hidden = false;
+    }
     this.submitBtn.textContent = "Resubmit";
     this._renderList();
 
@@ -215,10 +298,24 @@ export class InstructorActivitiesPanel {
     document
       .querySelector("#activity-finish")
       .addEventListener("click", () => this._finishExercise());
+    this._selectedType = "POLL";
+    document.querySelectorAll(".type-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        this._selectedType = btn.dataset.type;
+      });
+    });
+
     this.pollButton.addEventListener("click", () => {
       this.openPanel();
       this._showView("create");
       document.querySelector("#activity-instructions").value = "";
+      // Reset type toggle to Text/POLL
+      document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelector('.type-btn[data-type="POLL"]').classList.add("active");
+      this._selectedType = "POLL";
     });
 
     socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
@@ -314,7 +411,25 @@ export class InstructorActivitiesPanel {
             student_id;
           let div = document.createElement("div");
           div.className = "summary-response";
-          div.innerHTML = `<span class="summary-student">${displayName}</span><pre class="summary-answer">${answer}</pre>`;
+          let nameSpan = document.createElement("span");
+          nameSpan.className = "summary-student";
+          nameSpan.textContent = displayName;
+          div.appendChild(nameSpan);
+          if (ex.type === "CODE") {
+            let codeContainer = document.createElement("div");
+            codeContainer.className = "summary-code-answer";
+            div.appendChild(codeContainer);
+            new ReviewCodeEditor({
+              node: codeContainer,
+              doc: answer.split("\n"),
+              isEditable: false,
+            });
+          } else {
+            let pre = document.createElement("pre");
+            pre.className = "summary-answer";
+            pre.textContent = answer;
+            div.appendChild(pre);
+          }
           responsesEl.appendChild(div);
         },
       );
@@ -342,7 +457,7 @@ export class InstructorActivitiesPanel {
     let res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
-        type: "POLL",
+        type: this._selectedType,
         instructions,
       }),
       ...POST_JSON_REQUEST,
@@ -354,7 +469,7 @@ export class InstructorActivitiesPanel {
 
     let newEx = {
       id: res.exerciseId,
-      type: "POLL",
+      type: this._selectedType,
       instructions,
       start_ts: Date.now(),
       end_ts: null,

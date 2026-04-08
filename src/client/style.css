@@ -711,6 +711,89 @@ td {
   align-self: center;
 }
 
+/* Activity type toggle (Text / Code / Fork) */
+#activity-type-toggle {
+  display: flex;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+#activity-type-toggle .type-btn {
+  padding: 5px 14px;
+  background: white;
+  border: none;
+  border-right: 1px solid #ccc;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 0;
+  color: #555;
+}
+
+#activity-type-toggle .type-btn:last-child {
+  border-right: none;
+}
+
+#activity-type-toggle .type-btn.active {
+  background: #646cff;
+  color: white;
+}
+
+#activity-type-toggle .type-btn:disabled {
+  color: #bbb;
+  cursor: not-allowed;
+  background: #f8f8f8;
+}
+
+/* Submitted code snapshot (shown above editable editor during active exercise) */
+#student-code-submitted {
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  background: #f0f4ff;
+  border-left: 3px solid #646cff;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.code-submitted-label {
+  font-size: 11px;
+  color: #646cff;
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+#student-code-submitted .cm-editor {
+  background: transparent;
+  font-size: 12px;
+}
+
+/* Code editor in student activity */
+#student-code-editor {
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 80px;
+}
+
+#student-code-editor .cm-editor {
+  min-height: 80px;
+}
+
+/* Summary code answer */
+.summary-code-answer {
+  margin-top: 4px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* Create view */
 #activity-instructions,
 #student-answer-input {
