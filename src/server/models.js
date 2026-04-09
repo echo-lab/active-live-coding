@@ -179,11 +179,11 @@ export const EXERCISE_TYPE = Object.freeze({
 export class ClassExercise extends Model {
   static async createForLecture(
     lectureId,
-    { type, instructions } = {},
+    { type, instructions, instructor_code } = {},
     transaction,
   ) {
     return ClassExercise.create(
-      { LectureSessionId: lectureId, type, instructions, start_ts: Date.now() },
+      { LectureSessionId: lectureId, type, instructions, instructor_code, start_ts: Date.now() },
       { transaction },
     );
   }
@@ -216,6 +216,10 @@ ClassExercise.init(
       allowNull: true,
     },
     summary: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    instructor_code: {
       type: DataTypes.TEXT,
       allowNull: true,
     },

@@ -126,6 +126,27 @@
   opacity: 95%;
 }
 
+#exercise-submit-btn {
+  right: 25px;
+  top: 45px;
+  width: 90px;
+  padding: 6px 12px;
+  background-color: #a8c8f8;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  color: #00245a;
+}
+
+#exercise-submit-btn:hover {
+  background-color: #7aaef5;
+  border: 1px solid #4a90e2;
+}
+
+#playground-code-container.exercise-active #run-button {
+  right: 25px;
+  width: 90px;
+}
+
 @keyframes flash-tab-change {
   from {
     background-color: #d3d3ff;

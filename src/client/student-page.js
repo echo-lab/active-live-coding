@@ -30,6 +30,7 @@ const playgroundCodeContainer = document.querySelector(
 const instructorCodeTab = document.querySelector("#instructor-code-tab");
 const playgroundCodeTab = document.querySelector("#playground-code-tab");
 const runButtonEl = document.querySelector("#run-button");
+const exerciseSubmitBtnEl = document.querySelector("#exercise-submit-btn");
 const codeOutputsEl = document.querySelector("#all-code-outputs");
 const codeOutputsContainer = document.querySelector("#output-container");
 const consoleResizer = document.querySelector("#resize-console");
@@ -75,7 +76,7 @@ async function initialize({
   exercises = [],
   studentSessionId,
 }) {
-  playgroundCodeInfo = {doc: [''], docVersion: 0}; // Clobber for now!
+  playgroundCodeInfo = { doc: [''], docVersion: 0 }; // Clobber for now!
 
   let playgroundDoc = playgroundCodeInfo?.doc ?? null;
   let playgroundDocVersion = playgroundCodeInfo?.docVersion ?? 0;
@@ -179,13 +180,60 @@ async function initialize({
     playgroundEditor.flushChanges();
   });
 
-  new StudentActivitiesPanel({
+  let currentForkExerciseId = null;
+
+  function setupExerciseTab(instructorCode, exerciseId, existingCode) {
+    currentForkExerciseId = exerciseId;
+    playgroundCodeTab.style.display = "";
+    playgroundCodeTab.querySelector(".code-tab-text").textContent = "exercise.py";
+    playgroundEditor.replaceContents(existingCode ?? instructorCode ?? "");
+    exerciseSubmitBtnEl.style.display = "";
+    exerciseSubmitBtnEl.textContent = existingCode ? "Resubmit" : "Submit";
+    playgroundCodeContainer.classList.add("exercise-active");
+    selectTab(PLAYGROUND_TAB);
+  }
+
+  async function handleForkSubmit() {
+    if (!currentForkExerciseId) return;
+    let code = playgroundEditor.currentCode();
+    let res = await fetch("/exercise/response", {
+      body: JSON.stringify({ exerciseId: currentForkExerciseId, student_id: userId, answer: code }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) {
+      alert(res.error);
+      return;
+    }
+    exerciseSubmitBtnEl.textContent = "Resubmit";
+    activitiesPanel.onForkSubmitted(currentForkExerciseId, code);
+    socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
+      sessionNumber,
+      exerciseId: currentForkExerciseId,
+      student_id: userId,
+      student_identifier: email,
+      answer: code,
+    });
+  }
+
+  exerciseSubmitBtnEl.addEventListener("click", handleForkSubmit);
+
+  function closeExerciseTab() {
+    playgroundCodeTab.style.display = "none";
+    exerciseSubmitBtnEl.style.display = "none";
+    playgroundCodeContainer.classList.remove("exercise-active");
+    currentForkExerciseId = null;
+    selectTab(INSTRUCTOR_TAB);
+  }
+
+  let activitiesPanel = new StudentActivitiesPanel({
     sessionNumber,
     exercises,
     student_id: userId,
     socket,
     openActivitiesPanel,
     studentIdentifier: email,
+    showExerciseTab: setupExerciseTab,
+    closeExerciseTab,
   });
 }
 

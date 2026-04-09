@@ -666,6 +666,39 @@ td {
   margin-top: 4px;
 }
 
+
+.collapsible-code {
+  max-height: 120px;
+  overflow: auto;
+  position: relative;
+}
+
+.collapsible-code.expanded {
+  max-height: 300px;
+}
+
+.collapsible-code .cm-editor {
+  background: white;
+}
+
+.collapsible-code .cm-scroller {
+  background: white;
+}
+
+.collapsible-code-toggle {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid #ddd;
+  color: #646cff;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 3px 0;
+  text-align: center;
+  margin-top: 2px;
+}
+
 /* Back buttons — subtle link style */
 #activities-back,
 #activities-active-back,

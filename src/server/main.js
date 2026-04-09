@@ -229,7 +229,7 @@ app.post("/record-user-action", async (req, res) => {
 
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions } = req.body;
+  const { lectureId, type, instructions, instructor_code } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -241,7 +241,7 @@ app.post("/exercise", async (req, res) => {
       if (!lecture) return { error: `Session #${lectureId} not found` };
       let exercise = await ClassExercise.createForLecture(
         lectureId,
-        { type, instructions },
+        { type, instructions, instructor_code },
         t,
       );
       return { exerciseId: exercise.id };

@@ -131,5 +131,6 @@ function initialize({
     socket,
     activitiesPanel: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
+    getInstructorCode: () => codeEditor.currentCode(),
   });
 }
