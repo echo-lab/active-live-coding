@@ -2,6 +2,142 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 
+function stripTrailingWhitespace(code) {
+  return code.split("\n").map((l) => l.replace(/\s+$/, "")).join("\n");
+}
+
+// TODO: Can this be merged w/ the other diff function?
+// TODO: If we have additional new lines, sometimes it doesn't group correctly. 
+// (specifically: it'll be "add add same add" when the last two are new lines, instead of "add add add same")
+function computeLineDiff(origLines, newLines) {
+  const m = origLines.length, n = newLines.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      if (origLines[i] === newLines[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+  const result = [];
+  let i = 0, j = 0;
+  while (i < m || j < n) {
+    if (i < m && j < n && origLines[i] === newLines[j]) {
+      result.push({ type: "unchanged", line: newLines[j] });
+      i++; j++;
+    } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
+      result.push({ type: "added", line: newLines[j] });
+      j++;
+    } else {
+      result.push({ type: "removed", line: origLines[i] });
+      i++;
+    }
+  }
+  return result;
+}
+
+function buildDiffElement(diffLines, contextLines = 2) {
+  const changed = new Set();
+  diffLines.forEach((d, idx) => { if (d.type !== "unchanged") changed.add(idx); });
+
+  const visible = new Set();
+  for (const idx of changed) {
+    for (let c = Math.max(0, idx - contextLines); c <= Math.min(diffLines.length - 1, idx + contextLines); c++) {
+      visible.add(c);
+    }
+  }
+
+  const pre = document.createElement("pre");
+  pre.className = "diff-view";
+
+  if (changed.size === 0) {
+    const el = document.createElement("span");
+    el.className = "diff-line diff-no-changes";
+    el.textContent = "(no changes from original)";
+    pre.appendChild(el);
+    return pre;
+  }
+
+  let lastVisible = -1;
+  for (let idx = 0; idx < diffLines.length; idx++) {
+    if (!visible.has(idx)) continue;
+    if (lastVisible !== -1 && idx > lastVisible + 1) {
+      const sep = document.createElement("span");
+      sep.className = "diff-line diff-separator";
+      sep.textContent = "  ···\n";
+      pre.appendChild(sep);
+    }
+    const { type, line } = diffLines[idx];
+    const el = document.createElement("span");
+    el.className = `diff-line diff-line-${type}`;
+    const prefix = type === "added" ? "+" : type === "removed" ? "-" : " ";
+    el.textContent = `${prefix} ${line}\n`;
+    pre.appendChild(el);
+    lastVisible = idx;
+  }
+  return pre;
+}
+
+// TODO:
+// - If the diff includes multiple lines of whitespace together, we only want 1 line max.
+// - If the diff has an added line that is just whitespace, we don't want to display it
+// - MAAAYBE: pull this out to a "diffs" file or something like that...
+function createForkDisplay(code, originalCode) {
+  const cleanCode = stripTrailingWhitespace(code);
+  const cleanOrig = stripTrailingWhitespace(originalCode);
+  const origLines = cleanOrig.split("\n");
+  const newLines = cleanCode.split("\n");
+  const diff = computeLineDiff(origLines, newLines);
+
+  // Find the 1-indexed line number of the first change in the student's code
+  let firstChangedLine = -1;
+  let newLineIdx = 0;
+  for (const entry of diff) {
+    if (entry.type === "removed") continue;
+    if (entry.type === "added") { firstChangedLine = newLineIdx + 1; break; }
+    newLineIdx++;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "fork-display";
+
+  const diffView = document.createElement("div");
+  diffView.className = "fork-diff-view";
+  diffView.appendChild(buildDiffElement(diff));
+  wrapper.appendChild(diffView);
+
+  const fullView = document.createElement("div");
+  fullView.className = "fork-full-view";
+  fullView.hidden = true;
+  const editorContainer = document.createElement("div");
+  const editor = new ReviewCodeEditor({
+    node: editorContainer,
+    doc: newLines,
+    isEditable: false,
+    baseDoc: origLines,
+  });
+  fullView.appendChild(editorContainer);
+  wrapper.appendChild(fullView);
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "collapsible-code-toggle";
+  toggleBtn.textContent = "Show full code";
+  toggleBtn.addEventListener("click", () => {
+    const showingFull = !fullView.hidden;
+    fullView.hidden = showingFull;
+    diffView.hidden = !showingFull;
+    toggleBtn.textContent = showingFull ? "Show full code" : "Collapse to diff";
+    if (!showingFull && firstChangedLine > 0) {
+      requestAnimationFrame(() => editor.scrollToLine(firstChangedLine));
+    }
+  });
+  wrapper.appendChild(toggleBtn);
+
+  return wrapper;
+}
+
 export class StudentActivitiesPanel {
   constructor({
     sessionNumber,
@@ -152,7 +288,7 @@ export class StudentActivitiesPanel {
       }
 
       if (myResponse) {
-        this._showCollapsibleCode(myResponse.answer);
+        this._showCollapsibleCode(myResponse.answer, ex.instructor_code ?? null);
       } else if (!isActive) {
         this.answerDisplayEl.textContent = "You didn't submit an answer.";
         this.answerDisplayEl.classList.add("no-answer");
@@ -235,30 +371,35 @@ export class StudentActivitiesPanel {
     this.exerciseEl.hidden = false;
   }
 
-  _showCollapsibleCode(code) {
+  _showCollapsibleCode(code, originalCode) {
     this.codeSubmittedEl.innerHTML = "";
     let label = document.createElement("span");
     label.className = "code-submitted-label";
     label.textContent = "Your submission:";
     this.codeSubmittedEl.appendChild(label);
-    let wrapper = document.createElement("div");
-    wrapper.className = "collapsible-code";
-    let editorContainer = document.createElement("div");
-    wrapper.appendChild(editorContainer);
-    new ReviewCodeEditor({
-      node: editorContainer,
-      doc: code.split("\n"),
-      isEditable: false,
-    });
-    let toggleBtn = document.createElement("button");
-    toggleBtn.className = "collapsible-code-toggle";
-    toggleBtn.textContent = "Show more";
-    toggleBtn.addEventListener("click", () => {
-      let expanded = wrapper.classList.toggle("expanded");
-      toggleBtn.textContent = expanded ? "Collapse" : "Show more";
-    });
-    wrapper.appendChild(toggleBtn);
-    this.codeSubmittedEl.appendChild(wrapper);
+
+    if (originalCode != null) {
+      // We're in a "FORK" exercise, so we create the Fork Display.
+      this.codeSubmittedEl.appendChild(createForkDisplay(code, originalCode));
+    } else {
+      // TODO: let's refactor this and create a method, just like createForkDisplay above.
+      // TODO: BUT ALSO: make sure this actually looks like what we want... I think it's kinda bad as is.
+      const cleanCode = stripTrailingWhitespace(code);
+      let wrapper = document.createElement("div");
+      wrapper.className = "collapsible-code";
+      let editorContainer = document.createElement("div");
+      wrapper.appendChild(editorContainer);
+      new ReviewCodeEditor({ node: editorContainer, doc: cleanCode.split("\n"), isEditable: false });
+      let toggleBtn = document.createElement("button");
+      toggleBtn.className = "collapsible-code-toggle";
+      toggleBtn.textContent = "Show more";
+      toggleBtn.addEventListener("click", () => {
+        let expanded = wrapper.classList.toggle("expanded");
+        toggleBtn.textContent = expanded ? "Collapse" : "Show more";
+      });
+      wrapper.appendChild(toggleBtn);
+      this.codeSubmittedEl.appendChild(wrapper);
+    }
     this.codeSubmittedEl.hidden = false;
   }
 
@@ -468,16 +609,19 @@ export class InstructorActivitiesPanel {
           nameSpan.className = "summary-student";
           nameSpan.textContent = displayName;
           div.appendChild(nameSpan);
-          if (ex.type === "CODE" || ex.type === "CODE_FORK") {
+          if (ex.type === "CODE_FORK") {
+            div.appendChild(createForkDisplay(answer, ex.instructor_code ?? ""));
+          } else if (ex.type === "CODE") {
             let codeContainer = document.createElement("div");
             codeContainer.className = "summary-code-answer";
             div.appendChild(codeContainer);
             new ReviewCodeEditor({
               node: codeContainer,
-              doc: answer.split("\n"),
+              doc: stripTrailingWhitespace(answer).split("\n"),
               isEditable: false,
             });
           } else {
+            // ex.type === "TEXT" (text?)
             let pre = document.createElement("pre");
             pre.className = "summary-answer";
             pre.textContent = answer;

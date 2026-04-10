@@ -827,6 +827,68 @@ td {
   overflow-y: auto;
 }
 
+/* CODE_FORK diff display */
+.fork-display {
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fork-diff-view,
+.fork-full-view {
+  width: 100%;
+}
+
+.fork-full-view {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.diff-view {
+  /* font-family: "Courier New", monospace; */
+  font-family: monospace;
+  font-size: 12px;
+  margin: 0;
+  padding: 6px 0;
+  background: #fafafa;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.diff-line {
+  display: block;
+  line-height: 1.5;
+  padding: 0 8px;
+  white-space: pre;
+}
+
+.diff-line-added {
+  background: #e6ffed;
+  color: #22863a;
+}
+
+.diff-line-removed {
+  background: #ffeef0;
+  color: #b31d28;
+}
+
+.diff-line-unchanged {
+  color: #444;
+}
+
+.diff-separator {
+  color: #999;
+}
+
+.diff-no-changes {
+  color: #999;
+  font-style: italic;
+  padding: 4px 8px;
+  display: block;
+}
+
 /* Create view */
 #activity-instructions,
 #student-answer-input {

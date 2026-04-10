@@ -359,7 +359,7 @@ export class InstructorCodeEditor {
 }
 
 export class ReviewCodeEditor {
-  constructor({ node, doc, isEditable = false, showLineNumbers = false }) {
+  constructor({ node, doc, isEditable = false, showLineNumbers = false, baseDoc = null }) {
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
@@ -367,10 +367,23 @@ export class ReviewCodeEditor {
         ...(isEditable ? [keymap.of([indentWithTab])] : []),
         EditorView.editable.of(isEditable),
         capLength,
+        ...(baseDoc !== null ? exerciseDiffGutter : []),
       ],
     });
 
     this.view = new EditorView({ state, parent: node });
+
+    if (baseDoc !== null) {
+      this.view.dispatch({ effects: setExerciseBaseCode.of(baseDoc.join("\n")) });
+    }
+  }
+
+  scrollToLine(lineNum) {
+    if (lineNum < 1 || lineNum > this.view.state.doc.lines) return;
+    const line = this.view.state.doc.line(lineNum);
+    this.view.dispatch({
+      effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 20 }),
+    });
   }
 
   applyChanges(changes) {
