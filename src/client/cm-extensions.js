@@ -4,6 +4,7 @@ import { indentUnit } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
 
 import { showTooltip, Decoration, WidgetType, lineNumbers, highlightActiveLine, gutter, GutterMarker } from "@codemirror/view";
+import { computeLineDiff, toGutterState } from "./diff-utils.js";
 
 const CONTEXT_LINES = 1; // How many lines above/below the selected code to capture
 const MAX_DOC_LENGTH = 100000;
@@ -222,53 +223,6 @@ const instructorCursorWidget = Decoration.widget({
 
 export const setExerciseBaseCode = StateEffect.define();
 
-// LCS-based line diff. Returns status per current line + deletion points.
-function lineDiff(baseLines, currentLines) {
-  const n = baseLines.length;
-  const m = currentLines.length;
-
-  // Build LCS DP table
-  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      if (baseLines[i] === currentLines[j]) {
-        dp[i][j] = dp[i + 1][j + 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-  }
-
-  // Backtrack to classify each current line
-  const status = new Array(m).fill("same");
-  const deletionsBefore = new Set();
-  let i = 0, j = 0;
-
-  while (i < n && j < m) {
-    if (baseLines[i] === currentLines[j]) {
-      i++; j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      deletionsBefore.add(j); // base line deleted before current line j
-      i++;
-    } else {
-      status[j] = "added";
-      j++;
-    }
-  }
-  while (i < n) { deletionsBefore.add(j); i++; } // trailing deletions at end
-  while (j < m) { status[j] = "added"; j++; }   // trailing additions
-
-  // Reclassify "added" lines that immediately follow a deletion as "modified"
-  for (let k = 0; k < m; k++) {
-    if (status[k] === "added" && deletionsBefore.has(k)) {
-      status[k] = "modified";
-      deletionsBefore.delete(k);
-    }
-  }
-
-  console.log("Ran a diff!");
-  return { status, deletionsBefore };
-}
 
 const diffStateField = StateField.define({
   create() {
@@ -283,7 +237,7 @@ const diffStateField = StateField.define({
     if (baseCode === null) return { baseCode: null, status: [], deletionsBefore: new Set() };
     const baseLines = baseCode.split("\n");
     const currentLines = tr.newDoc.toString().split("\n");
-    const { status, deletionsBefore } = lineDiff(baseLines, currentLines);
+    const { status, deletionsBefore } = toGutterState(computeLineDiff(baseLines, currentLines));
     return { baseCode, status, deletionsBefore };
   },
 });

@@ -1,42 +1,7 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
-
-function stripTrailingWhitespace(code) {
-  return code.split("\n").map((l) => l.replace(/\s+$/, "")).join("\n");
-}
-
-// TODO: Can this be merged w/ the other diff function?
-// TODO: If we have additional new lines, sometimes it doesn't group correctly. 
-// (specifically: it'll be "add add same add" when the last two are new lines, instead of "add add add same")
-function computeLineDiff(origLines, newLines) {
-  const m = origLines.length, n = newLines.length;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      if (origLines[i] === newLines[j]) {
-        dp[i][j] = dp[i + 1][j + 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-  }
-  const result = [];
-  let i = 0, j = 0;
-  while (i < m || j < n) {
-    if (i < m && j < n && origLines[i] === newLines[j]) {
-      result.push({ type: "unchanged", line: newLines[j] });
-      i++; j++;
-    } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
-      result.push({ type: "added", line: newLines[j] });
-      j++;
-    } else {
-      result.push({ type: "removed", line: origLines[i] });
-      i++;
-    }
-  }
-  return result;
-}
+import { stripTrailingWhitespace, computeLineDiff } from "./diff-utils.js";
 
 function buildDiffElement(diffLines, contextLines = 2) {
   const changed = new Set();
