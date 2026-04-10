@@ -191,6 +191,7 @@ async function initialize({
     exerciseSubmitBtnEl.style.display = "";
     exerciseSubmitBtnEl.textContent = existingCode ? "Resubmit" : "Submit";
     playgroundCodeContainer.classList.add("exercise-active");
+    playgroundCodeTab.classList.add("exercise-tab-blink");
     selectTab(PLAYGROUND_TAB);
   }
 
@@ -222,6 +223,7 @@ async function initialize({
     playgroundCodeTab.style.display = "none";
     exerciseSubmitBtnEl.style.display = "none";
     playgroundCodeContainer.classList.remove("exercise-active");
+    playgroundCodeTab.classList.remove("exercise-tab-blink");
     currentForkExerciseId = null;
     playgroundEditor.setBaseCode(null);
     selectTab(INSTRUCTOR_TAB);
