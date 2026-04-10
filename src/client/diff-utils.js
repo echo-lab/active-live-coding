@@ -30,6 +30,28 @@ export function computeLineDiff(origLines, newLines) {
       i++;
     }
   }
+
+  // Post-process: reduce change-block fragmentation by shifting "unchanged"
+  // entries past adjacent equal-content "added"/"removed" entries when the
+  // preceding entry is already a change (i.e. the swap extends an existing
+  // block rather than creating a new one). Repeated until stable.
+  // Example: [added, unchanged(""), added("")] → [added, added(""), unchanged("")]
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let k = 1; k < result.length - 1; k++) {
+      if (
+        result[k].type === "unchanged" &&
+        result[k - 1].type !== "unchanged" &&
+        (result[k + 1].type === "added" || result[k + 1].type === "removed") &&
+        result[k].line === result[k + 1].line
+      ) {
+        [result[k], result[k + 1]] = [result[k + 1], result[k]];
+        changed = true;
+      }
+    }
+  }
+
   return result;
 }
 
