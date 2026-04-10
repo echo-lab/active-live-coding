@@ -187,6 +187,7 @@ async function initialize({
     playgroundCodeTab.style.display = "";
     playgroundCodeTab.querySelector(".code-tab-text").textContent = "exercise.py";
     playgroundEditor.replaceContents(existingCode ?? instructorCode ?? "");
+    playgroundEditor.setBaseCode(instructorCode ?? "");
     exerciseSubmitBtnEl.style.display = "";
     exerciseSubmitBtnEl.textContent = existingCode ? "Resubmit" : "Submit";
     playgroundCodeContainer.classList.add("exercise-active");
@@ -222,6 +223,7 @@ async function initialize({
     exerciseSubmitBtnEl.style.display = "none";
     playgroundCodeContainer.classList.remove("exercise-active");
     currentForkExerciseId = null;
+    playgroundEditor.setBaseCode(null);
     selectTab(INSTRUCTOR_TAB);
   }
 

@@ -1,9 +1,9 @@
 import { basicSetup, minimalSetup, EditorView } from "codemirror";
-import { EditorState, StateEffect, StateField, Facet } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, Facet, RangeSetBuilder } from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
 
-import { showTooltip, Decoration, WidgetType, lineNumbers, highlightActiveLine } from "@codemirror/view";
+import { showTooltip, Decoration, WidgetType, lineNumbers, highlightActiveLine, gutter, GutterMarker } from "@codemirror/view";
 
 const CONTEXT_LINES = 1; // How many lines above/below the selected code to capture
 const MAX_DOC_LENGTH = 100000;
@@ -215,6 +215,144 @@ class CursorWidget extends WidgetType {
 const instructorCursorWidget = Decoration.widget({
   widget: new CursorWidget(),
 });
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Exercise diff gutter (VS Code-style added/modified/deleted indicators)
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const setExerciseBaseCode = StateEffect.define();
+
+// LCS-based line diff. Returns status per current line + deletion points.
+function lineDiff(baseLines, currentLines) {
+  const n = baseLines.length;
+  const m = currentLines.length;
+
+  // Build LCS DP table
+  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      if (baseLines[i] === currentLines[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  // Backtrack to classify each current line
+  const status = new Array(m).fill("same");
+  const deletionsBefore = new Set();
+  let i = 0, j = 0;
+
+  while (i < n && j < m) {
+    if (baseLines[i] === currentLines[j]) {
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      deletionsBefore.add(j); // base line deleted before current line j
+      i++;
+    } else {
+      status[j] = "added";
+      j++;
+    }
+  }
+  while (i < n) { deletionsBefore.add(j); i++; } // trailing deletions at end
+  while (j < m) { status[j] = "added"; j++; }   // trailing additions
+
+  // Reclassify "added" lines that immediately follow a deletion as "modified"
+  for (let k = 0; k < m; k++) {
+    if (status[k] === "added" && deletionsBefore.has(k)) {
+      status[k] = "modified";
+      deletionsBefore.delete(k);
+    }
+  }
+
+  console.log("Ran a diff!");
+  return { status, deletionsBefore };
+}
+
+const diffStateField = StateField.define({
+  create() {
+    return { baseCode: null, status: [], deletionsBefore: new Set() };
+  },
+  update(state, tr) {
+    let baseCode = state.baseCode;
+    for (let e of tr.effects) {
+      if (e.is(setExerciseBaseCode)) baseCode = e.value;
+    }
+    if (!tr.docChanged && baseCode === state.baseCode) return state;
+    if (baseCode === null) return { baseCode: null, status: [], deletionsBefore: new Set() };
+    const baseLines = baseCode.split("\n");
+    const currentLines = tr.newDoc.toString().split("\n");
+    const { status, deletionsBefore } = lineDiff(baseLines, currentLines);
+    return { baseCode, status, deletionsBefore };
+  },
+});
+
+class DiffGutterMarker extends GutterMarker {
+  constructor(cls) {
+    super();
+    this.cls = cls;
+  }
+  toDOM() {
+    let el = document.createElement("div");
+    el.className = this.cls;
+    return el;
+  }
+}
+
+const addedMarker = new DiffGutterMarker("cm-diff-bar cm-diff-added");
+const modifiedMarker = new DiffGutterMarker("cm-diff-bar cm-diff-modified");
+const deletedMarker = new DiffGutterMarker("cm-diff-bar cm-diff-deleted");
+
+const diffGutterColumn = gutter({
+  class: "cm-diff-gutter",
+  markers(view) {
+    const { status, deletionsBefore, baseCode } = view.state.field(diffStateField);
+    if (baseCode === null) return new RangeSetBuilder().finish();
+    const builder = new RangeSetBuilder();
+    const doc = view.state.doc;
+    for (let lineNum = 1; lineNum <= doc.lines; lineNum++) {
+      const lineIndex = lineNum - 1;
+      const lineStart = doc.line(lineNum).from;
+      const lineStatus = status[lineIndex];
+      if (lineStatus === "added") {
+        builder.add(lineStart, lineStart, addedMarker);
+      } else if (lineStatus === "modified") {
+        builder.add(lineStart, lineStart, modifiedMarker);
+      } else if (deletionsBefore.has(lineIndex)) {
+        // Deletion occurred before this unchanged line — show indicator at its bottom
+        builder.add(lineStart, lineStart, deletedMarker);
+      }
+    }
+    return builder.finish();
+  },
+  initialSpacer: () => addedMarker,
+});
+
+const diffGutterTheme = EditorView.baseTheme({
+  ".cm-diff-gutter": { width: "4px" },
+  ".cm-diff-gutter .cm-gutterElement": { padding: "0", width: "4px" },
+  ".cm-diff-bar": { width: "4px", height: "100%", display: "block" },
+  ".cm-diff-added": { backgroundColor: "#2ea043" },
+  ".cm-diff-modified": { backgroundColor: "#e3b341" },
+  ".cm-diff-deleted": {
+    backgroundColor: "transparent",
+    position: "relative",
+  },
+  ".cm-diff-deleted::after": {
+    content: '""',
+    position: "absolute",
+    bottom: "-4px",
+    left: "0",
+    width: "0",
+    height: "0",
+    borderLeft: "4px solid #e5534b",
+    borderTop: "4px solid transparent",
+    borderBottom: "4px solid transparent",
+  },
+});
+
+export const exerciseDiffGutter = [diffStateField, diffGutterColumn, diffGutterTheme];
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Export related extensions in groups

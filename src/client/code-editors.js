@@ -4,8 +4,10 @@ import {
   basicExtensions,
   capLength,
   codeSnapshotFields,
+  exerciseDiffGutter,
   followInstructorExtensions,
   reviewEditorExtensions,
+  setExerciseBaseCode,
   setInstructorSelection,
 } from "./cm-extensions.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
@@ -57,6 +59,7 @@ export class StudentCodeEditor {
       doc: Text.of(doc),
       extensions: [
         ...basicExtensions,
+        ...exerciseDiffGutter,
         EditorView.updateListener.of(this.onCodeUpdate.bind(this)),
         keymap.of([indentWithTab]),
         snapshotExtensions,
@@ -78,6 +81,10 @@ export class StudentCodeEditor {
 
   currentCode() {
     return this.view.state.doc.toString();
+  }
+
+  setBaseCode(code) {
+    this.view.dispatch({ effects: setExerciseBaseCode.of(code) });
   }
 
   onCodeUpdate(viewUpdate) {
