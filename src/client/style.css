@@ -844,6 +844,7 @@ td {
 .fork-full-view {
   max-height: 300px;
   overflow-y: auto;
+  font-size: medium;
 }
 
 .diff-view {
