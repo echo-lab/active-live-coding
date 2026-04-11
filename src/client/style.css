@@ -574,6 +574,10 @@ td {
   user-select: none;
 }
 
+#activity-summary-responses {
+  min-width: 90%;
+}
+
 /* Ensure the HTML `hidden` attribute always wins, even against display rules below */
 [hidden] { display: none !important; }
 
@@ -667,24 +671,6 @@ td {
 }
 
 
-.collapsible-code {
-  max-height: 120px;
-  overflow: auto;
-  position: relative;
-}
-
-.collapsible-code.expanded {
-  max-height: 300px;
-}
-
-.collapsible-code .cm-editor {
-  background: white;
-}
-
-.collapsible-code .cm-scroller {
-  background: white;
-}
-
 .collapsible-code-toggle {
   display: block;
   width: 100%;
@@ -697,6 +683,77 @@ td {
   padding: 3px 0;
   text-align: center;
   margin-top: 2px;
+}
+
+/* Unified answer display (CODE and POLL types) */
+.answer-display-collapsible {
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.answer-display-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: #f5f5ff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.answer-display-header:hover {
+  background: #eaeaff;
+}
+
+.answer-display-content:not([hidden]) {
+  border-top: 1px solid #ddd;
+}
+
+.answer-display-caret {
+  font-size: 10px;
+  color: #646cff;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.answer-display-label {
+  font-size: 11px;
+  color: #646cff;
+  font-weight: 600;
+}
+
+.answer-display-content {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.summary-response .answer-display-content {
+  max-height: 200px;
+}
+
+#student-code-submitted .answer-display-content {
+  max-height: 180px;
+}
+
+.answer-display-content .cm-editor {
+  background: white;
+  font-size: 12px;
+}
+
+.answer-display-content .cm-scroller {
+  background: white;
+}
+
+.answer-display-pre {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Back buttons — subtle link style */
@@ -782,11 +839,7 @@ td {
 /* Submitted code snapshot (shown above editable editor during active exercise) */
 #student-code-submitted {
   width: 100%;
-  padding: 8px 10px;
   margin-bottom: 4px;
-  background: #f0f4ff;
-  border-left: 3px solid #646cff;
-  border-radius: 4px;
   box-sizing: border-box;
 }
 
@@ -817,15 +870,7 @@ td {
   min-height: 80px;
 }
 
-/* Summary code answer */
-.summary-code-answer {
-  margin-top: 4px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  overflow: hidden;
-  max-height: 200px;
-  overflow-y: auto;
-}
+
 
 /* CODE_FORK diff display */
 .fork-display {
@@ -955,12 +1000,6 @@ td {
   margin-bottom: 4px;
 }
 
-.summary-answer {
-  margin: 0;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 
 /* Student answer display */
 #student-answer-display {

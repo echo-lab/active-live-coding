@@ -3,6 +3,8 @@ import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace, computeLineDiff } from "./diff-utils.js";
 
+
+// MARK: Diff HTML
 function buildDiffElement(diffLines, contextLines = 2) {
   const changed = new Set();
   diffLines.forEach((d, idx) => { if (d.type !== "unchanged") changed.add(idx); });
@@ -103,6 +105,64 @@ function createForkDisplay(code, originalCode) {
   return wrapper;
 }
 
+// MARK: Code/Poll HTML
+function trimAnswer(text) {
+  const perLineTrimmed = stripTrailingWhitespace(text);
+  const lines = perLineTrimmed.split("\n");
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === "") start++;
+  let end = lines.length - 1;
+  while (end >= start && lines[end].trim() === "") end--;
+  return lines.slice(start, end + 1).join("\n");
+}
+
+function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
+  const trimmed = trimAnswer(answer);
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "answer-display-collapsible";
+
+  const header = document.createElement("div");
+  header.className = "answer-display-header";
+
+  const caret = document.createElement("span");
+  caret.className = "answer-display-caret";
+  caret.textContent = startExpanded ? "▼" : "▶";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "answer-display-label";
+  labelEl.textContent = label;
+
+  header.appendChild(caret);
+  header.appendChild(labelEl);
+
+  const content = document.createElement("div");
+  content.className = "answer-display-content";
+  content.hidden = !startExpanded;
+
+  if (exerciseType === "CODE") {
+    const editorContainer = document.createElement("div");
+    new ReviewCodeEditor({ node: editorContainer, doc: trimmed.split("\n"), isEditable: false });
+    content.appendChild(editorContainer);
+  } else {
+    const pre = document.createElement("pre");
+    pre.className = "answer-display-pre";
+    pre.textContent = trimmed;
+    content.appendChild(pre);
+  }
+
+  header.addEventListener("click", () => {
+    const isExpanded = !content.hidden;
+    content.hidden = isExpanded;
+    caret.textContent = isExpanded ? "▶" : "▼";
+  });
+
+  wrapper.appendChild(header);
+  wrapper.appendChild(content);
+  return wrapper;
+}
+
+// MARK: Student Panel
 export class StudentActivitiesPanel {
   constructor({
     sessionNumber,
@@ -269,15 +329,15 @@ export class StudentActivitiesPanel {
 
       if (!isActive) {
         if (myResponse) {
-          this.codeEditorEl.innerHTML = "";
-          this.codeEditorEl.hidden = false;
-          new ReviewCodeEditor({
-            node: this.codeEditorEl,
-            doc: myResponse.answer.split("\n"),
-            isEditable: false,
-          });
+          this.codeEditorEl.hidden = true;
+          this.codeSubmittedEl.innerHTML = "";
+          this.codeSubmittedEl.appendChild(
+            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
+          );
+          this.codeSubmittedEl.hidden = false;
         } else {
           this.codeEditorEl.hidden = true;
+          this.codeSubmittedEl.hidden = true;
           this.answerDisplayEl.textContent = "You didn't submit an answer.";
           this.answerDisplayEl.classList.add("no-answer");
           this.answerDisplayEl.hidden = false;
@@ -310,21 +370,33 @@ export class StudentActivitiesPanel {
     } else {
       // POLL
       this.codeEditorEl.hidden = true;
-      this.codeSubmittedEl.hidden = true;
 
-      if (myResponse) {
-        this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
-        this.answerDisplayEl.classList.remove("no-answer");
-        this.answerDisplayEl.hidden = false;
-        this.answerInputEl.value = myResponse.answer;
-      } else if (!isActive) {
-        this.answerDisplayEl.textContent = "You didn't submit an answer.";
-        this.answerDisplayEl.classList.add("no-answer");
-        this.answerDisplayEl.hidden = false;
-        this.answerInputEl.value = "";
-      } else {
+      if (!isActive && myResponse) {
+        // Completed with answer: use unified display
+        this.codeSubmittedEl.innerHTML = "";
+        this.codeSubmittedEl.appendChild(
+          createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
+        );
+        this.codeSubmittedEl.hidden = false;
         this.answerDisplayEl.hidden = true;
-        this.answerInputEl.value = "";
+        this.answerInputEl.value = myResponse.answer;
+      } else {
+        this.codeSubmittedEl.hidden = true;
+        if (myResponse) {
+          // Active with prior answer
+          this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
+          this.answerDisplayEl.classList.remove("no-answer");
+          this.answerDisplayEl.hidden = false;
+          this.answerInputEl.value = myResponse.answer;
+        } else if (!isActive) {
+          this.answerDisplayEl.textContent = "You didn't submit an answer.";
+          this.answerDisplayEl.classList.add("no-answer");
+          this.answerDisplayEl.hidden = false;
+          this.answerInputEl.value = "";
+        } else {
+          this.answerDisplayEl.hidden = true;
+          this.answerInputEl.value = "";
+        }
       }
 
       this.answerInputEl.hidden = !isActive;
@@ -338,32 +410,18 @@ export class StudentActivitiesPanel {
 
   _showCollapsibleCode(code, originalCode) {
     this.codeSubmittedEl.innerHTML = "";
-    let label = document.createElement("span");
-    label.className = "code-submitted-label";
-    label.textContent = "Your submission:";
-    this.codeSubmittedEl.appendChild(label);
-
     if (originalCode != null) {
-      // We're in a "FORK" exercise, so we create the Fork Display.
+      // CODE_FORK: label + createForkDisplay (unchanged)
+      let label = document.createElement("span");
+      label.className = "code-submitted-label";
+      label.textContent = "Your submission:";
+      this.codeSubmittedEl.appendChild(label);
       this.codeSubmittedEl.appendChild(createForkDisplay(code, originalCode));
     } else {
-      // TODO: let's refactor this and create a method, just like createForkDisplay above.
-      // TODO: BUT ALSO: make sure this actually looks like what we want... I think it's kinda bad as is.
-      const cleanCode = stripTrailingWhitespace(code);
-      let wrapper = document.createElement("div");
-      wrapper.className = "collapsible-code";
-      let editorContainer = document.createElement("div");
-      wrapper.appendChild(editorContainer);
-      new ReviewCodeEditor({ node: editorContainer, doc: cleanCode.split("\n"), isEditable: false });
-      let toggleBtn = document.createElement("button");
-      toggleBtn.className = "collapsible-code-toggle";
-      toggleBtn.textContent = "Show more";
-      toggleBtn.addEventListener("click", () => {
-        let expanded = wrapper.classList.toggle("expanded");
-        toggleBtn.textContent = expanded ? "Collapse" : "Show more";
-      });
-      wrapper.appendChild(toggleBtn);
-      this.codeSubmittedEl.appendChild(wrapper);
+      // CODE active: unified display (has its own header/label)
+      this.codeSubmittedEl.appendChild(
+        createAnswerDisplay(code, "CODE", { label: "Your submission:", startExpanded: true })
+      );
     }
     this.codeSubmittedEl.hidden = false;
   }
@@ -412,6 +470,7 @@ export class StudentActivitiesPanel {
   }
 }
 
+// MARK: Instructor Panel
 export class InstructorActivitiesPanel {
   constructor({
     sessionNumber,
@@ -568,6 +627,7 @@ export class InstructorActivitiesPanel {
             StudentSession?.student_identifier ??
             student_identifier ??
             student_id;
+          // TODO: change the outer summary-response div? Maybe nix it.
           let div = document.createElement("div");
           div.className = "summary-response";
           let nameSpan = document.createElement("span");
@@ -576,21 +636,14 @@ export class InstructorActivitiesPanel {
           div.appendChild(nameSpan);
           if (ex.type === "CODE_FORK") {
             div.appendChild(createForkDisplay(answer, ex.instructor_code ?? ""));
-          } else if (ex.type === "CODE") {
-            let codeContainer = document.createElement("div");
-            codeContainer.className = "summary-code-answer";
-            div.appendChild(codeContainer);
-            new ReviewCodeEditor({
-              node: codeContainer,
-              doc: stripTrailingWhitespace(answer).split("\n"),
-              isEditable: false,
-            });
           } else {
-            // ex.type === "TEXT" (text?)
-            let pre = document.createElement("pre");
-            pre.className = "summary-answer";
-            pre.textContent = answer;
-            div.appendChild(pre);
+            // ex.type == "CODE" or "POLL"
+            let startExpanded = answer.trim().split("\n").length <= 3;
+            let label = displayName;
+            console.log("EX: ", ex);
+            div.appendChild(
+              createAnswerDisplay(answer, ex.type, { label, startExpanded })
+            );
           }
           responsesEl.appendChild(div);
         },
