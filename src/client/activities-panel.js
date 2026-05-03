@@ -2,106 +2,262 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace, computeLineDiff } from "./diff-utils.js";
+import { EditorView, Decoration, WidgetType } from "@codemirror/view";
+import { EditorState, StateField, StateEffect, RangeSetBuilder, Text } from "@codemirror/state";
+import { reviewEditorExtensions, capLength } from "./cm-extensions.js";
 
 
-// MARK: Diff HTML
-function buildDiffElement(diffLines, contextLines = 2) {
+// MARK: CODE_FORK Diff Display (CodeMirror-based)
+
+const setForkDecorations = StateEffect.define();
+const forkDecorationsField = StateField.define({
+  create: () => Decoration.none,
+  update(decs, tr) {
+    for (const e of tr.effects) if (e.is(setForkDecorations)) return e.value;
+    return decs.map(tr.changes);
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
+class RemovedLinesWidget extends WidgetType {
+  constructor(lines) {
+    super();
+    this.lines = lines;
+  }
+  toDOM() {
+    const div = document.createElement("div");
+    div.className = "cm-fork-removed-block";
+    for (const line of this.lines) {
+      const row = document.createElement("div");
+      row.className = "cm-fork-removed-line";
+      row.textContent = `- ${line}`;
+      div.appendChild(row);
+    }
+    return div;
+  }
+  eq(other) {
+    return this.lines.length === other.lines.length &&
+      this.lines.every((l, i) => l === other.lines[i]);
+  }
+}
+
+class CollapsedBarWidget extends WidgetType {
+  constructor(gapId, onExpand) {
+    super();
+    this.gapId = gapId;
+    this.onExpand = onExpand;
+  }
+  toDOM() {
+    const bar = document.createElement("div");
+    bar.className = "cm-fork-collapsed-bar";
+    bar.textContent = "• • •";
+    bar.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      this.onExpand(this.gapId);
+    });
+    return bar;
+  }
+  eq(other) {
+    return this.gapId === other.gapId;
+  }
+}
+
+function buildDiffSegments(diff, contextLines = 2) {
   const changed = new Set();
-  diffLines.forEach((d, idx) => { if (d.type !== "unchanged") changed.add(idx); });
+  diff.forEach((d, idx) => { if (d.type !== "unchanged") changed.add(idx); });
 
   const visible = new Set();
   for (const idx of changed) {
-    for (let c = Math.max(0, idx - contextLines); c <= Math.min(diffLines.length - 1, idx + contextLines); c++) {
+    for (let c = Math.max(0, idx - contextLines); c <= Math.min(diff.length - 1, idx + contextLines); c++) {
       visible.add(c);
     }
   }
 
-  const pre = document.createElement("pre");
-  pre.className = "diff-view";
+  const segments = [];
+  let newLineNum = 1;
+  let pendingRemovals = [];
+  let gapCount = 0;
+  let currentGap = null;
 
-  if (changed.size === 0) {
-    const el = document.createElement("span");
-    el.className = "diff-line diff-no-changes";
-    el.textContent = "(no changes from original)";
-    pre.appendChild(el);
-    return pre;
-  }
+  for (let idx = 0; idx < diff.length; idx++) {
+    const { type, line } = diff[idx];
 
-  let lastVisible = -1;
-  for (let idx = 0; idx < diffLines.length; idx++) {
-    if (!visible.has(idx)) continue;
-    if (lastVisible !== -1 && idx > lastVisible + 1) {
-      const sep = document.createElement("span");
-      sep.className = "diff-line diff-separator";
-      sep.textContent = "  ···\n";
-      pre.appendChild(sep);
+    if (type === "removed") {
+      pendingRemovals.push(line);
+      continue;
     }
-    const { type, line } = diffLines[idx];
-    const el = document.createElement("span");
-    el.className = `diff-line diff-line-${type}`;
-    const prefix = type === "added" ? "+" : type === "removed" ? "-" : " ";
-    el.textContent = `${prefix} ${line}\n`;
-    pre.appendChild(el);
-    lastVisible = idx;
+
+    // Flush pending removals before this new-code line
+    if (pendingRemovals.length > 0) {
+      if (currentGap) {
+        segments.push({ type: "gap", ...currentGap });
+        currentGap = null;
+      }
+      segments.push({ type: "removed", lines: [...pendingRemovals], beforeNewLine: newLineNum });
+      pendingRemovals = [];
+    }
+
+    if (visible.has(idx)) {
+      if (currentGap) {
+        segments.push({ type: "gap", ...currentGap });
+        currentGap = null;
+      }
+      segments.push({ type: type === "added" ? "added" : "unchanged-context", newLine: newLineNum });
+    } else {
+      // Unchanged line not near any change — part of a collapsible gap
+      if (!currentGap) {
+        currentGap = { id: gapCount++, newLineStart: newLineNum, newLineEnd: newLineNum };
+      } else {
+        currentGap.newLineEnd = newLineNum;
+      }
+    }
+
+    newLineNum++;
   }
-  return pre;
+
+  // Flush trailing gap and removals
+  if (currentGap) segments.push({ type: "gap", ...currentGap });
+  if (pendingRemovals.length > 0) {
+    segments.push({ type: "removed", lines: [...pendingRemovals], beforeNewLine: newLineNum });
+  }
+
+  return { segments, gapCount, hasChanges: changed.size > 0 };
 }
 
-// TODO:
-// - If the diff includes multiple lines of whitespace together, we only want 1 line max.
-// - If the diff has an added line that is just whitespace, we don't want to display it
-// - MAAAYBE: pull this out to a "diffs" file or something like that...
-function createForkDisplay(code, originalCode) {
-  const cleanCode = stripTrailingWhitespace(code);
-  const cleanOrig = stripTrailingWhitespace(originalCode);
-  const origLines = cleanOrig.split("\n");
-  const newLines = cleanCode.split("\n");
-  const diff = computeLineDiff(origLines, newLines);
+function buildForkDecorations(doc, segments, collapsedGaps, onExpand) {
+  const decs = [];
 
-  // Find the 1-indexed line number of the first change in the student's code
-  let firstChangedLine = -1;
-  let newLineIdx = 0;
-  for (const entry of diff) {
-    if (entry.type === "removed") continue;
-    if (entry.type === "added") { firstChangedLine = newLineIdx + 1; break; }
-    newLineIdx++;
+  for (const seg of segments) {
+    if (seg.type === "removed") {
+      const pos = seg.beforeNewLine <= doc.lines
+        ? doc.line(seg.beforeNewLine).from
+        : doc.length;
+      decs.push({ from: pos, to: pos, priority: 0,
+        dec: Decoration.widget({ widget: new RemovedLinesWidget(seg.lines), block: true, side: -1 }) });
+    } else if (seg.type === "added") {
+      const lineFrom = doc.line(seg.newLine).from;
+      decs.push({ from: lineFrom, to: lineFrom, priority: 1,
+        dec: Decoration.line({ class: "cm-fork-added" }) });
+    } else if (seg.type === "gap" && collapsedGaps.has(seg.id)) {
+      const from = doc.line(seg.newLineStart).from;
+      const to = seg.newLineEnd < doc.lines
+        ? doc.line(seg.newLineEnd + 1).from
+        : doc.line(seg.newLineEnd).to;
+      decs.push({ from, to, priority: 2,
+        dec: Decoration.replace({ widget: new CollapsedBarWidget(seg.id, onExpand), block: true }) });
+    }
   }
 
+  decs.sort((a, b) => a.from - b.from || a.to - b.to || a.priority - b.priority);
+
+  const builder = new RangeSetBuilder();
+  for (const { from, to, dec } of decs) {
+    builder.add(from, to, dec);
+  }
+  return builder.finish();
+}
+
+function buildDiffControls() {
+  const el = document.createElement("span");
+  el.className = "fork-diff-controls";
+
+  const collapseLink = document.createElement("a");
+  collapseLink.className = "fork-diff-link";
+  collapseLink.textContent = "collapse all";
+
+  const sep = document.createElement("span");
+  sep.className = "fork-diff-sep";
+  sep.textContent = " | ";
+
+  const expandLink = document.createElement("a");
+  expandLink.className = "fork-diff-link";
+  expandLink.textContent = "expand all";
+
+  el.append(collapseLink, sep, expandLink);
+  return { el, collapseLink, expandLink };
+}
+
+function updateControlLinks(controls, collapsedGaps, gapCount) {
+  controls.collapseLink.classList.toggle("disabled", collapsedGaps.size === gapCount);
+  controls.expandLink.classList.toggle("disabled", collapsedGaps.size === 0);
+}
+
+function createForkDisplay(code, originalCode, { label = "Your submission:" } = {}) {
+  const cleanCode = stripTrailingWhitespace(code);
+  const cleanOrig = stripTrailingWhitespace(originalCode);
+  const diff = computeLineDiff(cleanOrig.split("\n"), cleanCode.split("\n"));
+  const { segments, gapCount, hasChanges } = buildDiffSegments(diff);
+  const collapsedGaps = new Set(segments.filter(s => s.type === "gap").map(s => s.id));
+
   const wrapper = document.createElement("div");
-  wrapper.className = "fork-display";
+  wrapper.className = "answer-display-collapsible";
 
-  const diffView = document.createElement("div");
-  diffView.className = "fork-diff-view";
-  diffView.appendChild(buildDiffElement(diff));
-  wrapper.appendChild(diffView);
+  const header = document.createElement("div");
+  header.className = "answer-display-header";
 
-  const fullView = document.createElement("div");
-  fullView.className = "fork-full-view";
-  fullView.hidden = true;
-  const editorContainer = document.createElement("div");
-  const editor = new ReviewCodeEditor({
-    node: editorContainer,
-    doc: newLines,
-    isEditable: false,
-    baseDoc: origLines,
+  const caret = document.createElement("span");
+  caret.className = "answer-display-caret";
+  caret.textContent = "▼";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "answer-display-label";
+  labelEl.textContent = label;
+
+  const controls = buildDiffControls();
+  header.append(caret, labelEl, controls.el);
+
+  const content = document.createElement("div");
+  content.className = "answer-display-content";
+
+  if (!hasChanges) {
+    const msg = document.createElement("div");
+    msg.className = "fork-no-changes";
+    msg.textContent = "(no changes from original)";
+    content.appendChild(msg);
+    controls.el.hidden = true;
+  } else {
+    const editorContainer = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: Text.of(cleanCode.split("\n")),
+        extensions: [
+          ...reviewEditorExtensions({ isEditable: false }),
+          forkDecorationsField,
+          EditorView.editable.of(false),
+          capLength,
+        ],
+      }),
+      parent: editorContainer,
+    });
+    content.appendChild(editorContainer);
+
+    const redecorate = () => {
+      const decs = buildForkDecorations(view.state.doc, segments, collapsedGaps, expand);
+      view.dispatch({ effects: setForkDecorations.of(decs) });
+      updateControlLinks(controls, collapsedGaps, gapCount);
+    };
+
+    const expand = (gapId) => { collapsedGaps.delete(gapId); redecorate(); };
+    controls.collapseLink.addEventListener("click", () => {
+      segments.filter(s => s.type === "gap").forEach(s => collapsedGaps.add(s.id));
+      redecorate();
+    });
+    controls.expandLink.addEventListener("click", () => {
+      collapsedGaps.clear();
+      redecorate();
+    });
+
+    requestAnimationFrame(redecorate);
+  }
+
+  header.addEventListener("click", (e) => {
+    if (e.target.closest(".fork-diff-controls")) return;
+    const isExpanded = !content.hidden;
+    content.hidden = isExpanded;
+    caret.textContent = isExpanded ? "▶" : "▼";
   });
-  fullView.appendChild(editorContainer);
-  wrapper.appendChild(fullView);
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.className = "collapsible-code-toggle";
-  toggleBtn.textContent = "Show full code";
-  toggleBtn.addEventListener("click", () => {
-    const showingFull = !fullView.hidden;
-    fullView.hidden = showingFull;
-    diffView.hidden = !showingFull;
-    toggleBtn.textContent = showingFull ? "Show full code" : "Collapse to diff";
-    if (!showingFull && firstChangedLine > 0) {
-      requestAnimationFrame(() => editor.scrollToLine(firstChangedLine));
-    }
-  });
-  wrapper.appendChild(toggleBtn);
-
+  wrapper.append(header, content);
   return wrapper;
 }
 
@@ -411,11 +567,7 @@ export class StudentActivitiesPanel {
   _showCollapsibleCode(code, originalCode) {
     this.codeSubmittedEl.innerHTML = "";
     if (originalCode != null) {
-      // CODE_FORK: label + createForkDisplay (unchanged)
-      let label = document.createElement("span");
-      label.className = "code-submitted-label";
-      label.textContent = "Your submission:";
-      this.codeSubmittedEl.appendChild(label);
+      // CODE_FORK: label is inside the collapsible header
       this.codeSubmittedEl.appendChild(createForkDisplay(code, originalCode));
     } else {
       // CODE active: unified display (has its own header/label)
@@ -630,12 +782,8 @@ export class InstructorActivitiesPanel {
           // TODO: change the outer summary-response div? Maybe nix it.
           let div = document.createElement("div");
           div.className = "summary-response";
-          let nameSpan = document.createElement("span");
-          nameSpan.className = "summary-student";
-          nameSpan.textContent = displayName;
-          div.appendChild(nameSpan);
           if (ex.type === "CODE_FORK") {
-            div.appendChild(createForkDisplay(answer, ex.instructor_code ?? ""));
+            div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
           } else {
             // ex.type == "CODE" or "POLL"
             let startExpanded = answer.trim().split("\n").length <= 3;

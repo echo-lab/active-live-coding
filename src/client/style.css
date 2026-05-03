@@ -671,18 +671,80 @@ td {
 }
 
 
-.collapsible-code-toggle {
+/* Fork diff header controls */
+.fork-diff-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.fork-diff-link {
+  font-size: 11px;
+  color: #646cff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fork-diff-link:hover {
+  text-decoration: underline;
+}
+
+.fork-diff-link.disabled {
+  color: #bbb;
+  cursor: default;
+  pointer-events: none;
+}
+
+.fork-diff-sep {
+  font-size: 11px;
+  color: #bbb;
+}
+
+/* Added line highlight in fork diff editor */
+.cm-fork-added { background: #e6ffed !important; }
+
+/* Removed lines block widget */
+.cm-fork-removed-block {
+  font-family: monospace;
+  font-size: 12px;
+  background: #ffeef0;
+  line-height: 1.5;
+}
+
+.cm-fork-removed-line {
+  color: #b31d28;
+  padding: 0 8px;
+  white-space: pre;
+  display: block;
+}
+
+/* Collapsed unchanged section bar */
+.cm-fork-collapsed-bar {
   display: block;
   width: 100%;
-  background: none;
-  border: none;
-  border-top: 1px solid #ddd;
-  color: #646cff;
-  font-size: 11px;
+  padding: 2px 8px;
+  background: #f5f5f5;
+  color: #999;
+  font-size: 12px;
   cursor: pointer;
-  padding: 3px 0;
   text-align: center;
-  margin-top: 2px;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.cm-fork-collapsed-bar:hover {
+  background: #eaeaff;
+  color: #646cff;
+}
+
+/* No changes message */
+.fork-no-changes {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+  padding: 6px 8px;
 }
 
 /* Unified answer display (CODE and POLL types) */
@@ -843,14 +905,6 @@ td {
   box-sizing: border-box;
 }
 
-.code-submitted-label {
-  font-size: 11px;
-  color: #646cff;
-  display: block;
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
 #student-code-submitted .cm-editor {
   background: transparent;
   font-size: 12px;
@@ -871,69 +925,6 @@ td {
 }
 
 
-
-/* CODE_FORK diff display */
-.fork-display {
-  width: 100%;
-  margin-top: 4px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.fork-diff-view,
-.fork-full-view {
-  width: 100%;
-}
-
-.fork-full-view {
-  max-height: 300px;
-  overflow-y: auto;
-  font-size: medium;
-}
-
-.diff-view {
-  /* font-family: "Courier New", monospace; */
-  font-family: monospace;
-  font-size: 12px;
-  margin: 0;
-  padding: 6px 0;
-  background: #fafafa;
-  overflow-x: auto;
-  white-space: pre;
-}
-
-.diff-line {
-  display: block;
-  line-height: 1.5;
-  padding: 0 8px;
-  white-space: pre;
-}
-
-.diff-line-added {
-  background: #e6ffed;
-  color: #22863a;
-}
-
-.diff-line-removed {
-  background: #ffeef0;
-  color: #b31d28;
-}
-
-.diff-line-unchanged {
-  color: #444;
-}
-
-.diff-separator {
-  color: #999;
-}
-
-.diff-no-changes {
-  color: #999;
-  font-style: italic;
-  padding: 4px 8px;
-  display: block;
-}
 
 /* Create view */
 #activity-instructions,
