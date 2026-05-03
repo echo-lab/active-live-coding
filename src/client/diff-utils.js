@@ -79,3 +79,67 @@ export function toGutterState(diff) {
   if (pendingDeletion) deletionsBefore.add(currentIdx);
   return { status, deletionsBefore };
 }
+
+// Converts a computeLineDiff result into display segments for fork diff rendering.
+// Each segment is one of: added, removed, unchanged-context (near a change), or gap (collapsible).
+export function buildDiffSegments(diff, contextLines = 2) {
+  const changed = new Set();
+  diff.forEach((d, idx) => { if (d.type !== "unchanged") changed.add(idx); });
+
+  const visible = new Set();
+  for (const idx of changed) {
+    for (let c = Math.max(0, idx - contextLines); c <= Math.min(diff.length - 1, idx + contextLines); c++) {
+      visible.add(c);
+    }
+  }
+
+  const segments = [];
+  let newLineNum = 1;
+  let pendingRemovals = [];
+  let gapCount = 0;
+  let currentGap = null;
+
+  for (let idx = 0; idx < diff.length; idx++) {
+    const { type, line } = diff[idx];
+
+    if (type === "removed") {
+      pendingRemovals.push(line);
+      continue;
+    }
+
+    // Flush pending removals before this new-code line
+    if (pendingRemovals.length > 0) {
+      if (currentGap) {
+        segments.push({ type: "gap", ...currentGap });
+        currentGap = null;
+      }
+      segments.push({ type: "removed", lines: [...pendingRemovals], beforeNewLine: newLineNum });
+      pendingRemovals = [];
+    }
+
+    if (visible.has(idx)) {
+      if (currentGap) {
+        segments.push({ type: "gap", ...currentGap });
+        currentGap = null;
+      }
+      segments.push({ type: type === "added" ? "added" : "unchanged-context", newLine: newLineNum });
+    } else {
+      // Unchanged line not near any change — part of a collapsible gap
+      if (!currentGap) {
+        currentGap = { id: gapCount++, newLineStart: newLineNum, newLineEnd: newLineNum };
+      } else {
+        currentGap.newLineEnd = newLineNum;
+      }
+    }
+
+    newLineNum++;
+  }
+
+  // Flush trailing gap and removals
+  if (currentGap) segments.push({ type: "gap", ...currentGap });
+  if (pendingRemovals.length > 0) {
+    segments.push({ type: "removed", lines: [...pendingRemovals], beforeNewLine: newLineNum });
+  }
+
+  return { segments, gapCount, hasChanges: changed.size > 0 };
+}

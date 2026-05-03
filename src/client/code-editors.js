@@ -4,12 +4,10 @@ import {
   basicExtensions,
   capLength,
   codeSnapshotFields,
-  exerciseDiffGutter,
   followInstructorExtensions,
-  reviewEditorExtensions,
-  setExerciseBaseCode,
   setInstructorSelection,
 } from "./cm-extensions.js";
+import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
