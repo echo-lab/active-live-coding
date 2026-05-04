@@ -549,6 +549,12 @@ export class InstructorActivitiesPanel {
       });
       this.listItemsEl.appendChild(item);
     });
+    this._updatePollButton();
+  }
+
+  _updatePollButton() {
+    let hasActive = this.exercises.some((ex) => ex.end_ts == null);
+    this.pollButton.disabled = hasActive;
   }
 
   _showActiveView(ex) {

@@ -239,6 +239,11 @@ app.post("/exercise", async (req, res) => {
         transaction: t,
       });
       if (!lecture) return { error: `Session #${lectureId} not found` };
+      let activeExercise = await ClassExercise.findOne({
+        where: { LectureSessionId: lectureId, end_ts: null },
+        transaction: t,
+      });
+      if (activeExercise) return { error: "An exercise is already active for this session" };
       let exercise = await ClassExercise.createForLecture(
         lectureId,
         { type, instructions, instructor_code, code_line_context_start, code_line_context_end },
