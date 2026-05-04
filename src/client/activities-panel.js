@@ -248,8 +248,8 @@ export class StudentActivitiesPanel {
           let initialDoc;
           if (myResponse) {
             initialDoc = myResponse.answer.split("\n");
-          } else if (ex.instructor_code) {
-            initialDoc = ex.instructor_code.split("\n"); // fill-in-the-blank pre-population
+          } else if (ex.default_answer) {
+            initialDoc = ex.default_answer.split("\n"); // fill-in-the-blank pre-population
           } else {
             initialDoc = [""];
           }
@@ -476,12 +476,13 @@ export class InstructorActivitiesPanel {
   }
 
   // Create a code exercise from the editor (TODO: possibly move to a different location?)
-  async createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end }) {
+  async createCodeExercise({ instructor_code, default_answer, code_line_context_start, code_line_context_end }) {
     let res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
         type: "CODE",
         instructor_code,
+        default_answer,
         code_line_context_start,
         code_line_context_end,
       }),
@@ -497,6 +498,7 @@ export class InstructorActivitiesPanel {
       id: res.exerciseId,
       type: "CODE",
       instructor_code,
+      default_answer,
       code_line_context_start,
       code_line_context_end,
       start_ts: Date.now(),
@@ -513,6 +515,7 @@ export class InstructorActivitiesPanel {
         start_ts: newEx.start_ts,
         type: newEx.type,
         instructor_code: newEx.instructor_code,
+        default_answer: newEx.default_answer,
         code_line_context_start: newEx.code_line_context_start,
         code_line_context_end: newEx.code_line_context_end,
       },

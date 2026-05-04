@@ -229,7 +229,7 @@ app.post("/record-user-action", async (req, res) => {
 
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions, instructor_code, code_line_context_start, code_line_context_end } = req.body;
+  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -246,7 +246,7 @@ app.post("/exercise", async (req, res) => {
       if (activeExercise) return { error: "An exercise is already active for this session" };
       let exercise = await ClassExercise.createForLecture(
         lectureId,
-        { type, instructions, instructor_code, code_line_context_start, code_line_context_end },
+        { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end },
         t,
       );
       return { exerciseId: exercise.id };

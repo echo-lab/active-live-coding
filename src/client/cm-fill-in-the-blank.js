@@ -1,7 +1,7 @@
 import { StateEffect, StateField, Facet } from "@codemirror/state";
 import { EditorView, showTooltip } from "@codemirror/view";
 
-// Facet: injected callback, receives { instructor_code, code_line_context_start, code_line_context_end }
+// Facet: injected callback, receives { instructor_code, default_answer, code_line_context_start, code_line_context_end }
 export const handleCreateCodeExercise = Facet.define({
   combine: (values) => (values.length ? values.at(-1) : null),
 });
@@ -47,11 +47,12 @@ function createFillInBlankTooltipDOM(view) {
 
     let firstLine = state.doc.line(code_line_context_start);
     let lastLine = state.doc.line(code_line_context_end);
-    let instructor_code = state.doc.sliceString(firstLine.from, lastLine.to);
+    let default_answer = state.doc.sliceString(firstLine.from, lastLine.to);
+    let instructor_code = state.doc.toString();
 
     let callback = state.facet(handleCreateCodeExercise);
     callback &&
-      callback({ instructor_code, code_line_context_start, code_line_context_end });
+      callback({ instructor_code, default_answer, code_line_context_start, code_line_context_end });
   });
   return div;
 }
