@@ -292,6 +292,7 @@ export class InstructorCodeEditor {
     startVersion,
     sessionNumber,
     fileName = "instructor.py",
+    extraExtensions = [],
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
@@ -307,6 +308,7 @@ export class InstructorCodeEditor {
           this.broadcastInstructorChanges.bind(this)
         ),
         capLength,
+        ...extraExtensions,
       ],
     });
 

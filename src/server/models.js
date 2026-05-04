@@ -179,19 +179,32 @@ export const EXERCISE_TYPE = Object.freeze({
 export class ClassExercise extends Model {
   static async createForLecture(
     lectureId,
-    { type, instructions, instructor_code } = {},
+    { type, instructions, instructor_code, code_line_context_start, code_line_context_end } = {},
     transaction,
   ) {
     return ClassExercise.create(
-      { LectureSessionId: lectureId, type, instructions, instructor_code, start_ts: Date.now() },
+      {
+        LectureSessionId: lectureId,
+        type,
+        instructions,
+        instructor_code,
+        code_line_context_start,
+        code_line_context_end,
+        start_ts: Date.now(),
+      },
       { transaction },
     );
+  }
+
+  isFillInTheBlank() {
+    return this.code_line_context_start != null;
   }
 
   async finish(transaction) {
     return this.update({ end_ts: Date.now() }, { transaction });
   }
 }
+
 ClassExercise.init(
   {
     id: {
@@ -223,6 +236,14 @@ ClassExercise.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    code_line_context_start: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    code_line_context_end: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    }
   },
   { sequelize },
 );

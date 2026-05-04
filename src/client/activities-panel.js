@@ -245,10 +245,18 @@ export class StudentActivitiesPanel {
       } else {
         if (!this._codeEditors[ex.id]) {
           let container = document.createElement("div");
+          let initialDoc;
+          if (myResponse) {
+            initialDoc = myResponse.answer.split("\n");
+          } else if (ex.instructor_code) {
+            initialDoc = ex.instructor_code.split("\n"); // fill-in-the-blank pre-population
+          } else {
+            initialDoc = [""];
+          }
           this._codeEditors[ex.id] = {
             editor: new ReviewCodeEditor({
               node: container,
-              doc: myResponse ? myResponse.answer.split("\n") : [""],
+              doc: initialDoc,
               isEditable: true,
               showLineNumbers: true,
             }),
@@ -465,6 +473,51 @@ export class InstructorActivitiesPanel {
       this._showView("list");
     }
     this._renderList();
+  }
+
+  // Create a code exercise from the editor (TODO: possibly move to a different location?)
+  async createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end }) {
+    let res = await fetch("/exercise", {
+      body: JSON.stringify({
+        lectureId: this.sessionNumber,
+        type: "CODE",
+        instructor_code,
+        code_line_context_start,
+        code_line_context_end,
+      }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) {
+      alert(res.error);
+      return;
+    }
+
+    this.openPanel();
+    let newEx = {
+      id: res.exerciseId,
+      type: "CODE",
+      instructor_code,
+      code_line_context_start,
+      code_line_context_end,
+      start_ts: Date.now(),
+      end_ts: null,
+      ExerciseResponses: [],
+    };
+    this.exercises.push(newEx);
+    this.activeExerciseId = newEx.id;
+    this._renderList();
+    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
+      sessionNumber: this.sessionNumber,
+      exercise: {
+        id: newEx.id,
+        start_ts: newEx.start_ts,
+        type: newEx.type,
+        instructor_code: newEx.instructor_code,
+        code_line_context_start: newEx.code_line_context_start,
+        code_line_context_end: newEx.code_line_context_end,
+      },
+    });
+    this._showActiveView(newEx);
   }
 
   _showView(name) {
