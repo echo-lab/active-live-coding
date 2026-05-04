@@ -19,13 +19,12 @@ export function getCurrentFillInBlankCode() {
 
 class FillInBlankWidget extends WidgetType {
 
-  // TODO: instead of ``defaultAnswer'', we should eventually change to ``currentAnswer''
-  // Upstream, we can pass in either the default or the last submitted answer for this :)
-  constructor({ prefixCode, defaultAnswer, showButtons }) {
+  constructor({ prefixCode, currentAnswer, showButtons, onSubmit }) {
     super();
     this.prefixCode = prefixCode;
-    this.defaultAnswer = defaultAnswer;
+    this.currentAnswer = currentAnswer;
     this.showButtons = showButtons;
+    this.onSubmit = onSubmit;
     // +1 for the '\n' separator between prefix and visible content
     this.prefixLength = prefixCode ? prefixCode.length + 1 : 0;
     this.innerView = null;
@@ -55,7 +54,13 @@ class FillInBlankWidget extends WidgetType {
       const submitBtn = document.createElement("button");
       submitBtn.textContent = "Submit";
       submitBtn.className = "cm-fitb-submit-btn";
-      submitBtn.addEventListener("click", () => { /* TODO */ });
+      submitBtn.addEventListener("click", async () => {
+        const code = getCurrentFillInBlankCode();
+        if (code == null) return;
+        await this.onSubmit?.(code);
+        // submitBtn.textContent = "Resubmit";  // Move the button if we want to say `resubmit'
+        submitBtn.blur();
+      });
 
       container.appendChild(runBtn);
       container.appendChild(submitBtn);
@@ -66,8 +71,8 @@ class FillInBlankWidget extends WidgetType {
 
     // Build the inner editor document: hidden prefix + visible editable region.
     const doc = this.prefixCode
-      ? this.prefixCode + "\n" + this.defaultAnswer
-      : this.defaultAnswer;
+      ? this.prefixCode + "\n" + this.currentAnswer
+      : this.currentAnswer;
 
     const prefixLength = this.prefixLength;
 
@@ -138,7 +143,7 @@ export const fillInBlankViewField = StateField.define({
 
       if (e.value === null) return Decoration.none;
 
-      const { exercise, showButtons } = e.value;
+      const { exercise, showButtons, currentAnswer, onSubmit } = e.value;
       const {
         instructor_code,
         default_answer,
@@ -151,8 +156,9 @@ export const fillInBlankViewField = StateField.define({
 
       const widget = new FillInBlankWidget({
         prefixCode,
-        defaultAnswer: default_answer ?? "",
+        currentAnswer: currentAnswer ?? default_answer ?? "",
         showButtons,
+        onSubmit,
       });
 
       const doc = tr.state.doc;

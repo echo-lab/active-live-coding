@@ -121,7 +121,8 @@ export class StudentActivitiesPanel {
       if (ex.type === "CODE_FORK" && this.showExerciseTab) {
         this.showExerciseTab(msg.exercise.instructor_code, msg.exercise.id, null);
       } else if (isFillInTheBlank(ex)) {
-        this.showFillInBlank?.(ex);
+        const currentAnswer = ex.default_answer ?? "";
+        this.showFillInBlank?.(ex, currentAnswer, this._makeFitbSubmit(ex));
       }
     });
 
@@ -151,7 +152,9 @@ export class StudentActivitiesPanel {
         this.showExerciseTab(active.instructor_code, active.id, myResponse?.answer ?? null);
       }
       if (active.type === "CODE" && active.code_line_context_start != null) {
-        this.showFillInBlank?.(active);
+        const myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
+        const currentAnswer = myResponse?.answer ?? active.default_answer ?? "";
+        this.showFillInBlank?.(active, currentAnswer, this._makeFitbSubmit(active));
       }
     } else {
       this._showList();
@@ -363,6 +366,34 @@ export class StudentActivitiesPanel {
       );
     }
     this.codeSubmittedEl.hidden = false;
+  }
+
+  // TODO: Can we combine this w/ _submitAnswer()???
+  _makeFitbSubmit(ex) {
+    return async (code) => {
+      const res = await fetch("/exercise/response", {
+        body: JSON.stringify({ exerciseId: ex.id, student_id: this.student_id, answer: code }),
+        ...POST_JSON_REQUEST,
+      }).then((r) => r.json());
+      if (res.error) { alert(res.error); return; }
+
+      const idx = ex.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
+      if (idx >= 0) {
+        ex.ExerciseResponses[idx].answer = code;
+      } else {
+        ex.ExerciseResponses.push({ student_id: this.student_id, answer: code });
+      }
+
+      this._renderList();
+
+      this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
+        sessionNumber: this.sessionNumber,
+        exerciseId: ex.id,
+        student_id: this.student_id,
+        student_identifier: this.studentIdentifier,
+        answer: code,
+      });
+    };
   }
 
   async _submitAnswer() {

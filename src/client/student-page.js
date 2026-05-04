@@ -240,7 +240,7 @@ async function initialize({
     studentIdentifier: email,
     showExerciseTab: setupExerciseTab,
     closeExerciseTab,
-    showFillInBlank: (ex) => instructorEditor.activateFillInBlank(ex),
+    showFillInBlank: (ex, currentAnswer, onSubmit) => instructorEditor.activateFillInBlank(ex, currentAnswer, onSubmit),
     hideFillInBlank: () => instructorEditor.deactivateFillInBlank(),
   });
 }

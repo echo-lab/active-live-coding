@@ -285,8 +285,8 @@ export class CodeFollowingEditor {
     this.active = false;
   }
 
-  activateFillInBlank(exercise) {
-    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true }) });
+  activateFillInBlank(exercise, currentAnswer, onSubmit) {
+    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit }) });
   }
 
   deactivateFillInBlank() {

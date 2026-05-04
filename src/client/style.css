@@ -251,7 +251,8 @@ pre {
 
 .cm-editor {
   /* NECESSARY! */
-  min-height: 0px;
+  /* min-height: 0px; */
+  min-height: 50px;
   height: 100%;
 }
 
