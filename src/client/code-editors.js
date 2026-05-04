@@ -1,5 +1,5 @@
 import { EditorView } from "codemirror";
-import { EditorState, Text, ChangeSet } from "@codemirror/state";
+import { EditorState, Text, ChangeSet, Compartment } from "@codemirror/state";
 import {
   basicExtensions,
   capLength,
@@ -8,6 +8,7 @@ import {
   setInstructorSelection,
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
+import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -168,7 +169,7 @@ Doesn't log any activity -- only reads from the server.
 */
 export class CodeFollowingEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor(node, doc, docVersion, socket, onNewSnapshot, sessionId) {
+  constructor(node, doc, docVersion, socket, onNewSnapshot, sessionId, extraExtensions = []) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     let state = EditorState.create({
@@ -179,6 +180,7 @@ export class CodeFollowingEditor {
         ...followInstructorExtensions,
         EditorView.editable.of(false),
         capLength,
+        ...extraExtensions,
       ],
     });
     this.view = new EditorView({ state, parent: node });
@@ -282,6 +284,14 @@ export class CodeFollowingEditor {
   stopFollowing() {
     this.active = false;
   }
+
+  activateFillInBlank(exercise) {
+    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true }) });
+  }
+
+  deactivateFillInBlank() {
+    this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
+  }
 }
 
 export class InstructorCodeEditor {
@@ -298,6 +308,7 @@ export class InstructorCodeEditor {
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.fileName = fileName;
+    this.editableCompartment = new Compartment();
 
     let state = EditorState.create({
       doc: Text.of(doc),
@@ -308,6 +319,8 @@ export class InstructorCodeEditor {
           this.broadcastInstructorChanges.bind(this)
         ),
         capLength,
+        this.editableCompartment.of([]),
+        fillInBlankViewField,
         ...extraExtensions,
       ],
     });
@@ -326,6 +339,24 @@ export class InstructorCodeEditor {
 
   endSession() {
     this.active = false;
+  }
+
+  activateFillInBlank(exercise) {
+    this.view.dispatch({
+      effects: [
+        this.editableCompartment.reconfigure(EditorView.editable.of(false)),
+        activateFillInBlankEffect.of({ exercise, showButtons: false }),
+      ],
+    });
+  }
+
+  deactivateFillInBlank() {
+    this.view.dispatch({
+      effects: [
+        this.editableCompartment.reconfigure([]),
+        activateFillInBlankEffect.of(null),
+      ],
+    });
   }
 
   broadcastInstructorChanges(viewUpdate) {

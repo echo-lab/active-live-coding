@@ -1012,3 +1012,61 @@ td {
   color: #888;
   font-style: italic;
 }
+
+/* =========================================
+   Fill-in-the-blank widget (main editor)
+   ========================================= */
+
+.cm-fill-in-blank-widget {
+  width: 100%;
+  border: 2px solid #646cffab;
+  /* border-top: 2px solid #646cff;
+  border-bottom: 2px solid #646cff; */
+  /* background: #f8f8ff; */
+  background: #fff;
+  box-sizing: border-box;
+  border-radius: 5px;
+  position:relative;
+  min-height: 35px;
+}
+
+.cm-fitb-run-btn,
+.cm-fitb-submit-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  background: white;
+  position: absolute;
+  z-index: 999;
+  opacity: 95%;
+}
+
+.cm-fitb-run-btn {
+  top: 5px;
+  right: 75px;
+}
+
+.cm-fitb-submit-btn {
+  top: 5px;
+  right: 5px;
+}
+
+.cm-fitb-run-btn:hover {
+  background: #e8ffe8;
+  border-color: #2e7d32;
+}
+
+.cm-fitb-submit-btn:hover {
+  background: #e8e8ff;
+  border-color: #646cff;
+}
+
+.cm-fill-in-blank-widget .cm-editor {
+  background: transparent;
+}
+
+.cm-fill-in-blank-widget .cm-gutters {
+  display: none;
+}

@@ -15,6 +15,10 @@ function trimAnswer(text) {
   return lines.slice(start, end + 1).join("\n");
 }
 
+function isFillInTheBlank(exercise) {
+  return exercise?.type === "CODE" && exercise?.code_line_context_start != null;
+}
+
 function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
   const trimmed = trimAnswer(answer);
 
@@ -72,6 +76,8 @@ export class StudentActivitiesPanel {
     studentIdentifier,
     showExerciseTab,
     closeExerciseTab,
+    showFillInBlank,
+    hideFillInBlank,
   }) {
     this.sessionNumber = sessionNumber;
     this.exercises = exercises.map((ex) => ({
@@ -84,6 +90,8 @@ export class StudentActivitiesPanel {
     this.studentIdentifier = studentIdentifier;
     this.showExerciseTab = showExerciseTab;
     this.closeExerciseTab = closeExerciseTab;
+    this.showFillInBlank = showFillInBlank ?? null;
+    this.hideFillInBlank = hideFillInBlank ?? null;
 
     // DOM refs
     this.listEl = document.querySelector("#student-activities-list");
@@ -112,6 +120,8 @@ export class StudentActivitiesPanel {
       this._showExercise(ex);
       if (ex.type === "CODE_FORK" && this.showExerciseTab) {
         this.showExerciseTab(msg.exercise.instructor_code, msg.exercise.id, null);
+      } else if (isFillInTheBlank(ex)) {
+        this.showFillInBlank?.(ex);
       }
     });
 
@@ -121,6 +131,9 @@ export class StudentActivitiesPanel {
       if (ex) ex.end_ts = Date.now();
       if (ex?.type === "CODE_FORK" && this.closeExerciseTab) {
         this.closeExerciseTab();
+      }
+      if (isFillInTheBlank(ex)) {
+        this.hideFillInBlank?.();
       }
       if (this.currentExerciseId === msg.exerciseId && ex) {
         this._showExercise(ex);
@@ -136,6 +149,9 @@ export class StudentActivitiesPanel {
       if (active.type === "CODE_FORK" && this.showExerciseTab) {
         let myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
         this.showExerciseTab(active.instructor_code, active.id, myResponse?.answer ?? null);
+      }
+      if (active.type === "CODE" && active.code_line_context_start != null) {
+        this.showFillInBlank?.(active);
       }
     } else {
       this._showList();
@@ -226,7 +242,27 @@ export class StudentActivitiesPanel {
       this.answerDisplayEl.hidden = true;
       this.codeSubmittedEl.hidden = true;
 
-      if (!isActive) {
+      if (isFillInTheBlank(ex)) {
+        // Fill-in-the-blank: student answers in the main code editor widget, not the sidebar.
+        this.codeEditorEl.hidden = true;
+        this.submitBtn.hidden = true;
+
+        if (isActive) {
+          this.answerDisplayEl.textContent = "Answer in the code editor above.";
+          this.answerDisplayEl.classList.remove("no-answer");
+          this.answerDisplayEl.hidden = false;
+        } else if (myResponse) {
+          this.codeSubmittedEl.innerHTML = "";
+          this.codeSubmittedEl.appendChild(
+            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
+          );
+          this.codeSubmittedEl.hidden = false;
+        } else {
+          this.answerDisplayEl.textContent = "You didn't submit an answer.";
+          this.answerDisplayEl.classList.add("no-answer");
+          this.answerDisplayEl.hidden = false;
+        }
+      } else if (!isActive) {
         if (myResponse) {
           this.codeEditorEl.hidden = true;
           this.codeSubmittedEl.innerHTML = "";
@@ -382,6 +418,8 @@ export class InstructorActivitiesPanel {
     activitiesPanel,
     openPanel,
     getInstructorCode,
+    onFillInBlankActivated,
+    onFillInBlankDeactivated,
   }) {
     console.log("Exercises: ", exercises);
     this.sessionNumber = sessionNumber;
@@ -393,6 +431,8 @@ export class InstructorActivitiesPanel {
     this.activitiesPanel = activitiesPanel;
     this.openPanel = openPanel;
     this.getInstructorCode = getInstructorCode;
+    this.onFillInBlankActivated = onFillInBlankActivated ?? null;
+    this.onFillInBlankDeactivated = onFillInBlankDeactivated ?? null;
     this.activeExerciseId = null;
     this.timerInterval = null;
 
@@ -469,6 +509,7 @@ export class InstructorActivitiesPanel {
       this.activeExerciseId = active.id;
       this.openPanel();
       this._showActiveView(active);
+      isFillInTheBlank(active) && this.onFillInBlankActivated?.(active);
     } else {
       this._showView("list");
     }
@@ -521,6 +562,7 @@ export class InstructorActivitiesPanel {
       },
     });
     this._showActiveView(newEx);
+    isFillInTheBlank(newEx) && this.onFillInBlankActivated?.(newEx);
   }
 
   _showView(name) {
@@ -676,6 +718,7 @@ export class InstructorActivitiesPanel {
       return;
     }
 
+    isFillInTheBlank(ex) && this.onFillInBlankDeactivated?.();
     ex.end_ts = Date.now();
     this.activeExerciseId = null;
     clearInterval(this.timerInterval);

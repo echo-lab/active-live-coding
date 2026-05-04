@@ -5,6 +5,7 @@ import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
 import { CodeFollowingEditor, StudentCodeEditor } from "./code-editors.js";
+import { fillInBlankViewField } from "./cm-fill-in-the-blank.js";
 import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
@@ -88,7 +89,8 @@ async function initialize({
     lectureDocVersion,
     socket,
     null, // no code snapshot/anchor functionality on this page
-    sessionNumber
+    sessionNumber,
+    [fillInBlankViewField]
   );
 
   let playgroundEditor = new StudentCodeEditor({
@@ -238,6 +240,8 @@ async function initialize({
     studentIdentifier: email,
     showExerciseTab: setupExerciseTab,
     closeExerciseTab,
+    showFillInBlank: (ex) => instructorEditor.activateFillInBlank(ex),
+    hideFillInBlank: () => instructorEditor.deactivateFillInBlank(),
   });
 }
 

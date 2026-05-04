@@ -138,5 +138,7 @@ function initialize({
     activitiesPanel: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getInstructorCode: () => codeEditor.currentCode(),
+    onFillInBlankActivated: (ex) => codeEditor.activateFillInBlank(ex),
+    onFillInBlankDeactivated: () => codeEditor.deactivateFillInBlank(),
   });
 }
