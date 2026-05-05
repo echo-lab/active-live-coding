@@ -88,7 +88,6 @@ async function initialize({
     lectureDoc,
     lectureDocVersion,
     socket,
-    null, // no code snapshot/anchor functionality on this page
     sessionNumber,
     [fillInBlankViewField]
   );
@@ -102,7 +101,6 @@ async function initialize({
     email,
     // flushUrl: "/record-playground-changes",
     flushUrl: null,  // Don't save playground changes for now.
-    onNewSnapshot: null,
   });
   playgroundCodeContainer.style.display = "none";
 

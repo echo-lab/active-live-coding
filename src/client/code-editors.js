@@ -171,14 +171,14 @@ Doesn't log any activity -- only reads from the server.
 // MARK: Follow Instructor (w/ exercises)
 export class CodeFollowingEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor(node, doc, docVersion, socket, onNewSnapshot, sessionId, extraExtensions = []) {
+  constructor(node, doc, docVersion, socket, sessionId, extraExtensions = []) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
         ...basicExtensions,
-        ...codeSnapshotFields(onNewSnapshot),
+        // ...codeSnapshotFields(onNewSnapshot),
         ...followInstructorExtensions,
         EditorView.editable.of(false),
         capLength,
