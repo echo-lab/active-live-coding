@@ -250,8 +250,14 @@ export class StudentActivitiesPanel {
         this.codeEditorEl.hidden = true;
         this.submitBtn.hidden = true;
 
-        if (isActive) {
-          this.answerDisplayEl.textContent = "Answer in the code editor above.";
+        if (isActive && myResponse) {
+          this.codeSubmittedEl.innerHTML = "";
+          this.codeSubmittedEl.appendChild(
+            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
+          );
+          this.codeSubmittedEl.hidden = false;
+        } else if (isActive) {
+          this.answerDisplayEl.textContent = "Answer in the code editor.";
           this.answerDisplayEl.classList.remove("no-answer");
           this.answerDisplayEl.hidden = false;
         } else if (myResponse) {
@@ -384,6 +390,7 @@ export class StudentActivitiesPanel {
         ex.ExerciseResponses.push({ student_id: this.student_id, answer: code });
       }
 
+      this._showCollapsibleCode(code);
       this._renderList();
 
       this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
