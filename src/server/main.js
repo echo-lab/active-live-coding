@@ -257,16 +257,10 @@ app.post("/exercise", async (req, res) => {
         { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end },
         t,
       );
-      return { exerciseId: exercise.id };
+      return { exerciseId: exercise.id, exercise };
     });
 
-    // Create simulated responses, if asked. 
-    if (simulate_responses && response.exerciseId) {
-      // TODO: gather the relevant info and pass it along
-      let info = {};
-      createSimulatedResponses(info, response.exerciseId);
-    }
-
+    simulate_responses && createSimulatedResponses(response.exercise);  // Run in the background
     res.json(response);
   } catch (error) {
     console.error("Failed to create exercise:", error);
