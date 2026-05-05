@@ -40,9 +40,28 @@ class FillInBlankWidget extends WidgetType {
     // return true;
   }
 
+  updateBorderState(container, submitBtn) {
+    container.classList.remove("cm-fitb-dirty", "cm-fitb-submitted");
+    let isSubmitted = false;
+    if (this.submittedCode === null) {
+      if (this.hasBeenEdited) container.classList.add("cm-fitb-dirty");
+    } else {
+      if (this.getVisibleCode() === this.submittedCode) {
+        container.classList.add("cm-fitb-submitted");
+        isSubmitted = true;
+      } else {
+        container.classList.add("cm-fitb-dirty");
+      }
+    }
+    if (submitBtn) submitBtn.disabled = isSubmitted;
+  }
+
   toDOM() {
     const container = document.createElement("div");
     container.className = "cm-fill-in-blank-widget";
+    this.submittedCode = null;
+    this.hasBeenEdited = false;
+    this.submitBtn = null;
 
     if (this.showButtons) {
       const bar = document.createElement("div");
@@ -62,13 +81,17 @@ class FillInBlankWidget extends WidgetType {
       });
 
       const submitBtn = document.createElement("button");
+      submitBtn.disabled = true;
       submitBtn.textContent = "Submit";
       submitBtn.className = "cm-fitb-submit-btn";
+      this.submitBtn = submitBtn;
       submitBtn.addEventListener("click", async () => {
         const code = getCurrentFillInBlankCode();
         if (code == null) return;
         await this.onSubmit?.(code);
         // submitBtn.textContent = "Resubmit";  // Move the button if we want to say `resubmit'
+        this.submittedCode = code;
+        this.updateBorderState(container, submitBtn);
         submitBtn.blur();
       });
 
@@ -113,6 +136,11 @@ class FillInBlankWidget extends WidgetType {
           python(),
           indentUnit.of("    "),
           keymap.of([indentWithTab]),
+          EditorView.updateListener.of((update) => {
+            if (!update.docChanged) return;
+            this.hasBeenEdited = true;
+            this.updateBorderState(container, this.submitBtn);
+          }),
           ...prefixExtensions,
         ],
       }),

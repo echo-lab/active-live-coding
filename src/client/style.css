@@ -1029,6 +1029,15 @@ td {
   border-radius: 5px;
   position:relative;
   min-height: 35px;
+  transition: border-color 0.2s;
+}
+
+.cm-fill-in-blank-widget.cm-fitb-dirty {
+  border-color: #f0b000;
+}
+
+.cm-fill-in-blank-widget.cm-fitb-submitted {
+  border-color: #2e7d32;
 }
 
 .cm-fitb-run-btn,
@@ -1066,6 +1075,7 @@ td {
 
 .cm-fill-in-blank-widget .cm-editor {
   background: transparent;
+  outline: none !important;
 }
 
 .cm-fill-in-blank-widget .cm-gutters {
