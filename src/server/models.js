@@ -174,6 +174,7 @@ export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
   CODE: "CODE",
   CODE_FORK: "CODE_FORK",
+  CODE_FITB: "CODE_FITB",
 });
 
 // MARK: ClassExercise
@@ -196,10 +197,6 @@ export class ClassExercise extends Model {
       },
       { transaction },
     );
-  }
-
-  isFillInTheBlank() {
-    return this.code_line_context_start != null;
   }
 
   async finish(transaction) {

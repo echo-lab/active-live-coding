@@ -15,10 +15,6 @@ function trimAnswer(text) {
   return lines.slice(start, end + 1).join("\n");
 }
 
-function isFillInTheBlank(exercise) {
-  return exercise?.type === "CODE" && exercise?.code_line_context_start != null;
-}
-
 function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
   const trimmed = trimAnswer(answer);
 
@@ -43,7 +39,7 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
   content.className = "answer-display-content";
   content.hidden = !startExpanded;
 
-  if (exerciseType === "CODE") {
+  if (exerciseType === "CODE" || exerciseType === "CODE_FITB") {
     const editorContainer = document.createElement("div");
     new ReviewCodeEditor({ node: editorContainer, doc: trimmed.split("\n"), isEditable: false });
     content.appendChild(editorContainer);
@@ -120,7 +116,7 @@ export class StudentActivitiesPanel {
       this._showExercise(ex);
       if (ex.type === "CODE_FORK" && this.showExerciseTab) {
         this.showExerciseTab(msg.exercise.instructor_code, msg.exercise.id, null);
-      } else if (isFillInTheBlank(ex)) {
+      } else if (ex.type === "CODE_FITB") {
         const currentAnswer = ex.default_answer ?? "";
         this.showFillInBlank?.(ex, currentAnswer, this._makeFitbSubmit(ex));
       }
@@ -133,7 +129,7 @@ export class StudentActivitiesPanel {
       if (ex?.type === "CODE_FORK" && this.closeExerciseTab) {
         this.closeExerciseTab();
       }
-      if (isFillInTheBlank(ex)) {
+      if (ex?.type === "CODE_FITB") {
         this.hideFillInBlank?.();
       }
       if (this.currentExerciseId === msg.exerciseId && ex) {
@@ -151,7 +147,7 @@ export class StudentActivitiesPanel {
         let myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
         this.showExerciseTab(active.instructor_code, active.id, myResponse?.answer ?? null);
       }
-      if (active.type === "CODE" && active.code_line_context_start != null) {
+      if (active.type === "CODE_FITB") {
         const myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
         const currentAnswer = myResponse?.answer ?? active.default_answer ?? "";
         this.showFillInBlank?.(active, currentAnswer, this._makeFitbSubmit(active));
@@ -240,38 +236,42 @@ export class StudentActivitiesPanel {
       } else {
         this.codeSubmittedEl.hidden = true;
       }
+    } else if (ex.type === "CODE_FITB") {
+      this.answerInputEl.hidden = true;
+      this.answerDisplayEl.hidden = true;
+      this.codeSubmittedEl.hidden = true;
+
+      // Fill-in-the-blank: student answers in the main code editor widget, not the sidebar.
+      this.codeEditorEl.hidden = true;
+      this.submitBtn.hidden = true;
+
+      if (isActive && myResponse) {
+        this.codeSubmittedEl.innerHTML = "";
+        this.codeSubmittedEl.appendChild(
+          createAnswerDisplay(myResponse.answer, "CODE_FITB", { label: "Your submission:", startExpanded: true })
+        );
+        this.codeSubmittedEl.hidden = false;
+      } else if (isActive) {
+        this.answerDisplayEl.textContent = "Answer in the code editor.";
+        this.answerDisplayEl.classList.remove("no-answer");
+        this.answerDisplayEl.hidden = false;
+      } else if (myResponse) {
+        this.codeSubmittedEl.innerHTML = "";
+        this.codeSubmittedEl.appendChild(
+          createAnswerDisplay(myResponse.answer, "CODE_FITB", { label: "Your submission:", startExpanded: true })
+        );
+        this.codeSubmittedEl.hidden = false;
+      } else {
+        this.answerDisplayEl.textContent = "You didn't submit an answer.";
+        this.answerDisplayEl.classList.add("no-answer");
+        this.answerDisplayEl.hidden = false;
+      }
     } else if (ex.type === "CODE") {
       this.answerInputEl.hidden = true;
       this.answerDisplayEl.hidden = true;
       this.codeSubmittedEl.hidden = true;
 
-      if (isFillInTheBlank(ex)) {
-        // Fill-in-the-blank: student answers in the main code editor widget, not the sidebar.
-        this.codeEditorEl.hidden = true;
-        this.submitBtn.hidden = true;
-
-        if (isActive && myResponse) {
-          this.codeSubmittedEl.innerHTML = "";
-          this.codeSubmittedEl.appendChild(
-            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
-          );
-          this.codeSubmittedEl.hidden = false;
-        } else if (isActive) {
-          this.answerDisplayEl.textContent = "Answer in the code editor.";
-          this.answerDisplayEl.classList.remove("no-answer");
-          this.answerDisplayEl.hidden = false;
-        } else if (myResponse) {
-          this.codeSubmittedEl.innerHTML = "";
-          this.codeSubmittedEl.appendChild(
-            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
-          );
-          this.codeSubmittedEl.hidden = false;
-        } else {
-          this.answerDisplayEl.textContent = "You didn't submit an answer.";
-          this.answerDisplayEl.classList.add("no-answer");
-          this.answerDisplayEl.hidden = false;
-        }
-      } else if (!isActive) {
+      if (!isActive) {
         if (myResponse) {
           this.codeEditorEl.hidden = true;
           this.codeSubmittedEl.innerHTML = "";
@@ -294,7 +294,7 @@ export class StudentActivitiesPanel {
           if (myResponse) {
             initialDoc = myResponse.answer.split("\n");
           } else if (ex.default_answer) {
-            initialDoc = ex.default_answer.split("\n"); // fill-in-the-blank pre-population
+            initialDoc = ex.default_answer.split("\n");
           } else {
             initialDoc = [""];
           }
@@ -547,7 +547,7 @@ export class InstructorActivitiesPanel {
       this.activeExerciseId = active.id;
       this.openPanel();
       this._showActiveView(active);
-      isFillInTheBlank(active) && this.onFillInBlankActivated?.(active);
+      active.type === "CODE_FITB" && this.onFillInBlankActivated?.(active);
     } else {
       this._showView("list");
     }
@@ -560,7 +560,7 @@ export class InstructorActivitiesPanel {
     let res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
-        type: "CODE",
+        type: "CODE_FITB",
         instructor_code,
         default_answer,
         code_line_context_start,
@@ -577,7 +577,7 @@ export class InstructorActivitiesPanel {
     this.openPanel();
     let newEx = {
       id: res.exerciseId,
-      type: "CODE",
+      type: "CODE_FITB",
       instructor_code,
       default_answer,
       code_line_context_start,
@@ -602,7 +602,7 @@ export class InstructorActivitiesPanel {
       },
     });
     this._showActiveView(newEx);
-    isFillInTheBlank(newEx) && this.onFillInBlankActivated?.(newEx);
+    newEx.type === "CODE_FITB" && this.onFillInBlankActivated?.(newEx);
   }
 
   _showView(name) {
@@ -672,7 +672,7 @@ export class InstructorActivitiesPanel {
           if (ex.type === "CODE_FORK") {
             div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
           } else {
-            // ex.type == "CODE" or "POLL"
+            // ex.type == "CODE", "CODE_FITB", or "POLL"
             let startExpanded = answer.trim().split("\n").length <= 3;
             let label = displayName;
             console.log("EX: ", ex);
@@ -759,7 +759,7 @@ export class InstructorActivitiesPanel {
       return;
     }
 
-    isFillInTheBlank(ex) && this.onFillInBlankDeactivated?.();
+    ex.type === "CODE_FITB" && this.onFillInBlankDeactivated?.();
     ex.end_ts = Date.now();
     this.activeExerciseId = null;
     clearInterval(this.timerInterval);
