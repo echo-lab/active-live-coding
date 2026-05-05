@@ -237,7 +237,7 @@ app.post("/record-user-action", async (req, res) => {
 // MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, simulate_responses } = req.body;
+  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -260,10 +260,34 @@ app.post("/exercise", async (req, res) => {
       return { exerciseId: exercise.id, exercise };
     });
 
-    simulate_responses && createSimulatedResponses(response.exercise);  // Run in the background
     res.json(response);
   } catch (error) {
     console.error("Failed to create exercise:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Simulate responses
+// Create simulated student responses for an exercise.
+app.post("/simulate-responses", async (req, res) => {
+  const { instructorId, exerciseId } = req.body;
+  if (!instructorId || !exerciseId)
+    return res.json({ error: "instructorId and exerciseId are required" });
+
+  try {
+    const exercise = await ClassExercise.findByPk(exerciseId, {
+      include: [LectureSession],
+    });
+    if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
+    if (exercise.LectureSession.instructor_id !== instructorId)
+      return res.json({ error: "Unauthorized" });
+    if (exercise.end_ts !== null)
+      return res.json({ error: "Exercise is already completed" });
+
+    const records = await createSimulatedResponses(exercise);
+    res.json({ simulatedResponses: records ?? [] });
+  } catch (error) {
+    console.error("Failed to simulate responses:", error);
     res.json({ error: error.message });
   }
 });

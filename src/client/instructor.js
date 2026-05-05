@@ -136,6 +136,7 @@ function initialize({
     sessionNumber,
     exercises,
     socket,
+    userId,
     activitiesPanel: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getInstructorCode: () => codeEditor.currentCode(),

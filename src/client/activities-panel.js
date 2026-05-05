@@ -453,6 +453,7 @@ export class InstructorActivitiesPanel {
     sessionNumber,
     exercises,
     socket,
+    userId,
     activitiesPanel,
     openPanel,
     getInstructorCode,
@@ -461,6 +462,7 @@ export class InstructorActivitiesPanel {
   }) {
     console.log("Exercises: ", exercises);
     this.sessionNumber = sessionNumber;
+    this.userId = userId;
     this.exercises = exercises.map((ex) => ({
       ...ex,
       ExerciseResponses: ex.ExerciseResponses ?? [],
@@ -565,13 +567,23 @@ export class InstructorActivitiesPanel {
         default_answer,
         code_line_context_start,
         code_line_context_end,
-        simulate_responses: shouldSimulateResponses(),
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
     if (res.error) {
       alert(res.error);
       return;
+    }
+
+    if (shouldSimulateResponses()) {
+      fetch("/simulate-responses", {
+        body: JSON.stringify({
+          instructorId: this.userId,
+          exerciseId: res.exerciseId,
+        }),
+        ...POST_JSON_REQUEST,
+      });
+      // fire-and-forget; response not used by client for now
     }
 
     this.openPanel();

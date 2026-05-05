@@ -33,13 +33,14 @@ export async function createSimulatedResponses(exercise) {
     return;
   }
 
-  await SimulatedExerciseResponse.bulkCreate(
+  const records = await SimulatedExerciseResponse.bulkCreate(
     simulatedAnswers.map((answer, i) => ({
       ClassExerciseId: exercise.id,
       student_name: `S${String(i + 1).padStart(2, "0")}`,
       answer,
     }))
   );
+  return records;
 }
 
 function createFITBPrompt(exercise) {
