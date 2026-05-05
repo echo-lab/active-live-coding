@@ -97,6 +97,10 @@ export class LectureSession extends Model {
             model: ExerciseResponse,
             include: [{ model: StudentSession, attributes: ["student_id", "student_identifier"], required: false }],
           },
+          {
+            model: SimulatedExerciseResponse,
+            required: false,
+          },
         ],
         order: [["start_ts", "ASC"]],
       },

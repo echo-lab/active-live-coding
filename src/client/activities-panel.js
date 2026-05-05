@@ -465,7 +465,16 @@ export class InstructorActivitiesPanel {
     this.userId = userId;
     this.exercises = exercises.map((ex) => ({
       ...ex,
-      ExerciseResponses: ex.ExerciseResponses ?? [],
+      ExerciseResponses: [
+        ...(ex.ExerciseResponses ?? []),
+        ...(ex.SimulatedExerciseResponses ?? []).map((r) => ({
+          student_id: r.student_name,
+          student_identifier: r.student_name,
+          StudentSession: null,
+          answer: r.answer,
+          isSimulated: true,
+        })),
+      ],
     }));
     this.socket = socket;
     this.activitiesPanel = activitiesPanel;
@@ -539,7 +548,7 @@ export class InstructorActivitiesPanel {
         }
       }
       const countEl = document.querySelector("#activity-response-count");
-      let count = ex ? ex.ExerciseResponses.length : 0;
+      let count = ex ? ex.ExerciseResponses.filter((r) => !r.isSimulated).length : 0;
       countEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
     });
 
@@ -582,8 +591,22 @@ export class InstructorActivitiesPanel {
           exerciseId: res.exerciseId,
         }),
         ...POST_JSON_REQUEST,
-      });
-      // fire-and-forget; response not used by client for now
+      })
+        .then((r) => r.json())
+        .then(({ simulatedResponses }) => {
+          const ex = this.exercises.find((e) => e.id === res.exerciseId);
+          if (ex && simulatedResponses) {
+            simulatedResponses.forEach((r) => {
+              ex.ExerciseResponses.push({
+                student_id: r.student_name,
+                student_identifier: r.student_name,
+                StudentSession: null,
+                answer: r.answer,
+                isSimulated: true,
+              });
+            });
+          }
+        });
     }
 
     this.openPanel();
@@ -657,7 +680,7 @@ export class InstructorActivitiesPanel {
   _showActiveView(ex) {
     document.querySelector("#activity-active-instructions").textContent =
       ex.instructions ?? "";
-    let count = ex.ExerciseResponses.length;
+    let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
     document.querySelector("#activity-response-count").textContent =
       `${count} response${count !== 1 ? "s" : ""}`;
     this._showView("active");
