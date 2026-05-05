@@ -1,5 +1,5 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { POST_JSON_REQUEST } from "./utils.js";
+import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
 import { createForkDisplay } from "./cm-diff-extensions.js";
@@ -554,7 +554,8 @@ export class InstructorActivitiesPanel {
     this._renderList();
   }
 
-  // Create a code exercise from the editor (TODO: possibly move to a different location?)
+  // Create a FITB code exercise from the editor (TODO: possibly move to a different location?)
+  // NOTE: see also: _createExercise (for other exercise types)
   async createCodeExercise({ instructor_code, default_answer, code_line_context_start, code_line_context_end }) {
     let res = await fetch("/exercise", {
       body: JSON.stringify({
@@ -564,6 +565,7 @@ export class InstructorActivitiesPanel {
         default_answer,
         code_line_context_start,
         code_line_context_end,
+        simulate_responses: shouldSimulateResponses(),
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -698,6 +700,7 @@ export class InstructorActivitiesPanel {
     this.timerInterval = setInterval(update, 1000);
   }
 
+  // NOTE: see also: createCodeExercise (for the FITB type)
   async _createExercise() {
     let instructions = document
       .querySelector("#activity-instructions")

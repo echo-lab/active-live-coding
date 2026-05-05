@@ -10,6 +10,7 @@ import {
   ExerciseResponse,
   StudentSession,
 } from "./models.js";
+import { createSimulatedResponses } from "./simulate-responses.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -236,7 +237,7 @@ app.post("/record-user-action", async (req, res) => {
 // MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = req.body;
+  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, simulate_responses } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -258,6 +259,14 @@ app.post("/exercise", async (req, res) => {
       );
       return { exerciseId: exercise.id };
     });
+
+    // Create simulated responses, if asked. 
+    if (simulate_responses && response.exerciseId) {
+      // TODO: gather the relevant info and pass it along
+      let info = {};
+      createSimulatedResponses(info, response.exerciseId);
+    }
+
     res.json(response);
   } catch (error) {
     console.error("Failed to create exercise:", error);
