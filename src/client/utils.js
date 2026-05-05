@@ -26,6 +26,18 @@ export function getUserID() {
   return userId;
 }
 
+export function shouldSimulateResponses() {
+  return localStorage.getItem("should_simulate_responses") !== "false";
+}
+
+export function setupSimulateResponsesCheckbox(cls) {
+  const checkbox = document.querySelector(cls);
+  checkbox.checked = shouldSimulateResponses();
+  checkbox.addEventListener("change", () =>
+    localStorage.setItem("should_simulate_responses", checkbox.checked)
+  );
+}
+
 export const EXAMPLE_CODE = `# Here is some example code
 
 # Slow version

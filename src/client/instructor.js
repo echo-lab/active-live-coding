@@ -1,7 +1,7 @@
 import "./style.css";
 
 import { io } from "socket.io-client";
-import { POST_JSON_REQUEST, getUserID } from "./utils.js";
+import { POST_JSON_REQUEST, getUserID, setupSimulateResponsesCheckbox } from "./utils.js";
 
 import { PythonCodeRunner } from "./code-runner.js";
 import {
@@ -23,6 +23,7 @@ const runButtonEl = document.querySelector("#run-button");
 const outputCodeContainer = document.querySelector("#all-code-outputs");
 const consoleResizer = document.querySelector("#resize-console");
 const codeOutputsContainer = document.querySelector("#output-container");
+setupSimulateResponsesCheckbox("#simulate-responses-checkbox");
 
 makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
 const { openPanel: openActivitiesPanel } = makeActivitiesPanelResizable(
