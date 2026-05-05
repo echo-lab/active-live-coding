@@ -8,6 +8,7 @@ LectureSession
   InstructorAction
   ClassExercise
     ExerciseResponse
+    SimulatedExerciseResponse
   StudentSession          (new student interface: student-page.html)
     StudentAction
     ExerciseResponse
@@ -327,6 +328,30 @@ ExerciseResponse.belongsTo(ClassExercise);
 
 StudentSession.hasMany(ExerciseResponse, { foreignKey: "StudentSessionId" });
 ExerciseResponse.belongsTo(StudentSession);
+
+// MARK: SimulatedExerciseResponse
+export class SimulatedExerciseResponse extends Model {}
+SimulatedExerciseResponse.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    student_name: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    answer: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+  },
+  { sequelize },
+);
+
+ClassExercise.hasMany(SimulatedExerciseResponse, { foreignKey: "ClassExerciseId" });
+SimulatedExerciseResponse.belongsTo(ClassExercise);
 
 // MARK: Code Changes
 export class InstructorChange extends Model {}

@@ -29,6 +29,7 @@ let flushInstructorChanges = async () => {
   }
 };
 
+// MARK: list lectures
 // Return a list of all the lectures.
 app.get("/lecture-sessions", async (req, res) => {
   try {
@@ -59,6 +60,7 @@ app.get("/session-details", async (req, res) => {
   res.json({ error: "Not implemented" });
 });
 
+// MARK: Get/create lecture
 // Get or create a lecture session
 app.post("/lecture-session", async (req, res) => {
   let { sessionName, userId } = req.body;
@@ -97,6 +99,7 @@ app.post("/lecture-session", async (req, res) => {
   }
 });
 
+// MARK: Get instructor changes
 app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
   let sessionId = req.params?.sessionId;
   let docVersion = parseInt(req.params?.docversion);
@@ -120,6 +123,8 @@ app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
   }
 });
 
+
+// MARK: Get/make stdt sesh
 // Get or create a StudentSession for student-page.html.
 // Returns info about:
 //   1) the instructor's code (doc/version)
@@ -176,6 +181,7 @@ app.post("/record-playground-changes", async (req, res) => {
   return res.json({ error: "no longer supported" });
 });
 
+// MARK: record action
 app.post("/record-user-action", async (req, res) => {
   let {
     ts,
@@ -227,6 +233,7 @@ app.post("/record-user-action", async (req, res) => {
   }
 });
 
+// MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
   const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = req.body;
@@ -258,6 +265,7 @@ app.post("/exercise", async (req, res) => {
   }
 });
 
+// MARK: Finish exercise
 // Finish an exercise (sets end timestamp).
 // TODO: gather student responses and generate an automatic summary.
 app.post("/exercise/finish", async (req, res) => {
@@ -280,6 +288,7 @@ app.post("/exercise/finish", async (req, res) => {
   }
 });
 
+// MARK: exercise response
 // Submit (or update) a student's response to an exercise.
 app.post("/exercise/response", async (req, res) => {
   const { exerciseId, student_id, answer } = req.body;
@@ -320,6 +329,9 @@ app.post("/exercise/response", async (req, res) => {
 const server = http.createServer(app).listen(3000, () => {
   console.log("Server is listening!");
 });
+
+
+// MARK: Sockets
 
 const io = new Server(server);
 instructorChangeBuffer.initSocket(io);
