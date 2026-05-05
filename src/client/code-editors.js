@@ -30,6 +30,7 @@ Flushed data in format:
 Note: if onNewSnapshot is not null, will set up extensions for code snapshots.
 */
 // A student code editor whose state is periodically saved to the server.
+// MARK: Typing Along Editor
 export class StudentCodeEditor {
   constructor({
     node,
@@ -167,6 +168,7 @@ This editor just syncs w/ the instructors, including the selection and cursor.
 Tries to catch up if it falls behind for whatever reason.
 Doesn't log any activity -- only reads from the server.
 */
+// MARK: Follow Instructor (w/ exercises)
 export class CodeFollowingEditor {
   // Initialize CodeMirror and listen for instructor updates.
   constructor(node, doc, docVersion, socket, onNewSnapshot, sessionId, extraExtensions = []) {
@@ -285,8 +287,8 @@ export class CodeFollowingEditor {
     this.active = false;
   }
 
-  activateFillInBlank(exercise, currentAnswer, onSubmit) {
-    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit }) });
+  activateFillInBlank(exercise, currentAnswer, onSubmit, onRun) {
+    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun }) });
   }
 
   deactivateFillInBlank() {
@@ -294,6 +296,7 @@ export class CodeFollowingEditor {
   }
 }
 
+// MARK: Instructor Editor
 export class InstructorCodeEditor {
   constructor({
     node,
@@ -389,6 +392,7 @@ export class InstructorCodeEditor {
   }
 }
 
+// MARK: Review Editor
 export class ReviewCodeEditor {
   constructor({ node, doc, isEditable = false, showLineNumbers = false, baseDoc = null }) {
     let state = EditorState.create({

@@ -19,12 +19,14 @@ export function getCurrentFillInBlankCode() {
 
 class FillInBlankWidget extends WidgetType {
 
-  constructor({ prefixCode, currentAnswer, showButtons, onSubmit }) {
+  constructor({ prefixCode, suffixCode, currentAnswer, showButtons, onSubmit, onRun }) {
     super();
-    this.prefixCode = prefixCode;
+    this.prefixCode = prefixCode ?? "";
+    this.suffixCode = suffixCode ?? "";
     this.currentAnswer = currentAnswer;
     this.showButtons = showButtons;
     this.onSubmit = onSubmit;
+    this.onRun = onRun;
     // +1 for the '\n' separator between prefix and visible content
     this.prefixLength = prefixCode ? prefixCode.length + 1 : 0;
     this.innerView = null;
@@ -49,7 +51,15 @@ class FillInBlankWidget extends WidgetType {
       const runBtn = document.createElement("button");
       runBtn.textContent = "Run";
       runBtn.className = "cm-fitb-run-btn";
-      runBtn.addEventListener("click", () => { /* TODO */ });
+      runBtn.addEventListener("click", async () => {
+        if (runBtn.disabled) return;
+        runBtn.disabled = true;
+        runBtn.textContent = "Running...";
+        let code = `${this.prefixCode}\n${this.getVisibleCode()}\n${this.suffixCode}`;
+        await this.onRun?.(code);
+        runBtn.disabled = false;
+        runBtn.textContent = "Run";
+      });
 
       const submitBtn = document.createElement("button");
       submitBtn.textContent = "Submit";
@@ -143,7 +153,7 @@ export const fillInBlankViewField = StateField.define({
 
       if (e.value === null) return Decoration.none;
 
-      const { exercise, showButtons, currentAnswer, onSubmit } = e.value;
+      const { exercise, showButtons, currentAnswer, onSubmit, onRun } = e.value;
       const {
         instructor_code,
         default_answer,
@@ -153,12 +163,15 @@ export const fillInBlankViewField = StateField.define({
 
       const allLines = instructor_code.split("\n");
       const prefixCode = allLines.slice(0, code_line_context_start - 1).join("\n");
+      const suffixCode = allLines.slice(code_line_context_end).join("\n");
 
       const widget = new FillInBlankWidget({
         prefixCode,
+        suffixCode,
         currentAnswer: currentAnswer ?? default_answer ?? "",
         showButtons,
         onSubmit,
+        onRun,
       });
 
       const doc = tr.state.doc;

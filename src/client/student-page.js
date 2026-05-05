@@ -109,6 +109,10 @@ async function initialize({
   // Set up the run button for the playground tab.
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(codeOutputsEl);
+  const fitbOnRun = async (code) => {
+    const res = await codeRunner.asyncRun(code);
+    consoleOutput.addResult({ fileName: "<exercise>", ...res });
+  };
   new RunInteractions({
     runButtonEl,
     codeEditor: playgroundEditor,
@@ -240,7 +244,7 @@ async function initialize({
     studentIdentifier: email,
     showExerciseTab: setupExerciseTab,
     closeExerciseTab,
-    showFillInBlank: (ex, currentAnswer, onSubmit) => instructorEditor.activateFillInBlank(ex, currentAnswer, onSubmit),
+    showFillInBlank: (ex, currentAnswer, onSubmit) => instructorEditor.activateFillInBlank(ex, currentAnswer, onSubmit, fitbOnRun),
     hideFillInBlank: () => instructorEditor.deactivateFillInBlank(),
   });
 }
