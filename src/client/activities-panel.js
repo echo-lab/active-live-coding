@@ -399,6 +399,7 @@ export class StudentActivitiesPanel {
         student_id: this.student_id,
         student_identifier: this.studentIdentifier,
         answer: code,
+        responseId: res.responseId,
       });
     };
   }
@@ -443,6 +444,7 @@ export class StudentActivitiesPanel {
       student_id: this.student_id,
       student_identifier: this.studentIdentifier,
       answer,
+      responseId: res.responseId,
     });
   }
 }
@@ -540,8 +542,10 @@ export class InstructorActivitiesPanel {
         );
         if (idx >= 0) {
           ex.ExerciseResponses[idx].answer = msg.answer;
+          if (msg.responseId != null) ex.ExerciseResponses[idx].id = msg.responseId;
         } else {
           ex.ExerciseResponses.push({
+            id: msg.responseId,
             student_id: msg.student_id,
             student_identifier: msg.student_identifier,
             answer: msg.answer,
@@ -599,6 +603,7 @@ export class InstructorActivitiesPanel {
           if (ex && simulatedResponses) {
             simulatedResponses.forEach((r) => {
               ex.ExerciseResponses.push({
+                id: r.id,
                 student_id: r.student_name,
                 student_identifier: r.student_name,
                 StudentSession: null,
@@ -881,6 +886,7 @@ export class InstructorActivitiesPanel {
       body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json()).then(({ summary }) => {
+      if (summary) ex.summary = JSON.stringify(summary);
       let responsesEl = document.querySelector("#activity-summary-responses");
       responsesEl.innerHTML = "";
       this._renderResponsesEl(responsesEl, ex, summary ?? null);

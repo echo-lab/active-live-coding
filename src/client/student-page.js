@@ -218,6 +218,7 @@ async function initialize({
       student_id: userId,
       student_identifier: email,
       answer: code,
+      responseId: res.responseId,
     });
   }
 
