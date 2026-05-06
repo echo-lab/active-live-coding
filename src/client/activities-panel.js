@@ -468,6 +468,7 @@ export class InstructorActivitiesPanel {
       ExerciseResponses: [
         ...(ex.ExerciseResponses ?? []),
         ...(ex.SimulatedExerciseResponses ?? []).map((r) => ({
+          id: r.id,
           student_id: r.student_name,
           student_identifier: r.student_name,
           StudentSession: null,
@@ -687,39 +688,108 @@ export class InstructorActivitiesPanel {
     this._startTimer(ex.start_ts);
   }
 
-  _showSummaryView(ex) {
+  _showSummaryView(ex, { loading = false, groups = undefined } = {}) {
     document.querySelector("#activity-summary-instructions").textContent =
       ex.instructions ?? "";
     let responsesEl = document.querySelector("#activity-summary-responses");
     responsesEl.innerHTML = "";
-    if (ex.ExerciseResponses.length === 0) {
-      responsesEl.textContent = "No responses.";
+    if (loading) {
+      let loadingEl = document.createElement("div");
+      loadingEl.className = "summary-loading";
+      loadingEl.textContent = "Generating summary\u2026";
+      responsesEl.appendChild(loadingEl);
     } else {
-      ex.ExerciseResponses.forEach(
-        ({ student_id, student_identifier, StudentSession, answer }) => {
-          let displayName =
-            StudentSession?.student_identifier ??
-            student_identifier ??
-            student_id;
-          // TODO: change the outer summary-response div? Maybe nix it.
-          let div = document.createElement("div");
-          div.className = "summary-response";
-          if (ex.type === "CODE_FORK") {
-            div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
-          } else {
-            // ex.type == "CODE", "CODE_FITB", or "POLL"
-            let startExpanded = answer.trim().split("\n").length <= 3;
-            let label = displayName;
-            console.log("EX: ", ex);
-            div.appendChild(
-              createAnswerDisplay(answer, ex.type, { label, startExpanded })
-            );
-          }
-          responsesEl.appendChild(div);
-        },
-      );
+      let resolvedGroups = groups !== undefined ? groups
+        : (ex.summary ? JSON.parse(ex.summary) : null);
+      this._renderResponsesEl(responsesEl, ex, resolvedGroups);
     }
     this._showView("summary");
+  }
+
+  _renderResponseEl(response, ex) {
+    let { student_id, student_identifier, StudentSession, answer } = response;
+    let displayName =
+      StudentSession?.student_identifier ?? student_identifier ?? student_id;
+    let div = document.createElement("div");
+    div.className = "summary-response";
+    if (ex.type === "CODE_FORK") {
+      div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
+    } else {
+      let startExpanded = answer.trim().split("\n").length <= 3;
+      div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded }));
+    }
+    return div;
+  }
+
+  _renderResponsesEl(responsesEl, ex, groups) {
+    if (ex.ExerciseResponses.length === 0) {
+      responsesEl.textContent = "No responses.";
+      return;
+    }
+    if (!groups) {
+      ex.ExerciseResponses.forEach((response) => {
+        responsesEl.appendChild(this._renderResponseEl(response, ex));
+      });
+      return;
+    }
+
+    // Build a lookup map: "real_{id}" / "sim_{id}" → response object
+    let responseById = {};
+    ex.ExerciseResponses.forEach((r) => {
+      let key = r.isSimulated ? `sim_${r.id}` : `real_${r.id}`;
+      responseById[key] = r;
+    });
+
+    groups.forEach((group) => {
+      let responses = group.response_ids
+        .map((id) => responseById[id])
+        .filter(Boolean);
+      if (responses.length === 0) return;
+
+      let groupEl = document.createElement("div");
+      groupEl.className = "response-group";
+
+      let headerEl = document.createElement("div");
+      headerEl.className = "group-header";
+      let descEl = document.createElement("span");
+      descEl.className = "group-description";
+      descEl.textContent = group.description;
+      let countEl = document.createElement("span");
+      countEl.className = "group-count";
+      countEl.textContent = `${responses.length} response${responses.length !== 1 ? "s" : ""}`;
+      headerEl.appendChild(descEl);
+      headerEl.appendChild(countEl);
+      groupEl.appendChild(headerEl);
+
+      // Always show the first response
+      groupEl.appendChild(this._renderResponseEl(responses[0], ex));
+
+      // Remaining responses collapsed
+      if (responses.length > 1) {
+        let extraEl = document.createElement("div");
+        extraEl.className = "group-extra-responses";
+        extraEl.hidden = true;
+        responses.slice(1).forEach((r) => {
+          extraEl.appendChild(this._renderResponseEl(r, ex));
+        });
+
+        let toggleBtn = document.createElement("button");
+        toggleBtn.className = "group-toggle-btn";
+        toggleBtn.textContent = `Show ${responses.length - 1} more`;
+        toggleBtn.addEventListener("click", () => {
+          let collapsed = extraEl.hidden;
+          extraEl.hidden = !collapsed;
+          toggleBtn.textContent = collapsed
+            ? "Show less"
+            : `Show ${responses.length - 1} more`;
+        });
+
+        groupEl.appendChild(toggleBtn);
+        groupEl.appendChild(extraEl);
+      }
+
+      responsesEl.appendChild(groupEl);
+    });
   }
 
   _startTimer(startTs) {
@@ -804,14 +874,16 @@ export class InstructorActivitiesPanel {
       exerciseId: ex.id,
     });
     this._renderList();
-    this._showSummaryView(ex);
+    this._showSummaryView(ex, { loading: true });
 
     // Fetch (or generate) the grouped summary for this exercise.
     fetch("/exercise/summary", {
       body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json()).then(({ summary }) => {
-      // TODO: do something with the summary (e.g., display grouped responses)
+      let responsesEl = document.querySelector("#activity-summary-responses");
+      responsesEl.innerHTML = "";
+      this._renderResponsesEl(responsesEl, ex, summary ?? null);
     });
   }
 }
