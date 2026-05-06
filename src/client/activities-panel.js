@@ -805,5 +805,13 @@ export class InstructorActivitiesPanel {
     });
     this._renderList();
     this._showSummaryView(ex);
+
+    // Fetch (or generate) the grouped summary for this exercise.
+    fetch("/exercise/summary", {
+      body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json()).then(({ summary }) => {
+      // TODO: do something with the summary (e.g., display grouped responses)
+    });
   }
 }

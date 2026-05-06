@@ -8,9 +8,11 @@ import {
   LectureSession,
   ClassExercise,
   ExerciseResponse,
+  SimulatedExerciseResponse,
   StudentSession,
 } from "./models.js";
 import { createSimulatedResponses } from "./simulate-responses.js";
+import { createGroupSummary } from "./group-responses.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 
@@ -311,6 +313,43 @@ app.post("/exercise/finish", async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("Failed to finish exercise:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Exercise summary
+// Returns the existing summary for a completed exercise, or generates one via LLM.
+app.post("/exercise/summary", async (req, res) => {
+  const { instructorId, exerciseId } = req.body;
+  if (!instructorId || !exerciseId)
+    return res.json({ error: "instructorId and exerciseId are required" });
+
+  try {
+    const exercise = await ClassExercise.findByPk(exerciseId, {
+      include: [LectureSession],
+    });
+    if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
+    if (exercise.LectureSession.instructor_id !== instructorId)
+      return res.json({ error: "Unauthorized" });
+    if (exercise.end_ts === null)
+      return res.json({ error: "Exercise is not yet completed" });
+
+    if (exercise.summary) {
+      return res.json({ summary: JSON.parse(exercise.summary) });
+    }
+
+    const [realResponses, simulatedResponses] = await Promise.all([
+      ExerciseResponse.findAll({ where: { ClassExerciseId: exerciseId } }),
+      SimulatedExerciseResponse.findAll({ where: { ClassExerciseId: exerciseId } }),
+    ]);
+
+    const groups = await createGroupSummary(exercise, realResponses, simulatedResponses);
+    if (groups != null) {
+      await exercise.update({ summary: JSON.stringify(groups) });
+    }
+    res.json({ summary: groups ?? null });
+  } catch (error) {
+    console.error("Failed to generate exercise summary:", error);
     res.json({ error: error.message });
   }
 });
