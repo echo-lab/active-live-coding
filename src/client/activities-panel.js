@@ -761,7 +761,7 @@ export class InstructorActivitiesPanel {
       descEl.textContent = group.description;
       let countEl = document.createElement("span");
       countEl.className = "group-count";
-      countEl.textContent = `${responses.length} response${responses.length !== 1 ? "s" : ""}`;
+      countEl.textContent = `(x${responses.length})`;
       headerEl.appendChild(descEl);
       headerEl.appendChild(countEl);
       groupEl.appendChild(headerEl);
@@ -780,13 +780,13 @@ export class InstructorActivitiesPanel {
 
         let toggleBtn = document.createElement("button");
         toggleBtn.className = "group-toggle-btn";
-        toggleBtn.textContent = `Show ${responses.length - 1} more`;
+        toggleBtn.textContent = `▶ Show ${responses.length - 1} more`;
         toggleBtn.addEventListener("click", () => {
           let collapsed = extraEl.hidden;
           extraEl.hidden = !collapsed;
           toggleBtn.textContent = collapsed
-            ? "Show less"
-            : `Show ${responses.length - 1} more`;
+            ? "▼ Show less"
+            : `▶ Show ${responses.length - 1} more`;
         });
 
         groupEl.appendChild(toggleBtn);

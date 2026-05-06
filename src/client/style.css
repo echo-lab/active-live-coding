@@ -976,6 +976,63 @@ td {
 }
 
 /* Summary view */
+.response-group {
+  /* border-bottom: 2px solid grey; */
+  padding-bottom: 35px;
+  padding-top: 20px;
+  margin-bottom: 16px;
+
+  border: solid 1px grey;
+  border-radius: 5px;
+  /* background-color: #1ef60029; */
+  background-color: #ccffc529;
+  padding: 8px;
+}
+
+.response-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.group-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #555;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 6px;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.group-toggle-btn:hover {
+  background: #ebebeb;
+}
+
+.group-description {
+  padding-right: 15px;
+  text-decoration: underline;
+}
+
+.group-count {
+  color: grey;
+}
+
+.group-header {
+  padding-bottom: 15px;
+}
+
+.response-group .summary-response {
+  border: none;
+}
+
+
 .summary-response {
   width: 100%;
   padding: 8px;
