@@ -288,7 +288,15 @@ export class CodeFollowingEditor {
   }
 
   activateFillInBlank(exercise, currentAnswer, onSubmit, onRun) {
-    this.view.dispatch({ effects: activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun }) });
+    const { code_line_context_start } = exercise;
+    const effects = [activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun })];
+    if (code_line_context_start >= 1 && code_line_context_start <= this.view.state.doc.lines) {
+      const line = this.view.state.doc.line(code_line_context_start);
+      effects.push(EditorView.scrollIntoView(line.from, { y: "nearest" }));
+    }
+    this.view.scrollDOM.style.scrollBehavior = "smooth";
+    this.view.dispatch({ effects });
+    requestAnimationFrame(() => { this.view.scrollDOM.style.scrollBehavior = ""; });
   }
 
   deactivateFillInBlank() {
