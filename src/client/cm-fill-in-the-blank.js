@@ -1,4 +1,4 @@
-import { EditorState, StateEffect, StateField, Facet } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, Facet, EditorSelection } from "@codemirror/state";
 import { EditorView, showTooltip, keymap, WidgetType, Decoration } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
@@ -117,20 +117,30 @@ class FillInBlankWidget extends WidgetType {
           Decoration.replace({ block: true }).range(0, prefixLength),
         ])
       ),
-      // Prevent any edits inside the hidden prefix region.
+      // Prevent edits inside the hidden prefix region, and clamp the
+      // selection so the cursor can never land inside it.
       EditorState.transactionFilter.of((tr) => {
-        if (!tr.docChanged) return tr;
-        let blocked = false;
-        tr.changes.iterChanges((fromA) => {
-          if (fromA < prefixLength) blocked = true;
-        });
-        return blocked ? [] : tr;
+        if (tr.docChanged) {
+          let blocked = false;
+          tr.changes.iterChanges((fromA) => {
+            if (fromA < prefixLength) blocked = true;
+          });
+          if (blocked) return [];
+        }
+        const { anchor, head } = tr.newSelection.main;
+        const ca = Math.max(anchor, prefixLength);
+        const ch = Math.max(head, prefixLength);
+        if (ca !== anchor || ch !== head) {
+          return [tr, { selection: EditorSelection.create([EditorSelection.range(ca, ch)]) }];
+        }
+        return tr;
       }),
     ] : [];
 
     this.innerView = new EditorView({
       state: EditorState.create({
         doc,
+        ...(prefixLength > 0 && { selection: EditorSelection.cursor(prefixLength) }),
         extensions: [
           minimalSetup,
           python(),
