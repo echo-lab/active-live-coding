@@ -376,7 +376,8 @@ pre {
 }
 
 /* Poll button */
-#poll-button {
+#poll-button,
+#fork-button {
   padding: 6px 12px;
   border: 1px solid #ccc;
   border-radius: 8px;
@@ -386,7 +387,8 @@ pre {
   font-size: 14px;
 }
 
-#poll-button:hover {
+#poll-button:hover,
+#fork-button:hover {
   background: #e8e8ff;
   border-color: #646cff;
 }

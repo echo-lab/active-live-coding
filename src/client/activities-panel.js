@@ -495,6 +495,7 @@ export class InstructorActivitiesPanel {
     this.activeEl = document.querySelector("#activities-active");
     this.summaryEl = document.querySelector("#activities-summary");
     this.pollButton = document.querySelector("#poll-button");
+    this.forkButton = document.querySelector("#fork-button");
 
     document
       .querySelector("#activities-back")
@@ -529,6 +530,15 @@ export class InstructorActivitiesPanel {
       document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
       document.querySelector('.type-btn[data-type="POLL"]').classList.add("active");
       this._selectedType = "POLL";
+    });
+
+    this.forkButton.addEventListener("click", () => {
+      this.openPanel();
+      this._showView("create");
+      document.querySelector("#activity-instructions").value = "";
+      document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelector('.type-btn[data-type="CODE_FORK"]').classList.add("active");
+      this._selectedType = "CODE_FORK";
     });
 
     socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
