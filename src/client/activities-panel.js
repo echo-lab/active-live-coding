@@ -323,8 +323,7 @@ export class StudentActivitiesPanel {
       // POLL
       this.codeEditorEl.hidden = true;
 
-      if (!isActive && myResponse) {
-        // Completed with answer: use unified display
+      if (myResponse) {
         this.codeSubmittedEl.innerHTML = "";
         this.codeSubmittedEl.appendChild(
           createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
@@ -332,23 +331,16 @@ export class StudentActivitiesPanel {
         this.codeSubmittedEl.hidden = false;
         this.answerDisplayEl.hidden = true;
         this.answerInputEl.value = myResponse.answer;
+      } else if (!isActive) {
+        this.codeSubmittedEl.hidden = true;
+        this.answerDisplayEl.textContent = "You didn't submit an answer.";
+        this.answerDisplayEl.classList.add("no-answer");
+        this.answerDisplayEl.hidden = false;
+        this.answerInputEl.value = "";
       } else {
         this.codeSubmittedEl.hidden = true;
-        if (myResponse) {
-          // Active with prior answer
-          this.answerDisplayEl.textContent = `Your answer: ${myResponse.answer}`;
-          this.answerDisplayEl.classList.remove("no-answer");
-          this.answerDisplayEl.hidden = false;
-          this.answerInputEl.value = myResponse.answer;
-        } else if (!isActive) {
-          this.answerDisplayEl.textContent = "You didn't submit an answer.";
-          this.answerDisplayEl.classList.add("no-answer");
-          this.answerDisplayEl.hidden = false;
-          this.answerInputEl.value = "";
-        } else {
-          this.answerDisplayEl.hidden = true;
-          this.answerInputEl.value = "";
-        }
+        this.answerDisplayEl.hidden = true;
+        this.answerInputEl.value = "";
       }
 
       this.answerInputEl.hidden = !isActive;
