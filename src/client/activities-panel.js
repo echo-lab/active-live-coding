@@ -730,8 +730,7 @@ export class InstructorActivitiesPanel {
     if (ex.type === "CODE_FORK") {
       div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
     } else {
-      let startExpanded = answer.trim().split("\n").length <= 3;
-      div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded }));
+      div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
     }
     return div;
   }
