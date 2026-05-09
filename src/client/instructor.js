@@ -116,6 +116,10 @@ function initialize({
   });
 
   endButton.addEventListener("click", async () => {
+    const confirmed = confirm(
+      'Are you sure you want to end the lecture? If you just meant to stop an exercise, click the "finish" button in the exercise panel to the right of the code editor'
+    );
+    if (!confirmed) return;
     // TODO: make it so you can't edit the code :)
     endButton.disabled = true;
     sessionDetails.textContent += " (Terminated)";
