@@ -96,9 +96,9 @@ function initialize({
     doc,
     startVersion: docVersion,
     sessionNumber,
-    extraExtensions: fillInBlankExtensions(({ instructor_code, code_line_context_start, code_line_context_end, default_answer }) => {
-      activitiesPanel?.createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end, default_answer });
-    }),
+    // extraExtensions: fillInBlankExtensions(({ instructor_code, code_line_context_start, code_line_context_end, default_answer }) => {
+    //   activitiesPanel?.createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end, default_answer });
+    // }),
   });
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(outputCodeContainer);
