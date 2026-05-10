@@ -14,6 +14,7 @@ import { InstructorCodeEditor } from "./code-editors.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
+import { versionWidgetExtensions, versionWidgetTooltipField } from "./cm-version-widget.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -96,6 +97,7 @@ function initialize({
     doc,
     startVersion: docVersion,
     sessionNumber,
+    extraExtensions: versionWidgetExtensions(() => {}),
     // extraExtensions: fillInBlankExtensions(({ instructor_code, code_line_context_start, code_line_context_end, default_answer }) => {
     //   activitiesPanel?.createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end, default_answer });
     // }),
@@ -144,7 +146,7 @@ function initialize({
     activitiesPanel: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getInstructorCode: () => codeEditor.currentCode(),
-    onFillInBlankActivated: (ex) => codeEditor.activateFillInBlank(ex),
-    onFillInBlankDeactivated: () => codeEditor.deactivateFillInBlank(),
+    // onFillInBlankActivated: (ex) => codeEditor.activateFillInBlank(ex),
+    // onFillInBlankDeactivated: () => codeEditor.deactivateFillInBlank(),
   });
 }
