@@ -14,7 +14,7 @@ import { InstructorCodeEditor } from "./code-editors.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
-import { versionWidgetExtensions, versionWidgetTooltipField } from "./cm-version-widget.js";
+import { versionWidgetExtensions, addVersionBlockEffect } from "./cm-version-widget.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -84,24 +84,51 @@ function initialize({
   docVersion = null,
   sessionNumber = null,
   exercises = [],
+  versionBlocks = [],
 }) {
   startButton.disabled = true;
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 
   let activitiesPanel = null; // forward reference; assigned after panel construction
+  let codeEditor = null;      // forward reference; used inside the version block callback
 
-  let codeEditor = new InstructorCodeEditor({
+  async function onCreateVersionBlock({ variantCode, from, to }) {
+    const currentDocVersion = codeEditor.getDocVersion();
+    try {
+      const res = await fetch("/version-block", {
+        body: JSON.stringify({ lectureId: sessionNumber, anchor_pos: from, docVersion: currentDocVersion, variantCode }),
+        ...POST_JSON_REQUEST,
+      });
+      const { versionBlockId, error } = await res.json();
+      if (error) { console.error("Failed to create version block:", error); return; }
+      codeEditor.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variantCode }) });
+      socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: sessionNumber, versionBlockId, from, to, variantCode });
+    } catch (err) {
+      console.error("Failed to create version block:", err);
+    }
+  }
+
+  codeEditor = new InstructorCodeEditor({
     node: codeContainer,
     socket,
     doc,
     startVersion: docVersion,
     sessionNumber,
-    extraExtensions: versionWidgetExtensions(() => {}),
+    extraExtensions: versionWidgetExtensions(onCreateVersionBlock),
     // extraExtensions: fillInBlankExtensions(({ instructor_code, code_line_context_start, code_line_context_end, default_answer }) => {
     //   activitiesPanel?.createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end, default_answer });
     // }),
   });
+
+  // Reconstruct any existing version blocks from the server.
+  for (const block of versionBlocks) {
+    const v0 = block.variants.find((v) => v.name === "v0") ?? block.variants[0];
+    if (!v0) continue;
+    codeEditor.view.dispatch({
+      effects: addVersionBlockEffect.of({ from: block.from, to: block.to, versionBlockId: block.id, variantCode: v0.code }),
+    });
+  }
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(outputCodeContainer);
 

@@ -10,6 +10,7 @@ import {
   ExerciseResponse,
   SimulatedExerciseResponse,
   StudentSession,
+  VersionBlock,
 } from "./models.js";
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { createGroupSummary } from "./group-responses.js";
@@ -87,12 +88,13 @@ app.post("/lecture-session", async (req, res) => {
 
       let { doc, docVersion } = await sesh.getDoc(t);
       let exercises = await sesh.getExercisesForInstructor(t);
-      // console.log("exercises: ", exercises);
+      let versionBlocks = await sesh.getVersionBlocksWithPositions(t);
       return {
         doc: doc.toJSON(),
         docVersion,
         sessionNumber: sesh.id,
         exercises,
+        versionBlocks,
       };
     });
     res.json(response);
@@ -126,6 +128,33 @@ app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
   }
 });
 
+
+// MARK: Create version block
+app.post("/version-block", async (req, res) => {
+  const { lectureId, anchor_pos, docVersion, variantCode } = req.body;
+  if (lectureId == null || anchor_pos == null || docVersion == null || variantCode == null) {
+    return res.json({ error: "lectureId, anchor_pos, docVersion, and variantCode are required" });
+  }
+
+  await flushInstructorChanges();
+
+  try {
+    let response = await db.transaction(async (t) => {
+      let lecture = await LectureSession.findByPk(lectureId, { transaction: t });
+      if (!lecture) return { error: `Session #${lectureId} not found` };
+      const { block } = await VersionBlock.createWithVariant(
+        lectureId,
+        { anchor_pos, anchor_change_number: docVersion, variantCode },
+        t,
+      );
+      return { versionBlockId: block.id };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to create version block:", error);
+    res.json({ error: error.message });
+  }
+});
 
 // MARK: Get/make stdt sesh
 // Get or create a StudentSession for student-page.html.
@@ -164,6 +193,7 @@ app.post("/current-session-student", async (req, res) => {
       let { doc: lectureDoc, docVersion: lectureDocVersion } =
         await lecture.getDoc(t);
       let exercises = await lecture.getExercisesForStudent(student_id, t);
+      let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
 
       return {
         sessionNumber: lecture.id,
@@ -171,6 +201,7 @@ app.post("/current-session-student", async (req, res) => {
         lectureDoc,
         lectureDocVersion,
         exercises,
+        versionBlocks,
       };
     });
     res.json(response);
@@ -434,6 +465,10 @@ io.on("connection", async (socket) => {
 
   socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, msg);
   });
 
   // Forward/push this so the students stop writing.

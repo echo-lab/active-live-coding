@@ -9,6 +9,7 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
+import { addVersionBlockEffect } from "./cm-version-widget.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -296,6 +297,10 @@ export class CodeFollowingEditor {
 
   deactivateFillInBlank() {
     this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
+  }
+
+  addVersionBlock(from, to, versionBlockId, variantCode) {
+    this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variantCode }) });
   }
 }
 

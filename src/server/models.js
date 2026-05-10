@@ -30,7 +30,7 @@ const USER_ACTION_SCHEMA = {
   details: DataTypes.STRING,
 };
 
-function reconstructCMDoc(changes) {
+export function reconstructCMDoc(changes) {
   let doc = Text.empty;
   let docVersion = 0;
 
@@ -106,6 +106,57 @@ export class LectureSession extends Model {
       },
       { transaction },
     );
+  }
+
+  async getVersionBlocksWithPositions(transaction) {
+    const blocks = await this.getVersionBlocks(
+      {
+        include: [{ model: Variant, include: [VariantChange] }],
+        order: [["createdAt", "ASC"]],
+      },
+      { transaction },
+    );
+
+    if (blocks.length === 0) return [];
+
+    const allChanges = await this.getInstructorChanges(
+      { attributes: ["change_number", "change"], order: ["change_number"] },
+      { transaction },
+    );
+
+    return blocks.map((block) => {
+      const v0 = block.Variants.find((v) => v.name === "v0") ?? block.Variants[0];
+      const variantChanges = v0
+        ? [...v0.VariantChanges].sort((a, b) => a.change_number - b.change_number)
+        : [];
+      const { doc: variantDoc } = reconstructCMDoc(variantChanges);
+      const variantCode = variantDoc.toString();
+
+      let from = block.anchor_pos;
+      let to = block.anchor_pos + variantCode.length;
+
+      for (const { change_number, change } of allChanges) {
+        if (change_number >= block.anchor_change_number) {
+          const cs = ChangeSet.fromJSON(JSON.parse(change));
+          from = cs.mapPos(from);
+          to = cs.mapPos(to, 1);
+        }
+      }
+
+      return {
+        id: block.id,
+        from,
+        to,
+        variants: block.Variants.map((v) => {
+          const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
+          return {
+            id: v.id,
+            name: v.name,
+            code: reconstructCMDoc(vChanges).doc.toString(),
+          };
+        }),
+      };
+    });
   }
 
   // Returns all exercises for this lecture with only the given student's response (if any).
@@ -376,7 +427,21 @@ StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
 StudentAction.belongsTo(StudentSession);
 
 // MARK: VersionBlock
-export class VersionBlock extends Model {}
+export class VersionBlock extends Model {
+  static async createWithVariant(lectureId, { anchor_pos, anchor_change_number, variantCode }, transaction) {
+    const block = await VersionBlock.create(
+      { LectureSessionId: lectureId, anchor_pos, anchor_change_number },
+      { transaction },
+    );
+    const variant = await Variant.create({ VersionBlockId: block.id, name: "v0" }, { transaction });
+    const insertCs = ChangeSet.of([{ from: 0, insert: variantCode }], 0);
+    await VariantChange.create(
+      { VariantId: variant.id, change_number: 0, change: JSON.stringify(insertCs.toJSON()), change_ts: Date.now() },
+      { transaction },
+    );
+    return { block, variant };
+  }
+}
 VersionBlock.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },

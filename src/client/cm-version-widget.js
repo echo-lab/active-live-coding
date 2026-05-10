@@ -1,16 +1,64 @@
-import { EditorState, StateEffect, StateField, Facet, EditorSelection } from "@codemirror/state";
-import { EditorView, showTooltip, keymap, WidgetType, Decoration } from "@codemirror/view";
-import { minimalSetup } from "codemirror";
-import { indentWithTab } from "@codemirror/commands";
-import { python } from "@codemirror/lang-python";
-import { indentUnit } from "@codemirror/language";
+import { StateEffect, StateField, Facet } from "@codemirror/state";
+import { EditorView, showTooltip, WidgetType, Decoration } from "@codemirror/view";
+
+// ============================================================
+// MARK: Version Block Widget
+// ============================================================
+
+class VersionBlockWidget extends WidgetType {
+  constructor({ versionBlockId, variantCode }) {
+    super();
+    this.versionBlockId = versionBlockId;
+    this.variantCode = variantCode;
+  }
+
+  eq(other) {
+    return this.versionBlockId === other.versionBlockId;
+  }
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "cm-version-block-widget";
+    const placeholder = document.createElement("p");
+    placeholder.textContent = "TODO: implement the Version Widget";
+    container.appendChild(placeholder);
+    return container;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+// StateEffect dispatched to add a version block decoration to the editor.
+// value: { from, to, versionBlockId, variantCode }
+export const addVersionBlockEffect = StateEffect.define();
+
+// StateField that owns all version block replacement decorations.
+export const versionBlocksField = StateField.define({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    decorations = decorations.map(tr.changes);
+    for (const e of tr.effects) {
+      if (!e.is(addVersionBlockEffect)) continue;
+      const { from, to, versionBlockId, variantCode } = e.value;
+      const widget = new VersionBlockWidget({ versionBlockId, variantCode });
+      decorations = decorations.update({
+        add: [Decoration.replace({ widget, block: true }).range(from, to)],
+        sort: true,
+      });
+    }
+    return decorations;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 // ============================================================
 // MARK: Tooltip for instructor to create a Version Widget
 // ============================================================
 
-// Facet: injected callback, receives { instructor_code, default_answer, code_line_context_start, code_line_context_end }
-export const handleAskStudentsForCode = Facet.define({
+// Facet: injected callback, receives { variantCode, from, to }
+export const handleCreateVersionBlock = Facet.define({
   combine: (values) => (values.length ? values.at(-1) : null),
 });
 
@@ -41,26 +89,23 @@ function createVersionWidgetTooltipDOM(view) {
   div.className = "cm-tooltip-version-widget";
   div.textContent = "New Version";
   div.addEventListener("mousedown", (e) => {
-    e.preventDefault(); // Prevent editor blur/selection-change from dismissing the tooltip
+    e.preventDefault();
     view.dispatch({ effects: hideVersionWidgetTooltip.of(null) });
 
     let state = view.state;
     let { from, to } = state.selection.main;
     let startLine = state.doc.lineAt(from);
     let endLine = state.doc.lineAt(to);
-    let code_line_context_start = startLine.number;
+    let lineStart = startLine.number;
     // If selection ends exactly at the start of a line, don't count that line
-    let code_line_context_end =
-      to > from && to === endLine.from ? endLine.number - 1 : endLine.number;
+    let lineEnd = to > from && to === endLine.from ? endLine.number - 1 : endLine.number;
 
-    let firstLine = state.doc.line(code_line_context_start);
-    let lastLine = state.doc.line(code_line_context_end);
-    let default_answer = state.doc.sliceString(firstLine.from, lastLine.to);
-    let instructor_code = state.doc.toString();
+    let firstLine = state.doc.line(lineStart);
+    let lastLine = state.doc.line(lineEnd);
+    let variantCode = state.doc.sliceString(firstLine.from, lastLine.to);
 
-    let callback = state.facet(handleAskStudentsForCode);
-    callback &&
-      callback({ instructor_code, default_answer, code_line_context_start, code_line_context_end });
+    let callback = state.facet(handleCreateVersionBlock);
+    callback && callback({ variantCode, from: firstLine.from, to: lastLine.to });
   });
   return div;
 }
@@ -108,11 +153,12 @@ export const versionWidgetTooltipTheme = EditorView.baseTheme({
   },
 });
 
-export function versionWidgetExtensions(onCreateCodeExercise) {
+export function versionWidgetExtensions(onCreateVersionBlock) {
   return [
-    handleAskStudentsForCode.of(onCreateCodeExercise),
+    handleCreateVersionBlock.of(onCreateVersionBlock),
     versionWidgetTooltipField,
     versionWidgetContextMenu,
     versionWidgetTooltipTheme,
+    versionBlocksField,
   ];
 }

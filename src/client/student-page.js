@@ -6,6 +6,7 @@ import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 import { io } from "socket.io-client";
 import { CodeFollowingEditor, StudentCodeEditor } from "./code-editors.js";
 import { fillInBlankViewField } from "./cm-fill-in-the-blank.js";
+import { versionBlocksField } from "./cm-version-widget.js";
 import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
@@ -18,7 +19,6 @@ import {
 import {
   CLIENT_TYPE,
   SOCKET_MESSAGE_TYPE,
-  USER_ACTIONS,
 } from "../shared-constants.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
 
@@ -68,6 +68,7 @@ async function initialize({
   playgroundCodeInfo,
   exercises = [],
   studentSessionId,
+  versionBlocks = [],
 }) {
 
   let sessionActive = true;
@@ -78,8 +79,19 @@ async function initialize({
     lectureDocVersion,
     socket,
     sessionNumber,
-    [fillInBlankViewField]
+    [fillInBlankViewField, versionBlocksField]
   );
+
+  // Reconstruct existing version blocks.
+  for (const block of versionBlocks) {
+    const v0 = block.variants.find((v) => v.name === "v0") ?? block.variants[0];
+    if (!v0) continue;
+    instructorEditor.addVersionBlock(block.from, block.to, block.id, v0.code);
+  }
+
+  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, ({ versionBlockId, from, to, variantCode }) => {
+    instructorEditor.addVersionBlock(from, to, versionBlockId, variantCode);
+  });
 
   // Set up the run button for when we need it...
   let codeRunner = new PythonCodeRunner();
