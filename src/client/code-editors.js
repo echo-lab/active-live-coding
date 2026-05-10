@@ -59,7 +59,6 @@ export class StudentCodeEditor {
       doc: Text.of(doc),
       extensions: [
         ...basicExtensions,
-        ...exerciseDiffGutter,
         EditorView.updateListener.of(this.onCodeUpdate.bind(this)),
         keymap.of([indentWithTab]),
         snapshotExtensions,
@@ -81,10 +80,6 @@ export class StudentCodeEditor {
 
   currentCode() {
     return this.view.state.doc.toString();
-  }
-
-  setBaseCode(code) {
-    this.view.dispatch({ effects: setExerciseBaseCode.of(code) });
   }
 
   onCodeUpdate(viewUpdate) {
@@ -401,6 +396,7 @@ export class InstructorCodeEditor {
 }
 
 // MARK: Review Editor
+// Note: we don't use it right now, but can show diffs if we suppliy baseDoc, I think.
 export class ReviewCodeEditor {
   constructor({ node, doc, isEditable = false, showLineNumbers = false, baseDoc = null }) {
     let state = EditorState.create({

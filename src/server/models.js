@@ -176,8 +176,6 @@ StudentSession.belongsTo(LectureSession);
 
 export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
-  CODE: "CODE",
-  CODE_FORK: "CODE_FORK",
   CODE_FITB: "CODE_FITB",
 });
 

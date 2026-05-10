@@ -2,7 +2,6 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
-import { createForkDisplay } from "./cm-diff-extensions.js";
 
 // MARK: Code/Poll HTML
 function trimAnswer(text) {
@@ -39,7 +38,7 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
   content.className = "answer-display-content";
   content.hidden = !startExpanded;
 
-  if (exerciseType === "CODE" || exerciseType === "CODE_FITB") {
+  if (exerciseType === "CODE_FITB") {
     const editorContainer = document.createElement("div");
     new ReviewCodeEditor({ node: editorContainer, doc: trimmed.split("\n"), isEditable: false });
     content.appendChild(editorContainer);
@@ -70,8 +69,6 @@ export class StudentActivitiesPanel {
     socket,
     openActivitiesPanel,
     studentIdentifier,
-    showExerciseTab,
-    closeExerciseTab,
     showFillInBlank,
     hideFillInBlank,
   }) {
@@ -84,8 +81,6 @@ export class StudentActivitiesPanel {
     this.socket = socket;
     this.currentExerciseId = null;
     this.studentIdentifier = studentIdentifier;
-    this.showExerciseTab = showExerciseTab;
-    this.closeExerciseTab = closeExerciseTab;
     this.showFillInBlank = showFillInBlank ?? null;
     this.hideFillInBlank = hideFillInBlank ?? null;
 
@@ -98,9 +93,7 @@ export class StudentActivitiesPanel {
     this.answerDisplayEl = document.querySelector("#student-answer-display");
     this.codeSubmittedEl = document.querySelector("#student-code-submitted");
     this.answerInputEl = document.querySelector("#student-answer-input");
-    this.codeEditorEl = document.querySelector("#student-code-editor");
     this.submitBtn = document.querySelector("#student-submit-btn");
-    this._codeEditors = {}; // keyed by exerciseId, preserves in-progress code
 
     document
       .querySelector("#student-activity-back")
@@ -114,9 +107,7 @@ export class StudentActivitiesPanel {
       this._renderList();
       openActivitiesPanel();
       this._showExercise(ex);
-      if (ex.type === "CODE_FORK" && this.showExerciseTab) {
-        this.showExerciseTab(msg.exercise.instructor_code, msg.exercise.id, null);
-      } else if (ex.type === "CODE_FITB") {
+      if (ex.type === "CODE_FITB") {
         const currentAnswer = ex.default_answer ?? "";
         this.showFillInBlank?.(ex, currentAnswer, this._makeFitbSubmit(ex));
       }
@@ -126,9 +117,6 @@ export class StudentActivitiesPanel {
       if (msg.sessionNumber !== sessionNumber) return;
       let ex = this.exercises.find((e) => e.id === msg.exerciseId);
       if (ex) ex.end_ts = Date.now();
-      if (ex?.type === "CODE_FORK" && this.closeExerciseTab) {
-        this.closeExerciseTab();
-      }
       if (ex?.type === "CODE_FITB") {
         this.hideFillInBlank?.();
       }
@@ -143,10 +131,6 @@ export class StudentActivitiesPanel {
     if (active) {
       openActivitiesPanel();
       this._showExercise(active);
-      if (active.type === "CODE_FORK" && this.showExerciseTab) {
-        let myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
-        this.showExerciseTab(active.instructor_code, active.id, myResponse?.answer ?? null);
-      }
       if (active.type === "CODE_FITB") {
         const myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
         const currentAnswer = myResponse?.answer ?? active.default_answer ?? "";
@@ -154,21 +138,6 @@ export class StudentActivitiesPanel {
       }
     } else {
       this._showList();
-    }
-    this._renderList();
-  }
-
-  onForkSubmitted(exerciseId, code) {
-    let ex = this.exercises.find((e) => e.id === exerciseId);
-    if (!ex) return;
-    let idx = ex.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
-    if (idx >= 0) {
-      ex.ExerciseResponses[idx].answer = code;
-    } else {
-      ex.ExerciseResponses.push({ student_id: this.student_id, answer: code });
-    }
-    if (this.currentExerciseId === exerciseId) {
-      this._showExercise(ex);
     }
     this._renderList();
   }
@@ -212,37 +181,12 @@ export class StudentActivitiesPanel {
 
     this.instructionsEl.textContent = ex.instructions ?? "";
 
-    if (ex.type === "CODE_FORK") {
-      // Fork: no inline editor — student edits in the exercise tab
-      this.answerInputEl.hidden = true;
-      this.codeEditorEl.hidden = true;
-      this.submitBtn.hidden = true;
-
-      if (isActive) {
-        this.answerDisplayEl.textContent = "Edit the code in the exercise tab, then click Submit.";
-        this.answerDisplayEl.classList.remove("no-answer");
-        this.answerDisplayEl.hidden = false;
-      } else {
-        this.answerDisplayEl.hidden = true;
-      }
-
-      if (myResponse) {
-        this._showCollapsibleCode(myResponse.answer, ex.instructor_code ?? null);
-      } else if (!isActive) {
-        this.answerDisplayEl.textContent = "You didn't submit an answer.";
-        this.answerDisplayEl.classList.add("no-answer");
-        this.answerDisplayEl.hidden = false;
-        this.codeSubmittedEl.hidden = true;
-      } else {
-        this.codeSubmittedEl.hidden = true;
-      }
-    } else if (ex.type === "CODE_FITB") {
+    if (ex.type === "CODE_FITB") {
       this.answerInputEl.hidden = true;
       this.answerDisplayEl.hidden = true;
       this.codeSubmittedEl.hidden = true;
 
       // Fill-in-the-blank: student answers in the main code editor widget, not the sidebar.
-      this.codeEditorEl.hidden = true;
       this.submitBtn.hidden = true;
 
       if (isActive && myResponse) {
@@ -266,62 +210,8 @@ export class StudentActivitiesPanel {
         this.answerDisplayEl.classList.add("no-answer");
         this.answerDisplayEl.hidden = false;
       }
-    } else if (ex.type === "CODE") {
-      this.answerInputEl.hidden = true;
-      this.answerDisplayEl.hidden = true;
-      this.codeSubmittedEl.hidden = true;
-
-      if (!isActive) {
-        if (myResponse) {
-          this.codeEditorEl.hidden = true;
-          this.codeSubmittedEl.innerHTML = "";
-          this.codeSubmittedEl.appendChild(
-            createAnswerDisplay(myResponse.answer, "CODE", { label: "Your submission:", startExpanded: true })
-          );
-          this.codeSubmittedEl.hidden = false;
-        } else {
-          this.codeEditorEl.hidden = true;
-          this.codeSubmittedEl.hidden = true;
-          this.answerDisplayEl.textContent = "You didn't submit an answer.";
-          this.answerDisplayEl.classList.add("no-answer");
-          this.answerDisplayEl.hidden = false;
-        }
-        this.submitBtn.hidden = true;
-      } else {
-        if (!this._codeEditors[ex.id]) {
-          let container = document.createElement("div");
-          let initialDoc;
-          if (myResponse) {
-            initialDoc = myResponse.answer.split("\n");
-          } else if (ex.default_answer) {
-            initialDoc = ex.default_answer.split("\n");
-          } else {
-            initialDoc = [""];
-          }
-          this._codeEditors[ex.id] = {
-            editor: new ReviewCodeEditor({
-              node: container,
-              doc: initialDoc,
-              isEditable: true,
-              showLineNumbers: true,
-            }),
-            container,
-          };
-        }
-        this.codeEditorEl.innerHTML = "";
-        this.codeEditorEl.appendChild(this._codeEditors[ex.id].container);
-        this.codeEditorEl.hidden = false;
-
-        if (myResponse) {
-          this._showCollapsibleCode(myResponse.answer);
-        }
-
-        this.submitBtn.hidden = false;
-        this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
-      }
     } else {
       // POLL
-      this.codeEditorEl.hidden = true;
 
       if (myResponse) {
         this.codeSubmittedEl.innerHTML = "";
@@ -352,17 +242,11 @@ export class StudentActivitiesPanel {
     this.exerciseEl.hidden = false;
   }
 
-  _showCollapsibleCode(code, originalCode) {
+  _showCollapsibleCode(code) {
     this.codeSubmittedEl.innerHTML = "";
-    if (originalCode != null) {
-      // CODE_FORK: label is inside the collapsible header
-      this.codeSubmittedEl.appendChild(createForkDisplay(code, originalCode));
-    } else {
-      // CODE active: unified display (has its own header/label)
-      this.codeSubmittedEl.appendChild(
-        createAnswerDisplay(code, "CODE", { label: "Your submission:", startExpanded: true })
-      );
-    }
+    this.codeSubmittedEl.appendChild(
+      createAnswerDisplay(code, "POLL", { label: "Your submission:", startExpanded: true })
+    );
     this.codeSubmittedEl.hidden = false;
   }
 
@@ -382,7 +266,11 @@ export class StudentActivitiesPanel {
         ex.ExerciseResponses.push({ student_id: this.student_id, answer: code });
       }
 
-      this._showCollapsibleCode(code);
+      this.codeSubmittedEl.innerHTML = "";
+      this.codeSubmittedEl.appendChild(
+        createAnswerDisplay(code, "CODE_FITB", { label: "Your submission:", startExpanded: true })
+      );
+      this.codeSubmittedEl.hidden = false;
       this._renderList();
 
       this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
@@ -399,12 +287,7 @@ export class StudentActivitiesPanel {
   async _submitAnswer() {
     let exerciseId = this.currentExerciseId;
     let ex = this.exercises.find((e) => e.id === exerciseId);
-    let answer;
-    if (ex?.type === "CODE") {
-      answer = this._codeEditors[exerciseId]?.editor.currentCode() ?? "";
-    } else {
-      answer = this.answerInputEl.value.trim();
-    }
+    let answer = this.answerInputEl.value.trim();
     if (!answer) return;
     let res = await fetch("/exercise/response", {
       body: JSON.stringify({ exerciseId, student_id: this.student_id, answer }),
@@ -487,7 +370,6 @@ export class InstructorActivitiesPanel {
     this.activeEl = document.querySelector("#activities-active");
     this.summaryEl = document.querySelector("#activities-summary");
     this.pollButton = document.querySelector("#poll-button");
-    this.forkButton = document.querySelector("#fork-button");
 
     document
       .querySelector("#activities-back")
@@ -504,33 +386,10 @@ export class InstructorActivitiesPanel {
     document
       .querySelector("#activity-finish")
       .addEventListener("click", () => this._finishExercise());
-    this._selectedType = "POLL";
-    document.querySelectorAll(".type-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.disabled) return;
-        document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        this._selectedType = btn.dataset.type;
-      });
-    });
-
     this.pollButton.addEventListener("click", () => {
       this.openPanel();
       this._showView("create");
       document.querySelector("#activity-instructions").value = "";
-      // Reset type toggle to Text/POLL
-      document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
-      document.querySelector('.type-btn[data-type="POLL"]').classList.add("active");
-      this._selectedType = "POLL";
-    });
-
-    this.forkButton.addEventListener("click", () => {
-      this.openPanel();
-      this._showView("create");
-      document.querySelector("#activity-instructions").value = "";
-      document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
-      document.querySelector('.type-btn[data-type="CODE_FORK"]').classList.add("active");
-      this._selectedType = "CODE_FORK";
     });
 
     socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
@@ -719,11 +578,7 @@ export class InstructorActivitiesPanel {
       StudentSession?.student_identifier ?? student_identifier ?? student_id;
     let div = document.createElement("div");
     div.className = "summary-response";
-    if (ex.type === "CODE_FORK") {
-      div.appendChild(createForkDisplay(answer, ex.instructor_code ?? "", { label: displayName }));
-    } else {
-      div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
-    }
+    div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
     return div;
   }
 
@@ -816,15 +671,11 @@ export class InstructorActivitiesPanel {
     let instructions = document
       .querySelector("#activity-instructions")
       .value.trim();
-    let instructor_code = this._selectedType === "CODE_FORK" && this.getInstructorCode
-      ? this.getInstructorCode()
-      : undefined;
     let res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
-        type: this._selectedType,
+        type: "POLL",
         instructions,
-        instructor_code,
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -835,9 +686,8 @@ export class InstructorActivitiesPanel {
 
     let newEx = {
       id: res.exerciseId,
-      type: this._selectedType,
+      type: "POLL",
       instructions,
-      instructor_code,
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -852,7 +702,6 @@ export class InstructorActivitiesPanel {
         instructions: newEx.instructions,
         start_ts: newEx.start_ts,
         type: newEx.type,
-        instructor_code: newEx.instructor_code,
       },
     });
     this._showActiveView(newEx);
