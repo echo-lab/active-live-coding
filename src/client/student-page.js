@@ -6,7 +6,14 @@ import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 import { io } from "socket.io-client";
 import { CodeFollowingEditor, StudentCodeEditor } from "./code-editors.js";
 import { fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { versionBlocksField } from "./cm-version-widget.js";
+import {
+  versionBlocksField,
+  setVersionBlockReadOnly,
+  notifyVariantAdded,
+  notifyVariantRenamed,
+  notifyVariantDeleted,
+  notifyVariantCodeUpdated,
+} from "./cm-version-widget.js";
 import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
@@ -73,6 +80,8 @@ async function initialize({
 
   let sessionActive = true;
 
+  setVersionBlockReadOnly(true);
+
   let instructorEditor = new CodeFollowingEditor(
     instructorCodeContainer,
     lectureDoc,
@@ -84,13 +93,25 @@ async function initialize({
 
   // Reconstruct existing version blocks.
   for (const block of versionBlocks) {
-    const v0 = block.variants.find((v) => v.name === "v0") ?? block.variants[0];
-    if (!v0) continue;
-    instructorEditor.addVersionBlock(block.from, block.to, block.id, v0.code);
+    if (!block.variants.length) continue;
+    instructorEditor.addVersionBlock(block.from, block.to, block.id, block.variants);
   }
 
-  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, ({ versionBlockId, from, to, variantCode }) => {
-    instructorEditor.addVersionBlock(from, to, versionBlockId, variantCode);
+  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, ({ versionBlockId, from, to, variants }) => {
+    instructorEditor.addVersionBlock(from, to, versionBlockId, variants);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, ({ versionBlockId, variant }) => {
+    notifyVariantAdded(versionBlockId, variant);
+  });
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, ({ versionBlockId, variantId, name }) => {
+    notifyVariantRenamed(versionBlockId, variantId, name);
+  });
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
+    notifyVariantDeleted(versionBlockId, variantId);
+  });
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, ({ versionBlockId, variantId, code }) => {
+    notifyVariantCodeUpdated(versionBlockId, variantId, code);
   });
 
   // Set up the run button for when we need it...

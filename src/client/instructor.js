@@ -14,7 +14,14 @@ import { InstructorCodeEditor } from "./code-editors.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
-import { versionWidgetExtensions, addVersionBlockEffect } from "./cm-version-widget.js";
+import {
+  versionWidgetExtensions,
+  addVersionBlockEffect,
+  notifyVariantAdded,
+  notifyVariantRenamed,
+  notifyVariantDeleted,
+  notifyVariantCodeUpdated,
+} from "./cm-version-widget.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -93,6 +100,61 @@ function initialize({
   let activitiesPanel = null; // forward reference; assigned after panel construction
   let codeEditor = null;      // forward reference; used inside the version block callback
 
+  const versionBlockCallbacks = {
+    async onAddVariant(versionBlockId, currentCount) {
+      const name = `v${currentCount}`;
+      try {
+        const res = await fetch("/variant", {
+          body: JSON.stringify({ versionBlockId, name }),
+          ...POST_JSON_REQUEST,
+        });
+        const { variantId, error } = await res.json();
+        if (error) { console.error("Failed to add variant:", error); return; }
+        const newVariant = { id: variantId, name, code: "" };
+        notifyVariantAdded(versionBlockId, newVariant);
+        socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, { sessionId: sessionNumber, versionBlockId, variant: newVariant });
+      } catch (err) {
+        console.error("Failed to add variant:", err);
+      }
+    },
+    async onRenameVariant(versionBlockId, variantId, newName) {
+      try {
+        await fetch(`/variant/${variantId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name: newName }),
+          ...POST_JSON_REQUEST,
+        });
+        socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, { sessionId: sessionNumber, versionBlockId, variantId, name: newName });
+      } catch (err) {
+        console.error("Failed to rename variant:", err);
+      }
+    },
+    async onDeleteVariant(versionBlockId, variantId) {
+      try {
+        const res = await fetch(`/variant/${variantId}`, { method: "DELETE" });
+        const { error } = await res.json();
+        if (error) { console.error("Failed to delete variant:", error); return; }
+        notifyVariantDeleted(versionBlockId, variantId);
+        socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, { sessionId: sessionNumber, versionBlockId, variantId });
+      } catch (err) {
+        console.error("Failed to delete variant:", err);
+      }
+    },
+    // TODO: change this to onCodeChange and just broadcast it, I think.
+    async onSaveCode(variantId, versionBlockId, code) {
+      try {
+        await fetch(`/variant/${variantId}/code`, {
+          method: "PUT",
+          body: JSON.stringify({ code }),
+          ...POST_JSON_REQUEST,
+        });
+        socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, { sessionId: sessionNumber, versionBlockId, variantId, code });
+      } catch (err) {
+        console.error("Failed to save variant code:", err);
+      }
+    },
+  };
+
   async function onCreateVersionBlock({ variantCode, from, to }) {
     const currentDocVersion = codeEditor.getDocVersion();
     try {
@@ -100,16 +162,17 @@ function initialize({
         body: JSON.stringify({ lectureId: sessionNumber, anchor_pos: from, docVersion: currentDocVersion, variantCode }),
         ...POST_JSON_REQUEST,
       });
-      const { versionBlockId, error } = await res.json();
+      const { versionBlockId, variantId, error } = await res.json();
       if (error) { console.error("Failed to create version block:", error); return; }
       const state = codeEditor.view.state;
       const lineFrom = state.doc.lineAt(from).from;
       const lineTo = state.doc.lineAt(Math.min(to, state.doc.length - 1)).to;
+      const variants = [{ id: variantId, name: "v0", code: variantCode }];
       codeEditor.view.dispatch({
         changes: { from: lineFrom, to: lineTo, insert: "" },
-        effects: addVersionBlockEffect.of({ from: lineFrom, to: lineFrom, versionBlockId, variantCode }),
+        effects: addVersionBlockEffect.of({ from: lineFrom, to: lineFrom, versionBlockId, variants }),
       });
-      socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: sessionNumber, versionBlockId, from: lineFrom, to: lineFrom + 1, variantCode });
+      socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: sessionNumber, versionBlockId, from: lineFrom, to: lineFrom + 1, variants });
     } catch (err) {
       console.error("Failed to create version block:", err);
     }
@@ -121,7 +184,7 @@ function initialize({
     doc,
     startVersion: docVersion,
     sessionNumber,
-    extraExtensions: versionWidgetExtensions(onCreateVersionBlock),
+    extraExtensions: versionWidgetExtensions(onCreateVersionBlock, versionBlockCallbacks),
     // extraExtensions: fillInBlankExtensions(({ instructor_code, code_line_context_start, code_line_context_end, default_answer }) => {
     //   activitiesPanel?.createCodeExercise({ instructor_code, code_line_context_start, code_line_context_end, default_answer });
     // }),
@@ -129,10 +192,9 @@ function initialize({
 
   // Reconstruct any existing version blocks from the server.
   for (const block of versionBlocks) {
-    const v0 = block.variants.find((v) => v.name === "v0") ?? block.variants[0];
-    if (!v0) continue;
+    if (!block.variants.length) continue;
     codeEditor.view.dispatch({
-      effects: addVersionBlockEffect.of({ from: block.from, to: block.to, versionBlockId: block.id, variantCode: v0.code }),
+      effects: addVersionBlockEffect.of({ from: block.from, to: block.to, versionBlockId: block.id, variants: block.variants }),
     });
   }
   let codeRunner = new PythonCodeRunner();

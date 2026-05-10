@@ -11,7 +11,11 @@ import {
   SimulatedExerciseResponse,
   StudentSession,
   VersionBlock,
+  Variant,
+  VariantChange,
+  reconstructCMDoc,
 } from "./models.js";
+import { ChangeSet } from "@codemirror/state";
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { createGroupSummary } from "./group-responses.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
@@ -142,16 +146,97 @@ app.post("/version-block", async (req, res) => {
     let response = await db.transaction(async (t) => {
       let lecture = await LectureSession.findByPk(lectureId, { transaction: t });
       if (!lecture) return { error: `Session #${lectureId} not found` };
-      const { block } = await VersionBlock.createWithVariant(
+      const { block, variant } = await VersionBlock.createWithVariant(
         lectureId,
         { anchor_pos, anchor_change_number: docVersion, variantCode },
         t,
       );
-      return { versionBlockId: block.id };
+      return { versionBlockId: block.id, variantId: variant.id };
     });
     res.json(response);
   } catch (error) {
     console.error("Failed to create version block:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Variant CRUD
+
+app.post("/variant", async (req, res) => {
+  const { versionBlockId, name } = req.body;
+  if (versionBlockId == null || !name) return res.json({ error: "versionBlockId and name are required" });
+  try {
+    const result = await db.transaction(async (t) => {
+      const block = await VersionBlock.findByPk(versionBlockId, { transaction: t });
+      if (!block) return { error: `VersionBlock #${versionBlockId} not found` };
+      const variant = await Variant.create({ VersionBlockId: versionBlockId, name }, { transaction: t });
+      const insertCs = ChangeSet.of([{ from: 0, insert: "" }], 0);
+      await VariantChange.create(
+        { VariantId: variant.id, change_number: 0, change: JSON.stringify(insertCs.toJSON()), change_ts: Date.now() },
+        { transaction: t },
+      );
+      return { variantId: variant.id, name };
+    });
+    res.json(result);
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
+app.patch("/variant/:id", async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.json({ error: "name is required" });
+  try {
+    const variant = await Variant.findByPk(req.params.id);
+    if (!variant) return res.json({ error: "Variant not found" });
+    await variant.update({ name });
+    res.json({ ok: true });
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
+app.delete("/variant/:id", async (req, res) => {
+  try {
+    const result = await db.transaction(async (t) => {
+      const variant = await Variant.findByPk(req.params.id, { transaction: t });
+      if (!variant) return { error: "Variant not found" };
+      const siblings = await Variant.count({ where: { VersionBlockId: variant.VersionBlockId }, transaction: t });
+      if (siblings <= 1) return { error: "Cannot delete the last variant" };
+      await VariantChange.destroy({ where: { VariantId: variant.id }, transaction: t });
+      await variant.destroy({ transaction: t });
+      return { ok: true };
+    });
+    res.json(result);
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
+// TODO: this probably shouldn't exist?
+app.put("/variant/:id/code", async (req, res) => {
+  const { code } = req.body;
+  if (code == null) return res.json({ error: "code is required" });
+  try {
+    await db.transaction(async (t) => {
+      const variant = await Variant.findByPk(req.params.id, { transaction: t });
+      if (!variant) throw new Error("Variant not found");
+      const changes = await VariantChange.findAll({
+        where: { VariantId: variant.id },
+        order: [["change_number", "ASC"]],
+        transaction: t,
+      });
+      const { doc: currentDoc } = reconstructCMDoc(changes);
+      const currentCode = currentDoc.toString();
+      const nextNumber = changes.length;
+      const cs = ChangeSet.of([{ from: 0, to: currentCode.length, insert: code }], currentCode.length);
+      await VariantChange.create(
+        { VariantId: variant.id, change_number: nextNumber, change: JSON.stringify(cs.toJSON()), change_ts: Date.now() },
+        { transaction: t },
+      );
+    });
+    res.json({ ok: true });
+  } catch (error) {
     res.json({ error: error.message });
   }
 });
@@ -469,6 +554,22 @@ io.on("connection", async (socket) => {
 
   socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, msg);
   });
 
   // Forward/push this so the students stop writing.

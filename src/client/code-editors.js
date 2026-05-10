@@ -299,8 +299,8 @@ export class CodeFollowingEditor {
     this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
   }
 
-  addVersionBlock(from, to, versionBlockId, variantCode) {
-    this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variantCode }) });
+  addVersionBlock(from, to, versionBlockId, variants) {
+    this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variants }) });
   }
 }
 
