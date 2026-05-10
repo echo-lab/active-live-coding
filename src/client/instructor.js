@@ -102,8 +102,14 @@ function initialize({
       });
       const { versionBlockId, error } = await res.json();
       if (error) { console.error("Failed to create version block:", error); return; }
-      codeEditor.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variantCode }) });
-      socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: sessionNumber, versionBlockId, from, to, variantCode });
+      const state = codeEditor.view.state;
+      const lineFrom = state.doc.lineAt(from).from;
+      const lineTo = state.doc.lineAt(Math.min(to, state.doc.length - 1)).to;
+      codeEditor.view.dispatch({
+        changes: { from: lineFrom, to: lineTo, insert: "" },
+        effects: addVersionBlockEffect.of({ from: lineFrom, to: lineFrom, versionBlockId, variantCode }),
+      });
+      socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: sessionNumber, versionBlockId, from: lineFrom, to: lineFrom + 1, variantCode });
     } catch (err) {
       console.error("Failed to create version block:", err);
     }

@@ -1,4 +1,4 @@
-import { StateEffect, StateField, Facet } from "@codemirror/state";
+import { StateEffect, StateField, Facet, EditorState } from "@codemirror/state";
 import { EditorView, showTooltip, WidgetType, Decoration } from "@codemirror/view";
 
 // ============================================================
@@ -153,6 +153,22 @@ export const versionWidgetTooltipTheme = EditorView.baseTheme({
   },
 });
 
+// Rejects any transaction that would modify the version block line or its surrounding newlines.
+const versionBlockProtection = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged) return tr;
+  const decorations = tr.startState.field(versionBlocksField);
+  let blocked = false;
+  tr.changes.iterChanges((fromA, toA) => {
+    if (blocked) return;
+    decorations.between(0, tr.startState.doc.length, (dFrom, dTo) => {
+      const pFrom = Math.max(0, dFrom - 1);
+      const pTo = dTo + 1;
+      if (fromA < pTo && toA > pFrom) blocked = true;
+    });
+  });
+  return blocked ? [] : tr;
+});
+
 export function versionWidgetExtensions(onCreateVersionBlock) {
   return [
     handleCreateVersionBlock.of(onCreateVersionBlock),
@@ -160,5 +176,6 @@ export function versionWidgetExtensions(onCreateVersionBlock) {
     versionWidgetContextMenu,
     versionWidgetTooltipTheme,
     versionBlocksField,
+    versionBlockProtection,
   ];
 }
