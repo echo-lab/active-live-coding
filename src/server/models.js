@@ -177,6 +177,7 @@ StudentSession.belongsTo(LectureSession);
 export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
   CODE_FITB: "CODE_FITB",
+  CODE_VARIANT: "CODE_VARIANT",
 });
 
 // MARK: ClassExercise
@@ -248,7 +249,11 @@ ClassExercise.init(
     code_line_context_end: {
       type: DataTypes.INTEGER,
       allowNull: true,
-    }
+    },
+    VersionBlockId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   },
   { sequelize },
 );
@@ -355,13 +360,13 @@ SimulatedExerciseResponse.belongsTo(ClassExercise);
 // MARK: Code Changes
 export class InstructorChange extends Model {}
 InstructorChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionsId" });
+LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionId" });
 InstructorChange.belongsTo(LectureSession);
 
 // MARK: Action Logging
 export class InstructorAction extends Model {}
 InstructorAction.init(USER_ACTION_SCHEMA, { sequelize });
-LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionsId" });
+LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionId" });
 InstructorAction.belongsTo(LectureSession);
 
 // TODO: Figure out if this is used, and possibly NIX/edit
@@ -369,3 +374,40 @@ export class StudentAction extends Model {}
 StudentAction.init(USER_ACTION_SCHEMA, { sequelize });
 StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
 StudentAction.belongsTo(StudentSession);
+
+// MARK: VersionBlock
+export class VersionBlock extends Model {}
+VersionBlock.init(
+  {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    anchor_pos: { type: DataTypes.INTEGER, allowNull: false },
+    anchor_change_number: { type: DataTypes.INTEGER, allowNull: false },
+  },
+  { sequelize },
+);
+
+// MARK: Variant
+export class Variant extends Model {}
+Variant.init(
+  {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    name: { type: DataTypes.STRING, allowNull: false },
+  },
+  { sequelize },
+);
+
+// MARK: VariantChange
+export class VariantChange extends Model {}
+VariantChange.init(CODE_CHANGE_SCHEMA, { sequelize });
+
+LectureSession.hasMany(VersionBlock, { foreignKey: "LectureSessionId" });
+VersionBlock.belongsTo(LectureSession);
+
+VersionBlock.hasMany(Variant, { foreignKey: "VersionBlockId" });
+Variant.belongsTo(VersionBlock);
+
+Variant.hasMany(VariantChange, { foreignKey: "VariantId" });
+VariantChange.belongsTo(Variant);
+
+VersionBlock.hasOne(ClassExercise, { foreignKey: "VersionBlockId" });
+ClassExercise.belongsTo(VersionBlock);
