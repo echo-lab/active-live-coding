@@ -249,7 +249,7 @@ export class InstructorCodeEditor {
       if (error) { console.error("Failed to create version block:", error); return; }
 
       // Step 2: Create a VersionBlockWidget w/ the default variant and add it to the UI.
-      const variants = [{ id: variantId, name: "v0", code: variantCode }];
+      const variants = [{ id: variantId, name: "v0", code: variantCode, docVersion: 1 }];
       const widget = new VersionBlockWidget({versionBlockId, variants, socket: this.socket, sessionNumber: this.sessionNumber});
       this.versionBlocks[versionBlockId] = widget;
       this.view.dispatch({
@@ -302,6 +302,7 @@ export class VariantCodeEditor {
     this.versionBlockId = versionBlockId;
     this.variantId = variantId;
     this.docVersion = docVersion;
+    console.log("VARIANT CODE EDITOR W VERSION: ", docVersion);
 
     const state = EditorState.create({
       doc: doc ?? "",

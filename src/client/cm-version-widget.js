@@ -277,7 +277,7 @@ export class VersionBlockWidget extends WidgetType {
     });
     const { variantId, error } = await res.json();
     if (error) { console.error("Failed to add variant:", error); return; }
-    const variant = {id: variantId, name, code: ""};
+    const variant = {id: variantId, name, code: "", docVersion: 1};
 
     // Step 2: Emit the update to students.
     this.socket.emit(

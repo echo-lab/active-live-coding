@@ -175,7 +175,7 @@ app.post("/variant", async (req, res) => {
         { VariantId: variant.id, change_number: 0, change: JSON.stringify(insertCs.toJSON()), change_ts: Date.now() },
         { transaction: t },
       );
-      return { variantId: variant.id, name };
+      return { variantId: variant.id, name, docVersion: 1};
     });
     res.json(result);
   } catch (error) {
