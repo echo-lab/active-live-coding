@@ -234,6 +234,16 @@ export class InstructorCodeEditor {
   }
 
   async createNewVersionBlock({variantCode, from, to }) {
+    // Step 0: Make sure we're not creating nested version blocks!
+    const decorations = this.view.state.field(versionBlocksField);
+    let containsExistingBlock = false;
+    decorations.between(from, to, () => { containsExistingBlock = true; return false; });
+    if (containsExistingBlock) {
+      console.warn("Cannot create version block: selection contains an existing version block.");
+      window.alert("Cannot create a nested version block!");
+      return;
+    }
+
     const currentVersion = this.getDocVersion();
     try {
       // Step 1: create on the backend.
