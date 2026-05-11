@@ -11,7 +11,7 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { addVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions } from "./cm-version-widget.js";
+import { addVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -19,10 +19,10 @@ import { indentWithTab } from "@codemirror/commands";
 
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
-// MARK: Follow Instructor (w/ exercises)
+// MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor(node, doc, docVersion, socket, sessionId, extraExtensions = []) {
+  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks}) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     let state = EditorState.create({
@@ -39,6 +39,8 @@ export class StudentCodeEditor {
     this.view = new EditorView({ state, parent: node });
     this.active = true;
     this.pendingQueue = []; // if we fall behind, buffer instructor edits.
+    this.versionBlocks = [];
+    versionBlocks.forEach(v => this.addVersionBlock({...v, versionBlockId: v.id}));
 
     socket.on(
       SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
@@ -48,10 +50,42 @@ export class StudentCodeEditor {
       SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR,
       this.handleInstructorCursorChange.bind(this)
     );
+    socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, ({ versionBlockId, from, to, variants }) => {
+      this.addVersionBlock({from, to, versionBlockId, variants});
+    });
+    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, ({ versionBlockId, variant }) => {
+      this.getVersionBlock(versionBlockId)?.addVariant(variant);
+    });
+    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, ({ versionBlockId, variantId, name }) => {
+      this.getVersionBlock(versionBlockId)?.renameVariant(variantId, name);
+    });
+    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
+      this.getVersionBlock(versionBlockId)?.removeVariant(variantId);
+    });
+    // TODO: this is not right
+    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, ({ versionBlockId, variantId, changes, id }) => {
+      this.getVersionBlock(versionBlockId)?.getVariantEditor(variantId)?.handleInstructorEdit({changes, id});
+    });
+    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, ({ versionBlockId, variantId, anchor, head }) => {
+      this.getVersionBlock(versionBlockId)?.getVariantEditor(variantId)?.handleInstructorCursorChange({anchor, head});
+    });
   }
 
   getDocVersion() {
     return this.docVersion;
+  }
+
+  addVersionBlock({from, to, versionBlockId, variants}) {
+    console.log("adding version block: ", {from, to, versionBlockId, variants});
+    const widget = new StudentVersionBlockWidget({versionBlockId, variants});
+    this.versionBlocks.push(widget);
+    this.view.dispatch({
+      effects: addVersionBlockEffect.of({from, to, widget}),
+    })
+  }
+
+  getVersionBlock(id) {
+    return this.versionBlocks.find(v => v.versionBlockId === id);
   }
 
   handleInstructorCursorChange({ anchor, head }) {
@@ -131,31 +165,12 @@ export class StudentCodeEditor {
   }
 
   currentCode() {
+    // TODO: implement this like it is implemented for the InstructorCodeEditor
     return this.view.state.doc.toString();
   }
 
   stopFollowing() {
     this.active = false;
-  }
-
-  // activateFillInBlank(exercise, currentAnswer, onSubmit, onRun) {
-  //   const { code_line_context_start } = exercise;
-  //   const effects = [activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun })];
-  //   if (code_line_context_start >= 1 && code_line_context_start <= this.view.state.doc.lines) {
-  //     const line = this.view.state.doc.line(code_line_context_start);
-  //     effects.push(EditorView.scrollIntoView(line.from, { y: "nearest" }));
-  //   }
-  //   this.view.scrollDOM.style.scrollBehavior = "smooth";
-  //   this.view.dispatch({ effects });
-  //   requestAnimationFrame(() => { this.view.scrollDOM.style.scrollBehavior = ""; });
-  // }
-
-  // deactivateFillInBlank() {
-  //   this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
-  // }
-
-  addVersionBlock(from, to, versionBlockId, variants) {
-    this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variants }) });
   }
 }
 
@@ -363,6 +378,53 @@ export class VariantCodeEditor {
   //   clearTimeout(this._saveTimer);
   //   this.view.destroy();
   // }
+}
+
+
+// MARK: Variant Following Editor
+export class VariantCodeFollowingEditor {
+  constructor({ node, doc, variantId, docVersion = 0 }) {
+    this.variantId = variantId;
+    this.docVersion = docVersion;
+
+    const state = EditorState.create({
+      doc: doc ?? "",
+      extensions: [
+        minimalSetup,
+        python(),
+        indentUnit.of("    "),
+        keymap.of([indentWithTab]),
+        ...followInstructorExtensions,
+        EditorView.editable.of(false),
+        EditorView.lineWrapping,
+      ],
+    });
+
+    this.view = new EditorView({ state, parent: node });
+  }
+
+  currentCode() {
+    return this.view.state.doc.toString();
+  }
+
+  handleInstructorEdit({changes, id}) {
+    if (id !== this.docVersion) {
+      alert("Error: out of sync. Please reload the page");
+    }
+    // console.log("Normal dispatch for change: ", id);
+    // We're good now!
+    changes = ChangeSet.fromJSON(changes);
+    this.docVersion++;
+    this.view.dispatch({ changes });
+  }
+
+  handleInstructorCursorChange({anchor, head}) {
+    if (anchor > this.view.state.doc.length) return;
+    if (head > this.view.state.doc.length) return;
+    this.view.dispatch({
+      effects: setInstructorSelection.of({ anchor, head }),
+    });
+  }
 }
 
 // MARK: Review Editor

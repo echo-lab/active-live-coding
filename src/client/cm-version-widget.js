@@ -4,7 +4,7 @@ import { minimalSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
 import { indentUnit } from "@codemirror/language";
-import { VariantCodeEditor } from "./code-editors.js";
+import { VariantCodeEditor, VariantCodeFollowingEditor } from "./code-editors.js";
 import { followInstructorExtensions, setInstructorSelection } from "./cm-extensions.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, PATCH_JSON_REQUEST } from "./utils.js";
@@ -24,6 +24,172 @@ let _readOnly = false;
 
 export function setVersionBlockReadOnly(v) {
   _readOnly = v;
+}
+
+export class StudentVersionBlockWidget extends WidgetType {
+
+  constructor({ versionBlockId, variants }) {
+    // console.log("Making a version block: ", versionBlockId);
+    super();
+    this.versionBlockId = versionBlockId;
+    this.selectedIndex = 0;
+    this.tabEls = [];
+    this.tabsContainer = null;
+    this.variantContainer = null;
+    console.log("variants: ", variants);
+    // shape: {id, name, code, docVersion, el, editor}
+    this.variants = variants.map(v => ({ ...v, ...this._makeVariantFollowingEditor(v) }));
+  }
+
+  eq(other) {
+    return this.versionBlockId === other.versionBlockId;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+
+  // -------------------------------------------------------
+  // MARK: -- helpers
+  // -------------------------------------------------------
+
+  _makeVariantFollowingEditor(v) {
+    const el = document.createElement("div");
+    el.className = "cm-version-block-editor";
+    el.hidden = true;
+    const editor = new VariantCodeFollowingEditor({
+      node: el,
+      doc: v.code ?? "",
+      variantId: v.id,
+      docVersion: v.docVersion ?? 0,
+    });
+    return { el, editor };
+  }
+
+  _makeTabEl(index) {
+    const variant = this.variants[index];
+    const tab = document.createElement("div");
+    tab.className = "cm-version-block-tab" + (index === this.selectedIndex ? " selected" : "");
+    tab.dataset.variantId = variant.id;
+
+    const label = document.createElement("span");
+    label.className = "cm-version-block-tab-label";
+    label.textContent = variant.name;
+    tab.appendChild(label);
+
+    tab.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const currentIndex = this.variants.findIndex(v => v.id === variant.id);
+      if (currentIndex >= 0) this._selectTab(currentIndex);
+    });
+
+    this.tabEls.splice(index, 0, tab);
+    return tab;
+  }
+
+  _selectTab(index) {
+    if (index === this.selectedIndex) return;
+    this.tabEls[this.selectedIndex]?.classList.remove("selected");
+    this.selectedIndex = index;
+    this.tabEls[index]?.classList.add("selected");
+    this._mountEditor(index);
+  }
+
+  _mountEditor(index) {
+    this.variants.forEach(({ el }, idx) => { el.hidden = idx !== index; });
+  }
+
+  // -------------------------------------------------------
+  // MARK: -- DOM
+  // -------------------------------------------------------
+
+  toDOM() {
+    const container = document.createElement("div");
+    container.className = "cm-version-block-widget";
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "cm-version-block-toolbar";
+
+    const leftGroup = document.createElement("div");
+    leftGroup.className = "cm-version-block-left";
+
+    const hashBtn = document.createElement("button");
+    hashBtn.className = "cm-version-block-btn cm-version-block-hash";
+    hashBtn.textContent = "#";
+    hashBtn.disabled = true;
+    leftGroup.appendChild(hashBtn);
+
+    const tabsContainer = document.createElement("div");
+    tabsContainer.className = "cm-version-block-tabs";
+    this.tabsContainer = tabsContainer;
+    leftGroup.appendChild(tabsContainer);
+
+    toolbar.appendChild(leftGroup);
+    container.appendChild(toolbar);
+
+    this.variantContainer = container;
+    this.variants.forEach(({ el }, idx) => {
+      el.hidden = idx !== 0;
+      container.appendChild(el);
+    });
+
+    this.tabEls = [];
+    for (let i = 0; i < this.variants.length; i++) {
+      tabsContainer.appendChild(this._makeTabEl(i));
+    }
+
+    return container;
+  }
+
+  // -------------------------------------------------------
+  // MARK: -- public methods called by StudentCodeEditor
+  // -------------------------------------------------------
+
+  getVariantEditor(variantId) {
+    return this.variants.find(v => v.id === variantId)?.editor;
+  }
+
+  addVariant(v) {
+    const variant = { ...v, ...this._makeVariantFollowingEditor(v) };
+    this.variants.push(variant);
+    this.variantContainer.appendChild(variant.el);
+    const newIndex = this.variants.length - 1;
+    const tabEl = this._makeTabEl(newIndex);
+    this.tabsContainer.appendChild(tabEl);
+    this._selectTab(newIndex);
+  }
+
+  renameVariant(variantId, name) {
+    const variant = this.variants.find(v => v.id === variantId);
+    if (!variant) return;
+    variant.name = name;
+    const tab = this.tabEls.find(t => t.dataset.variantId === String(variantId));
+    if (tab) tab.querySelector(".cm-version-block-tab-label").textContent = name;
+  }
+
+  removeVariant(variantId) {
+    const index = this.variants.findIndex(v => v.id === variantId);
+    if (index < 0 || this.variants.length <= 1) return;
+
+    const selectedVariantId = this.variants[this.selectedIndex]?.id;
+    const deletingSelected = variantId === selectedVariantId;
+
+    this.tabEls[this.selectedIndex]?.classList.remove("selected");
+    this.variants.splice(index, 1)[0]?.el?.remove();
+    this.tabEls.splice(index, 1)[0]?.remove();
+
+    if (deletingSelected) {
+      const newIndex = Math.max(0, index - 1);
+      this.selectedIndex = newIndex;
+      this.tabEls[newIndex]?.classList.add("selected");
+      this._mountEditor(newIndex);
+    } else {
+      const newIndex = this.variants.findIndex(v => v.id === selectedVariantId);
+      this.selectedIndex = newIndex >= 0 ? newIndex : 0;
+      this.tabEls[this.selectedIndex]?.classList.add("selected");
+    }
+  }
+
 }
 
 // ============================================================

@@ -568,10 +568,6 @@ io.on("connection", async (socket) => {
     io.emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
   });
 
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, msg);
-  });
-
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
     instructorChangeBuffer.enqueueVariant(msg);
