@@ -574,6 +574,7 @@ io.on("connection", async (socket) => {
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
+    instructorChangeBuffer.enqueueVariant(msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, (msg) => {
