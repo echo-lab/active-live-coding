@@ -11,7 +11,7 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { addVersionBlockEffect, VersionBlockWidget, versionWidgetExtensions } from "./cm-version-widget.js";
+import { addVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions } from "./cm-version-widget.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -212,7 +212,21 @@ export class InstructorCodeEditor {
   }
 
   currentCode() {
-    return this.view.state.doc.toString();
+    const state = this.view.state;
+    const doc = state.doc;
+    const decorations = state.field(versionBlocksField);
+
+    let result = "";
+    let pos = 0;
+
+    decorations.between(0, doc.length, (from, to, deco) => {
+      result += doc.sliceString(pos, from);
+      result += deco.spec.widget.getActiveVariant().editor.currentCode();
+      pos = to;
+    });
+
+    result += doc.sliceString(pos, doc.length);
+    return result;
   }
 
   endSession() {

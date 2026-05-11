@@ -58,6 +58,10 @@ export class VersionBlockWidget extends WidgetType {
     return this.versionBlockId === other.versionBlockId;
   }
 
+  getActiveVariant() {
+    return this.variants[this.selectedIndex];
+  }
+
   toDOM() {
     const container = document.createElement("div");
     container.className = "cm-version-block-widget";
