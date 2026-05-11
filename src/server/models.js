@@ -133,15 +133,14 @@ export class LectureSession extends Model {
       const variantCode = variantDoc.toString();
 
       let from = block.anchor_pos;
-      let to = block.anchor_pos + variantCode.length;
 
       for (const { change_number, change } of allChanges) {
         if (change_number >= block.anchor_change_number) {
           const cs = ChangeSet.fromJSON(JSON.parse(change));
           from = cs.mapPos(from);
-          to = cs.mapPos(to, 1);
         }
       }
+      const to = from;
 
       let sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       return {
