@@ -153,6 +153,7 @@ export class LectureSession extends Model {
             id: v.id,
             name: v.name,
             code: reconstructCMDoc(vChanges).doc.toString(),
+            docVersion: vChanges.length,
           };
         }),
       };

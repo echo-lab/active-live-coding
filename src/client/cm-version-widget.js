@@ -156,6 +156,7 @@ export class VersionBlockWidget extends WidgetType {
       socket: this.socket,
       sessionNumber: this.sessionNumber,
       versionBlockId: this.versionBlockId,
+      docVersion: v.docVersion ?? 0,
     });
     return {el, editor};
   }

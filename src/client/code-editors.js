@@ -282,12 +282,12 @@ export class InstructorCodeEditor {
 
 // MARK: Variant Editor
 export class VariantCodeEditor {
-  constructor({ node, socket, doc, sessionNumber, versionBlockId, variantId }) {
+  constructor({ node, socket, doc, sessionNumber, versionBlockId, variantId, docVersion = 0 }) {
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.versionBlockId = versionBlockId;
     this.variantId = variantId;
-    this.docVersion = 0;
+    this.docVersion = docVersion;
 
     const state = EditorState.create({
       doc: doc ?? "",
