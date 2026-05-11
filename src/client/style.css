@@ -1133,9 +1133,9 @@ td {
   padding: 0;
 }
 
-.cm-version-block-editor .cm-editor {
+/* .cm-version-block-editor .cm-editor {
   font-size: 13px;
-}
+} */
 
 /* =========================================
    Fill-in-the-blank widget (main editor)
