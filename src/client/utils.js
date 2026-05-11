@@ -1,6 +1,7 @@
 export const JSON_HEADERS = { "Content-Type": "application/json" };
 export const GET_JSON_REQUEST = { method: "GET", headers: JSON_HEADERS };
 export const POST_JSON_REQUEST = { method: "POST", headers: JSON_HEADERS };
+export const PATCH_JSON_REQUEST = { method: "PATCH", headers: JSON_HEADERS };
 
 export function makeID() {
   return Date.now();

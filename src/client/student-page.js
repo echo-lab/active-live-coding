@@ -4,15 +4,11 @@ import "./style-student-page.css";
 import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
-import { CodeFollowingEditor, StudentCodeEditor } from "./code-editors.js";
+import { StudentCodeEditor } from "./code-editors.js";
 import { fillInBlankViewField } from "./cm-fill-in-the-blank.js";
 import {
   versionBlocksField,
   setVersionBlockReadOnly,
-  notifyVariantAdded,
-  notifyVariantRenamed,
-  notifyVariantDeleted,
-  notifyVariantCodeUpdated,
 } from "./cm-version-widget.js";
 import { PythonCodeRunner } from "./code-runner.js";
 import {
@@ -82,7 +78,8 @@ async function initialize({
 
   setVersionBlockReadOnly(true);
 
-  let instructorEditor = new CodeFollowingEditor(
+  // TODO: rename this... it's not the instructor editor...
+  let instructorEditor = new StudentCodeEditor(
     instructorCodeContainer,
     lectureDoc,
     lectureDocVersion,
@@ -101,18 +98,29 @@ async function initialize({
     instructorEditor.addVersionBlock(from, to, versionBlockId, variants);
   });
 
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, ({ versionBlockId, variant }) => {
-    notifyVariantAdded(versionBlockId, variant);
-  });
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, ({ versionBlockId, variantId, name }) => {
-    notifyVariantRenamed(versionBlockId, variantId, name);
-  });
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
-    notifyVariantDeleted(versionBlockId, variantId);
-  });
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, ({ versionBlockId, variantId, code }) => {
-    notifyVariantCodeUpdated(versionBlockId, variantId, code);
-  });
+  // TODO: Instead of the weird global notification system below, we should
+  // set up the socket handlers here. They should just call methods available
+  // on the editors.
+
+
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, ({ versionBlockId, variant }) => {
+  //   notifyVariantAdded(versionBlockId, variant);
+  // });
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, ({ versionBlockId, variantId, name }) => {
+  //   notifyVariantRenamed(versionBlockId, variantId, name);
+  // });
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
+  //   notifyVariantDeleted(versionBlockId, variantId);
+  // });
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, ({ versionBlockId, variantId, code }) => {
+  //   notifyVariantCodeUpdated(versionBlockId, variantId, code);
+  // });
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, ({ versionBlockId, variantId, changes }) => {
+  //   notifyVariantEdit(versionBlockId, variantId, changes);
+  // });
+  // socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, ({ versionBlockId, variantId, anchor, head }) => {
+  //   notifyVariantCursorChange(versionBlockId, variantId, anchor, head);
+  // });
 
   // Set up the run button for when we need it...
   let codeRunner = new PythonCodeRunner();

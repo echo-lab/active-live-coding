@@ -572,6 +572,14 @@ io.on("connection", async (socket) => {
     io.emit(SOCKET_MESSAGE_TYPE.VARIANT_CODE_UPDATED, msg);
   });
 
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, msg);
+  });
+
   // Forward/push this so the students stop writing.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately

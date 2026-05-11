@@ -1,5 +1,7 @@
-import { EditorView } from "codemirror";
+import { EditorView, minimalSetup } from "codemirror";
 import { EditorState, Text, ChangeSet, Compartment } from "@codemirror/state";
+import { python } from "@codemirror/lang-python";
+import { indentUnit } from "@codemirror/language";
 import {
   basicExtensions,
   capLength,
@@ -9,7 +11,7 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { addVersionBlockEffect } from "./cm-version-widget.js";
+import { addVersionBlockEffect, VersionBlockWidget, versionWidgetExtensions } from "./cm-version-widget.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -17,155 +19,8 @@ import { indentWithTab } from "@codemirror/commands";
 
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
-/*
-Flushed data in format: 
-{
-  sessionNumber: 1,
-  email: "test@test.com",
-  changes: [{
-    changesetJSON: ChangeSet().toJSON(),
-    changeNumber: docVersion,
-    ts: Date.now(),
-  }, ... ]
-
-Note: if onNewSnapshot is not null, will set up extensions for code snapshots.
-*/
-// A student code editor whose state is periodically saved to the server.
-// MARK: Typing Along Editor
-export class StudentCodeEditor {
-  constructor({
-    node,
-    doc,
-    docVersion,
-    sessionNumber,
-    fileName = "",
-    email,
-    flushUrl,
-    onNewSnapshot = null,
-  }) {
-    this.email = email;
-    this.docVersion = docVersion;
-    this.sessionActive = true;
-    this.queuedChanges = [];
-    this.sessionNumber = sessionNumber;
-    this.flushUrl = flushUrl;
-    this.fileName = fileName;
-    this.mostRecentSync = Date.now();
-
-    let snapshotExtensions = onNewSnapshot
-      ? codeSnapshotFields(onNewSnapshot)
-      : [];
-
-    let state = EditorState.create({
-      doc: Text.of(doc),
-      extensions: [
-        ...basicExtensions,
-        EditorView.updateListener.of(this.onCodeUpdate.bind(this)),
-        keymap.of([indentWithTab]),
-        snapshotExtensions,
-        capLength,
-      ],
-    });
-
-    this.view = new EditorView({ state, parent: node });
-
-    this.flushChangesLoop = setInterval(
-      this.flushChanges.bind(this),
-      FLUSH_CHANGES_FREQ
-    );
-  }
-
-  getDocVersion() {
-    return this.docVersion;
-  }
-
-  currentCode() {
-    return this.view.state.doc.toString();
-  }
-
-  onCodeUpdate(viewUpdate) {
-    if (!this.sessionActive) return;
-    if (!viewUpdate.docChanged) return;
-    if (!this.flushUrl) return;
-    viewUpdate.transactions.forEach((tr) => {
-      this.queuedChanges.push({
-        changesetJSON: tr.changes.toJSON(),
-        changeNumber: this.docVersion,
-        ts: Date.now(),
-        fileName: this.fileName,
-      });
-      this.docVersion++;
-    });
-  }
-
-  replaceContents(newCode) {
-    this.view.dispatch({
-      changes: {
-        from: 0,
-        to: this.view.state.doc.length,
-        insert: newCode,
-      },
-    });
-  }
-
-  endSession() {
-    this.sessionActive = false;
-    clearInterval(this.flushChangesLoop);
-    this.flushChanges();
-  }
-
-  async flushChanges() {
-    if (this.queuedChanges.length === 0) {
-      this.mostRecentSync = Date.now();
-      return;
-    }
-
-    // Okay, we have changes to flush!
-    let payload = {
-      sessionNumber: this.sessionNumber,
-      changes: this.queuedChanges,
-      email: this.email,
-    };
-    let lo = this.queuedChanges.at(0).changeNumber;
-    let hi = this.queuedChanges.at(-1).changeNumber;
-
-    const response = await fetch(this.flushUrl, {
-      body: JSON.stringify(payload),
-      ...POST_JSON_REQUEST,
-    });
-    let res = await response.json();
-    if (res.error) {
-      console.warn("Failed to flush changes: ", res.error);
-      if (
-        Date.now() > this.mostRecentSync + 30 * 1000 &&
-        !this.alreadyAlerted
-      ) {
-        this.alreadyAlerted = true;
-        alert(
-          "Warning: code changes not syncing with the server. \n" +
-            "You may want to consider copying your code and refreshing the page."
-        );
-      }
-      return;
-    }
-    // Now we know server is synced up to change X so we can delete earlier things...
-    let serverDocVersion = res.committedVersion;
-    console.log(`Flushed changes: (${lo}, ${hi})`);
-
-    this.queuedChanges = this.queuedChanges.filter(
-      (ch) => ch.changeNumber >= serverDocVersion
-    );
-    this.mostRecentSync = Date.now();
-  }
-}
-
-/*
-This editor just syncs w/ the instructors, including the selection and cursor.
-Tries to catch up if it falls behind for whatever reason.
-Doesn't log any activity -- only reads from the server.
-*/
 // MARK: Follow Instructor (w/ exercises)
-export class CodeFollowingEditor {
+export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
   constructor(node, doc, docVersion, socket, sessionId, extraExtensions = []) {
     this.docVersion = docVersion;
@@ -283,21 +138,21 @@ export class CodeFollowingEditor {
     this.active = false;
   }
 
-  activateFillInBlank(exercise, currentAnswer, onSubmit, onRun) {
-    const { code_line_context_start } = exercise;
-    const effects = [activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun })];
-    if (code_line_context_start >= 1 && code_line_context_start <= this.view.state.doc.lines) {
-      const line = this.view.state.doc.line(code_line_context_start);
-      effects.push(EditorView.scrollIntoView(line.from, { y: "nearest" }));
-    }
-    this.view.scrollDOM.style.scrollBehavior = "smooth";
-    this.view.dispatch({ effects });
-    requestAnimationFrame(() => { this.view.scrollDOM.style.scrollBehavior = ""; });
-  }
+  // activateFillInBlank(exercise, currentAnswer, onSubmit, onRun) {
+  //   const { code_line_context_start } = exercise;
+  //   const effects = [activateFillInBlankEffect.of({ exercise, showButtons: true, currentAnswer, onSubmit, onRun })];
+  //   if (code_line_context_start >= 1 && code_line_context_start <= this.view.state.doc.lines) {
+  //     const line = this.view.state.doc.line(code_line_context_start);
+  //     effects.push(EditorView.scrollIntoView(line.from, { y: "nearest" }));
+  //   }
+  //   this.view.scrollDOM.style.scrollBehavior = "smooth";
+  //   this.view.dispatch({ effects });
+  //   requestAnimationFrame(() => { this.view.scrollDOM.style.scrollBehavior = ""; });
+  // }
 
-  deactivateFillInBlank() {
-    this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
-  }
+  // deactivateFillInBlank() {
+  //   this.view.dispatch({ effects: activateFillInBlankEffect.of(null) });
+  // }
 
   addVersionBlock(from, to, versionBlockId, variants) {
     this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to, versionBlockId, variants }) });
@@ -312,14 +167,14 @@ export class InstructorCodeEditor {
     doc,
     startVersion,
     sessionNumber,
-    fileName = "instructor.py",
-    extraExtensions = [],
+    versionBlocks,
+    // extraExtensions = [],
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
-    this.fileName = fileName;
-    this.editableCompartment = new Compartment();
+    this.versionBlocks = {};
+
 
     let state = EditorState.create({
       doc: Text.of(doc),
@@ -330,14 +185,26 @@ export class InstructorCodeEditor {
           this.broadcastInstructorChanges.bind(this)
         ),
         capLength,
-        this.editableCompartment.of([]),
         fillInBlankViewField,
-        ...extraExtensions,
+        ...versionWidgetExtensions(this.createNewVersionBlock.bind(this)),
       ],
     });
 
     this.view = new EditorView({ state, parent: node });
     this.active = true;
+
+    // Reconstruct any existing version blocks from the server.
+    for (const block of versionBlocks) {
+      const widget = new VersionBlockWidget({versionBlockId: block.id, variants: block.variants, socket: this.socket, sessionNumber: this.sessionNumber});
+      this.versionBlocks[block.id] = widget;
+      this.view.dispatch({
+        effects: addVersionBlockEffect.of({from: block.from, to: block.to, widget}),
+      });
+    }
+  }
+
+  getVersionBlock(id) {
+    return this.versionBlocks[id];
   }
 
   getDocVersion() {
@@ -352,22 +219,35 @@ export class InstructorCodeEditor {
     this.active = false;
   }
 
-  activateFillInBlank(exercise) {
-    this.view.dispatch({
-      effects: [
-        this.editableCompartment.reconfigure(EditorView.editable.of(false)),
-        activateFillInBlankEffect.of({ exercise, showButtons: false }),
-      ],
-    });
-  }
+  async createNewVersionBlock({variantCode, from, to }) {
+    const currentVersion = this.getDocVersion();
+    try {
+      // Step 1: create on the backend.
+      const state = this.view.state;
+      const lineFrom = state.doc.lineAt(from).from;
+      const lineTo = state.doc.lineAt(Math.min(to, state.doc.length - 1)).to;
+      const currentDocVersion = this.getDocVersion();
+      const res = await fetch("/version-block", {
+        body: JSON.stringify({ lectureId: this.sessionNumber, anchor_pos: from, docVersion: currentDocVersion, variantCode }),
+        ...POST_JSON_REQUEST,
+      });
+      const { versionBlockId, variantId, error } = await res.json();
+      if (error) { console.error("Failed to create version block:", error); return; }
 
-  deactivateFillInBlank() {
-    this.view.dispatch({
-      effects: [
-        this.editableCompartment.reconfigure([]),
-        activateFillInBlankEffect.of(null),
-      ],
-    });
+      // Step 2: Create a VersionBlockWidget w/ the default variant and add it to the UI.
+      const variants = [{ id: variantId, name: "v0", code: variantCode }];
+      const widget = new VersionBlockWidget({versionBlockId, variants, socket: this.socket, sessionNumber: this.sessionNumber});
+      this.versionBlocks[versionBlockId] = widget;
+      this.view.dispatch({
+        changes: { from: lineFrom, to: lineTo, insert: "" },  // should this part be earlier?
+        effects: addVersionBlockEffect.of({from: lineFrom, to: lineFrom, widget}),
+      });
+
+      // Step 3: Broadcast out to the students
+      this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: this.sessionNumber, versionBlockId, from: lineFrom, to: lineFrom, variants });
+    } catch (err) {
+      console.error("Failed to create version block:", err);
+    }
   }
 
   broadcastInstructorChanges(viewUpdate) {
@@ -398,6 +278,66 @@ export class InstructorCodeEditor {
       });
     }
   }
+}
+
+// MARK: Variant Editor
+export class VariantCodeEditor {
+  constructor({ node, socket, doc, sessionNumber, versionBlockId, variantId }) {
+    this.socket = socket;
+    this.sessionNumber = sessionNumber;
+    this.versionBlockId = versionBlockId;
+    this.variantId = variantId;
+    this.docVersion = 0;
+
+    const state = EditorState.create({
+      doc: doc ?? "",
+      extensions: [
+        minimalSetup,
+        python(),
+        indentUnit.of("    "),
+        keymap.of([indentWithTab]),
+        EditorView.lineWrapping,
+        EditorView.updateListener.of(this.broadcastVariantChanges.bind(this)),
+      ],
+    });
+
+    this.view = new EditorView({ state, parent: node });
+  }
+
+  broadcastVariantChanges(viewUpdate) {
+    if (viewUpdate.docChanged) {
+      viewUpdate.transactions.forEach((tr) => {
+        this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, {
+          sessionId: this.sessionNumber,
+          versionBlockId: this.versionBlockId,
+          variantId: this.variantId,
+          id: this.docVersion,
+          changes: tr.changes.toJSON(),
+          ts: Date.now(),
+        });
+        this.docVersion++;
+      });
+    }
+
+    if (viewUpdate.docChanged || viewUpdate.transactions.some((tr) => tr.isUserEvent("select"))) {
+      const { anchor, head } = viewUpdate.state.selection.main;
+      this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, {
+        versionBlockId: this.versionBlockId,
+        variantId: this.variantId,
+        anchor,
+        head,
+      });
+    }
+  }
+
+  currentCode() {
+    return this.view.state.doc.toString();
+  }
+
+  // destroy() {
+  //   clearTimeout(this._saveTimer);
+  //   this.view.destroy();
+  // }
 }
 
 // MARK: Review Editor
