@@ -11,10 +11,15 @@ Context:
 - Not everything is implemented yet (e.g., aggregation for text; the variant blocks).
 - The app can host multiple lectures at the same time, although it is not expected this will happen very much in practice.
 
-Important files:
+Important files and classes:
 - The instructor's interface is defined in `pages/instructor.html` and runs `src/client/instructor.js`.
 - The student's interface is defined in `pages/student-page.html` and runs `src/client/student-page.js`.
-- Activity panel logic is defined in `src/client/activities-panel.js`.
+- The file `code-editors.js` contains classes that represent the various code editors, including:
+  - InstructorCodeEditor: which is in charge of broadcasting instructor edits and creating/destroying embedded VersionBlockWidget objects.
+  - VariantCodeEditor: which is in charge of broadcasting instructor edits to variants (which live in side of the VersionBlockWidget).
+  - StudentCodeEditor: which is in charge of receiving instructor edits, including those that create new version blocks. 
+- The file `cm-version-widget.js` has the code for the VersionBlockWidget class.
+- It may be outdated, but the activity panel logic is defined in `src/client/activities-panel.js`.
 - The database schema is defined in `src/server/models.js`.
 - The API endpoints live in `src/server/main.js`.
 
