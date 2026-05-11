@@ -143,11 +143,12 @@ export class LectureSession extends Model {
         }
       }
 
+      let sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       return {
         id: block.id,
         from,
         to,
-        variants: block.Variants.map((v) => {
+        variants: sortedVariants.map((v) => {
           const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
           return {
             id: v.id,
