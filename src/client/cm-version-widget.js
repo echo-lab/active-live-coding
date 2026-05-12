@@ -565,7 +565,9 @@ export class VersionBlockWidget extends WidgetType {
     const deletingSelected = variantId === selectedVariantId;
 
     this.tabEls[this.selectedIndex]?.classList.remove("selected");
-    this.variants.splice(index, 1);
+    const [removed] = this.variants.splice(index, 1);
+    removed.el.remove();
+    removed.editor.destroy();
     this.tabEls.splice(index, 1)[0]?.remove();
     this._updateDeleteBtnVisibility();
 

@@ -410,10 +410,10 @@ export class VariantCodeEditor {
     return this.view.state.doc.toString();
   }
 
-  // destroy() {
-  //   clearTimeout(this._saveTimer);
-  //   this.view.destroy();
-  // }
+  destroy() {
+    clearTimeout(this._saveTimer);
+    this.view.destroy();
+  }
 }
 
 
