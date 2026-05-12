@@ -33,7 +33,11 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 
   getExercise(id) {
-    return this.exercises.filter((e) => e.id === id);
+    return this.exercises.find((e) => e.id === id);
+  }
+
+  getExerciseForVersionBlock(versionBlockId) {
+    return this.exercises.find((e) => e.VersionBlockId === versionBlockId) ?? null;
   }
 
   getExercises() {
@@ -72,20 +76,21 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
-  // TODO: change this logic to work for vairant code exercises only :)
-  async createCodeExercise({ instructor_code, default_answer, code_line_context_start, code_line_context_end }) {
+  async createCodeVariantExercise({ default_answer, versionBlockId }) {
+    if (this.exercises.some((e) => e.VersionBlockId === versionBlockId)) {
+      alert("This version block already has an exercise.");
+      return null;
+    }
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
-        type: "CODE_FITB",
-        instructor_code,
+        type: "CODE_VARIANT",
         default_answer,
-        code_line_context_start,
-        code_line_context_end,
+        version_block_id: versionBlockId,
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
-    if (res.error) { alert(res.error); return; }
+    if (res.error) { alert(res.error); return null; }
 
     if (shouldSimulateResponses()) {
       fetch("/simulate-responses", {
@@ -112,11 +117,9 @@ export class InstructorActivitiesManager extends EventTarget {
 
     const newEx = {
       id: res.exerciseId,
-      type: "CODE_FITB",
-      instructor_code,
+      type: "CODE_VARIANT",
       default_answer,
-      code_line_context_start,
-      code_line_context_end,
+      VersionBlockId: versionBlockId,
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -126,15 +129,20 @@ export class InstructorActivitiesManager extends EventTarget {
       sessionNumber: this.sessionNumber,
       exercise: {
         id: newEx.id,
-        start_ts: newEx.start_ts,
         type: newEx.type,
-        instructor_code: newEx.instructor_code,
         default_answer: newEx.default_answer,
-        code_line_context_start: newEx.code_line_context_start,
-        code_line_context_end: newEx.code_line_context_end,
+        version_block_id: versionBlockId,
+        start_ts: newEx.start_ts,
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
+    return newEx;
+  }
+
+  showSummaryForExercise(id) {
+    const ex = this.exercises.find((e) => e.id === id);
+    if (!ex) return;
+    this.dispatchEvent(new CustomEvent("showSummary", { detail: { exercise: ex } }));
   }
 
   async finishPollExercise() {
@@ -158,7 +166,6 @@ export class InstructorActivitiesManager extends EventTarget {
     if (res.error) { alert(res.error); return; }
 
     ex.end_ts = Date.now();
-    this.activeExerciseId = null;
     this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, {
       sessionNumber: this.sessionNumber,
       exerciseId: ex.id,
@@ -180,7 +187,6 @@ export class InstructorActivitiesManager extends EventTarget {
 
   #handleStudentSubmitted(msg) {
     if (msg.sessionNumber !== this.sessionNumber) return;
-    if (msg.exerciseId !== this.activeExerciseId) return;
     const ex = this.exercises.find((e) => e.id === msg.exerciseId);
     if (!ex) {
       console.error("Received exercise response for an exercise we don't know about");

@@ -203,12 +203,12 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket, sessionNumber, exercise = null }) {
+  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager }) {
     super();
     this.versionBlockId = versionBlockId;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
-    this.exercise = exercise;
+    this.activitiesManager = activitiesManager;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
 
@@ -216,7 +216,6 @@ export class VersionBlockWidget extends WidgetType {
 
     this.tabEls = [];
     this.toolbar = null;
-    // this.editorContainer = null;
     this.variantContainer = null;
     this.exerciseBtnContainer = null;
 
@@ -225,6 +224,13 @@ export class VersionBlockWidget extends WidgetType {
         ...v,
         ...this._makeVariantCodeEditor(v),
     }));
+
+    activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+      if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
+    });
+    activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
+    });
   }
 
   eq(other) {
@@ -320,12 +326,13 @@ export class VersionBlockWidget extends WidgetType {
     const btn = document.createElement("button");
     btn.className = "cm-version-block-btn cm-version-block-ask";
 
-    if (!this.exercise) {
+    const ex = this.activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
+    if (!ex) {
       btn.textContent = "ask students";
       btn.addEventListener("mousedown", (e) => { e.preventDefault(); this._askStudents(); });
-    } else if (this.exercise.end_ts) {
+    } else if (ex.end_ts) {
       btn.textContent = "view responses";
-      btn.disabled = true;
+      btn.addEventListener("mousedown", (e) => { e.preventDefault(); this.activitiesManager.showSummaryForExercise(ex.id); });
     } else {
       btn.textContent = "finish exercise";
       btn.addEventListener("mousedown", (e) => { e.preventDefault(); this._finishExercise(); });
@@ -337,32 +344,20 @@ export class VersionBlockWidget extends WidgetType {
   async _askStudents() {
     const activeVariant = this.getActiveVariant();
     const currentCode = activeVariant.editor?.currentCode();
-    const res = await fetch("/exercise", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lectureId: this.sessionNumber,
-        type: "CODE_VARIANT",
-        default_answer: currentCode,
-        version_block_id: this.versionBlockId,
-      }),
+    const newEx = await this.activitiesManager.createCodeVariantExercise({
+      default_answer: currentCode,
+      versionBlockId: this.versionBlockId,
     });
-    const data = await res.json();
-    if (data.error) { console.error("Failed to create exercise:", data.error); return; }
-    this.exercise = data.exercise;
-    this._updateExerciseBtn();
+    // Below: handled by the event listeners...
+    // if (newEx) this._updateExerciseBtn();
   }
 
   async _finishExercise() {
-    const res = await fetch("/exercise/finish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ exerciseId: this.exercise.id }),
-    });
-    const data = await res.json();
-    if (!data.success) { console.error("Failed to finish exercise:", data); return; }
-    this.exercise = { ...this.exercise, end_ts: Date.now() };
-    this._updateExerciseBtn();
+    const ex = this.activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
+    if (!ex) return;
+    await this.activitiesManager.finishExercise(ex.id);
+    // Below: handled by the event listeners...
+    // this._updateExerciseBtn();
   }
 
   // -------------------------------------------------------

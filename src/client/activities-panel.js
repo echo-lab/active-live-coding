@@ -39,7 +39,7 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
   content.className = "answer-display-content";
   content.hidden = !startExpanded;
 
-  if (exerciseType === "CODE_FITB") {
+  if (exerciseType === "CODE_FITB" || exerciseType === "CODE_VARIANT") {
     const editorContainer = document.createElement("div");
     new ReviewCodeEditor({ node: editorContainer, doc: trimmed.split("\n"), isEditable: false });
     content.appendChild(editorContainer);
@@ -390,8 +390,8 @@ export class InstructorActivitiesPanel {
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type !== "POLL") return;
-      this._stopTimer();
+      if (exercise.type === "POLL") this._stopTimer();
+      this.openPanel();
       this._renderList();
       this._showSummaryView(exercise, { loading: true });
     });
@@ -402,6 +402,11 @@ export class InstructorActivitiesPanel {
       const responsesEl = document.querySelector("#activity-summary-responses");
       responsesEl.innerHTML = "";
       this._renderResponsesEl(responsesEl, ex, groups);
+    });
+
+    this.manager.addEventListener("showSummary", ({ detail: { exercise } }) => {
+      this.openPanel();
+      this._showSummaryView(exercise);
     });
 
     this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
@@ -423,7 +428,6 @@ export class InstructorActivitiesPanel {
     this.activitiesPanelEl.classList.toggle("has-content", true);
   }
 
-  // The main list of exercises. For now, just list the POLL exercises
   _renderList() {
     this.listItemsEl.innerHTML = "";
     [...this.manager.getExercises()].reverse().forEach((ex) => {
@@ -433,12 +437,12 @@ export class InstructorActivitiesPanel {
       item.className = "activity-list-item";
       let isActive = ex.end_ts == null;
       let badge = isActive ? "Active" : "Done";
-      let preview = ex.instructions
-        ? ex.instructions.slice(0, 60)
-        : "(no instructions)";
+      let preview = ex.type === "CODE_VARIANT"
+        ? `(code variant #${ex.id})`
+        : (ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)");
       item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span>`;
       item.addEventListener("click", () => {
-        if (isActive) {
+        if (ex.type === "POLL" && isActive) {
           this._showActiveView(ex);
         } else {
           this._showSummaryView(ex);

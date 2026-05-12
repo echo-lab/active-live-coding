@@ -198,17 +198,13 @@ export class InstructorCodeEditor {
     startVersion,
     sessionNumber,
     versionBlocks,
-    exercises = [],
+    activitiesManager,
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
+    this.activitiesManager = activitiesManager;
     this.versionBlocks = {};
-
-    const exerciseByBlockId = {};
-    for (const ex of exercises) {
-      if (ex.VersionBlockId != null) exerciseByBlockId[ex.VersionBlockId] = ex;
-    }
 
     let state = EditorState.create({
       doc: Text.of(doc),
@@ -234,7 +230,7 @@ export class InstructorCodeEditor {
         variants: block.variants,
         socket: this.socket,
         sessionNumber: this.sessionNumber,
-        exercise: exerciseByBlockId[block.id] ?? null,
+        activitiesManager: this.activitiesManager,
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -300,7 +296,7 @@ export class InstructorCodeEditor {
 
       // Step 2: Create a VersionBlockWidget w/ the default variant and add it to the UI.
       const variants = [{ id: variantId, name: "v0", code: variantCode, docVersion: 1 }];
-      const widget = new VersionBlockWidget({versionBlockId, variants, socket: this.socket, sessionNumber: this.sessionNumber});
+      const widget = new VersionBlockWidget({versionBlockId, variants, socket: this.socket, sessionNumber: this.sessionNumber, activitiesManager: this.activitiesManager});
       this.versionBlocks[versionBlockId] = widget;
       this.view.dispatch({
         changes: { from: lineFrom, to: lineTo, insert: "" },  // should this part be earlier?
@@ -359,7 +355,6 @@ export class VariantCodeEditor {
     this.versionBlockId = versionBlockId;
     this.variantId = variantId;
     this.docVersion = docVersion;
-    console.log("VARIANT CODE EDITOR W VERSION: ", docVersion);
 
     const state = EditorState.create({
       doc: doc ?? "",
