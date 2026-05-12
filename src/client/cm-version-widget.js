@@ -217,8 +217,11 @@ export class VersionBlockWidget extends WidgetType {
 
     this.tabEls = [];
     this.toolbar = null;
+    this.container = null;
     this.variantContainer = null;
     this.exerciseBtnContainer = null;
+    this._timerInterval = null;
+    this._responseListener = null;
 
     // shape: {id, code, name, el, editor}
     this.variants = variants.map((v) => ({
@@ -245,6 +248,8 @@ export class VersionBlockWidget extends WidgetType {
   toDOM() {
     const container = document.createElement("div");
     container.className = "cm-version-block-widget";
+
+    this.container = container;
 
     // Toolbar
     this.toolbar = document.createElement("div");
@@ -322,7 +327,17 @@ export class VersionBlockWidget extends WidgetType {
     return true;
   }
 
+  _clearExerciseState() {
+    if (this._timerInterval) { clearInterval(this._timerInterval); this._timerInterval = null; }
+    if (this._responseListener) {
+      this.activitiesManager.removeEventListener("responseReceived", this._responseListener);
+      this._responseListener = null;
+    }
+    this.container?.classList.remove("exercise-open");
+  }
+
   _updateExerciseBtn() {
+    this._clearExerciseState();
     this.exerciseBtnContainer.innerHTML = "";
     const btn = document.createElement("button");
     btn.className = "cm-version-block-btn cm-version-block-ask";
@@ -335,8 +350,37 @@ export class VersionBlockWidget extends WidgetType {
       btn.textContent = "view responses";
       btn.addEventListener("mousedown", (e) => { e.preventDefault(); this.activitiesManager.showSummaryForExercise(ex.id); });
     } else {
+      // The exercise is open: display the response count, flash the border, and include a timer.
+      this.container?.classList.add("exercise-open");
+
+      const countEl = document.createElement("span");
+      countEl.className = "cm-version-block-response-count";
+      const updateCount = () => {
+        const count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
+        countEl.textContent = `${count} responses |`;
+      };
+      updateCount();
+      this._responseListener = ({ detail: { exercise } }) => {
+        if (exercise.id === ex.id) updateCount();
+      };
+      this.activitiesManager.addEventListener("responseReceived", this._responseListener);
+
+      const timerEl = document.createElement("span");
+      timerEl.className = "cm-version-block-timer";
+      const updateTimer = () => {
+        const elapsed = Math.floor((Date.now() - new Date(ex.start_ts).getTime()) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        timerEl.textContent = mins > 0 ? `${mins}:${secs.toString().padStart(2, "0")}` : `${secs}s`;
+      };
+      updateTimer();
+      this._timerInterval = setInterval(updateTimer, 1000);
+
       btn.textContent = "finish exercise";
       btn.addEventListener("mousedown", (e) => { e.preventDefault(); this._finishExercise(); });
+
+      this.exerciseBtnContainer.appendChild(countEl);
+      this.exerciseBtnContainer.appendChild(timerEl);
     }
 
     this.exerciseBtnContainer.appendChild(btn);

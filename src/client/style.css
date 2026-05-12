@@ -1135,6 +1135,30 @@ td {
   padding: 0;
 }
 
+@keyframes cm-version-block-border-flash {
+  /* 0%, 100% { border-color: #646cffab; } */
+  0%, 100% { border-color: #646cffab; }
+  50%       { border-color: #a600ff; }
+}
+
+.cm-version-block-widget.exercise-open {
+  animation: cm-version-block-border-flash 2.5s ease-in-out infinite;
+}
+
+.cm-version-block-timer {
+  font-size: 11px;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 5px;
+  margin-right: 10px;
+}
+
+.cm-version-block-response-count {
+  font-size: 11px;
+  color: #888;
+  padding: 2px 5px;
+}
+
 /* .cm-version-block-editor .cm-editor {
   font-size: 13px;
 } */
