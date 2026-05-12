@@ -1063,6 +1063,8 @@ td {
 
 .cm-version-block-tab-label {
   cursor: pointer;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .cm-version-block-tab-rename {

@@ -354,7 +354,9 @@ export class VersionBlockWidget extends WidgetType {
     delBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this._deleteVariant(variant.id);
+      if (window.confirm("Are you sure you want to delete this?")) {
+        this._deleteVariant(variant.id);
+      }
     });
 
     tab.appendChild(label);
