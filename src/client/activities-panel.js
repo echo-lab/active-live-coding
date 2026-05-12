@@ -1,7 +1,8 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
+import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
+import { InstructorActivitiesManager } from "./activities-manager.js";
 
 // MARK: Code/Poll HTML
 function trimAnswer(text) {
@@ -250,7 +251,6 @@ export class StudentActivitiesPanel {
     this.codeSubmittedEl.hidden = false;
   }
 
-  // TODO: Can we combine this w/ _submitAnswer()???
   _makeFitbSubmit(ex) {
     return async (code) => {
       const res = await fetch("/exercise/response", {
@@ -326,42 +326,19 @@ export class StudentActivitiesPanel {
 
 // MARK: Instructor Panel
 export class InstructorActivitiesPanel {
-  constructor({
-    sessionNumber,
-    exercises,
-    socket,
-    userId,
-    activitiesPanel,
+  constructor(manager, {
+    activitiesPanelEl,
     openPanel,
     getInstructorCode,
-    onFillInBlankActivated,
-    onFillInBlankDeactivated,
   }) {
-    console.log("Exercises: ", exercises);
-    this.sessionNumber = sessionNumber;
-    this.userId = userId;
-    this.exercises = exercises.map((ex) => ({
-      ...ex,
-      ExerciseResponses: [
-        ...(ex.ExerciseResponses ?? []),
-        ...(ex.SimulatedExerciseResponses ?? []).map((r) => ({
-          id: r.id,
-          student_id: r.student_name,
-          student_identifier: r.student_name,
-          StudentSession: null,
-          answer: r.answer,
-          isSimulated: true,
-        })),
-      ],
-    }));
-    this.socket = socket;
-    this.activitiesPanel = activitiesPanel;
-    this.openPanel = openPanel;
+    /** @type {InstructorActivitiesManager} */
+    this.manager = manager;
+    this.activitiesPanelEl = activitiesPanelEl;
+    this.openPanel = openPanel;  // The resizer...
     this.getInstructorCode = getInstructorCode;
-    this.onFillInBlankActivated = onFillInBlankActivated ?? null;
-    this.onFillInBlankDeactivated = onFillInBlankDeactivated ?? null;
-    this.activeExerciseId = null;
-    this.timerInterval = null;
+    // this.onFillInBlankActivated = onFillInBlankActivated ?? null;
+    // this.onFillInBlankDeactivated = onFillInBlankDeactivated ?? null;
+    this.timerInterval = null;  // Holds the timer update callback, if timer is active
 
     // DOM refs
     this.listEl = document.querySelector("#activities-list");
@@ -382,143 +359,76 @@ export class InstructorActivitiesPanel {
       .addEventListener("click", () => this._showView("list"));
     document
       .querySelector("#activity-submit-create")
-      .addEventListener("click", () => this._createExercise());
+      .addEventListener("click", () => this.#onCreateSubmit());
     document
       .querySelector("#activity-finish")
-      .addEventListener("click", () => this._finishExercise());
+      .addEventListener("click", () => manager.finishPollExercise());
     this.pollButton.addEventListener("click", () => {
       this.openPanel();
       this._showView("create");
       document.querySelector("#activity-instructions").value = "";
     });
 
-    socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
-      if (msg.sessionNumber !== sessionNumber) return;
-      if (msg.exerciseId !== this.activeExerciseId) return;
-      let ex = this.exercises.find((e) => e.id === msg.exerciseId);
-      if (ex) {
-        // Update or add response in local list
-        let idx = ex.ExerciseResponses.findIndex(
-          (r) => r.student_id === msg.student_id,
-        );
-        if (idx >= 0) {
-          ex.ExerciseResponses[idx].answer = msg.answer;
-          if (msg.responseId != null) ex.ExerciseResponses[idx].id = msg.responseId;
-        } else {
-          ex.ExerciseResponses.push({
-            id: msg.responseId,
-            student_id: msg.student_id,
-            student_identifier: msg.student_identifier,
-            answer: msg.answer,
-          });
-        }
-      }
-      const countEl = document.querySelector("#activity-response-count");
-      let count = ex ? ex.ExerciseResponses.filter((r) => !r.isSimulated).length : 0;
-      countEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
-    });
+    this.#subscribeToManager();
 
-    // Check for any already-active exercise on load
-    let active = this.exercises.find((ex) => ex.end_ts == null);
-    if (active) {
-      this.activeExerciseId = active.id;
-      this.openPanel();
-      this._showActiveView(active);
-      active.type === "CODE_FITB" && this.onFillInBlankActivated?.(active);
-    } else {
-      this._showView("list");
+    for (let ex of manager.getActiveExercises()) {
+      if (ex.type === "POLL") {
+        this.openPanel();
+        this._showActiveView(ex);
+        break;
+      }
     }
     this._renderList();
   }
 
-  // Create a FITB code exercise from the editor (TODO: possibly move to a different location?)
-  // NOTE: see also: _createExercise (for other exercise types)
-  async createCodeExercise({ instructor_code, default_answer, code_line_context_start, code_line_context_end }) {
-    let res = await fetch("/exercise", {
-      body: JSON.stringify({
-        lectureId: this.sessionNumber,
-        type: "CODE_FITB",
-        instructor_code,
-        default_answer,
-        code_line_context_start,
-        code_line_context_end,
-      }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json());
-    if (res.error) {
-      alert(res.error);
-      return;
-    }
-
-    if (shouldSimulateResponses()) {
-      fetch("/simulate-responses", {
-        body: JSON.stringify({
-          instructorId: this.userId,
-          exerciseId: res.exerciseId,
-        }),
-        ...POST_JSON_REQUEST,
-      })
-        .then((r) => r.json())
-        .then(({ simulatedResponses }) => {
-          const ex = this.exercises.find((e) => e.id === res.exerciseId);
-          if (ex && simulatedResponses) {
-            simulatedResponses.forEach((r) => {
-              ex.ExerciseResponses.push({
-                id: r.id,
-                student_id: r.student_name,
-                student_identifier: r.student_name,
-                StudentSession: null,
-                answer: r.answer,
-                isSimulated: true,
-              });
-            });
-          }
-        });
-    }
-
-    this.openPanel();
-    let newEx = {
-      id: res.exerciseId,
-      type: "CODE_FITB",
-      instructor_code,
-      default_answer,
-      code_line_context_start,
-      code_line_context_end,
-      start_ts: Date.now(),
-      end_ts: null,
-      ExerciseResponses: [],
-    };
-    this.exercises.push(newEx);
-    this.activeExerciseId = newEx.id;
-    this._renderList();
-    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
-      sessionNumber: this.sessionNumber,
-      exercise: {
-        id: newEx.id,
-        start_ts: newEx.start_ts,
-        type: newEx.type,
-        instructor_code: newEx.instructor_code,
-        default_answer: newEx.default_answer,
-        code_line_context_start: newEx.code_line_context_start,
-        code_line_context_end: newEx.code_line_context_end,
-      },
+  #subscribeToManager() {
+    this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+      if (exercise.type !== "POLL") return;
+      this.openPanel();
+      this._renderList();  // Refresh the list
+      this._showActiveView(exercise);  // Show the panel...
     });
-    this._showActiveView(newEx);
-    newEx.type === "CODE_FITB" && this.onFillInBlankActivated?.(newEx);
+
+    this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      if (exercise.type !== "POLL") return;
+      this._stopTimer();
+      this._renderList();
+      this._showSummaryView(exercise, { loading: true });
+    });
+
+    this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
+      const ex = this.manager.getExercise(exerciseId);
+      if (!ex) return;
+      const responsesEl = document.querySelector("#activity-summary-responses");
+      responsesEl.innerHTML = "";
+      this._renderResponsesEl(responsesEl, ex, groups);
+    });
+
+    this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
+      const countEl = document.querySelector("#activity-response-count");
+      countEl.textContent = `${responseCount} response${responseCount !== 1 ? "s" : ""}`;
+    });
+  }
+
+  async #onCreateSubmit() {
+    const instructions = document.querySelector("#activity-instructions").value.trim();
+    await this.manager.createPollExercise({ instructions });
   }
 
   _showView(name) {
-    console.log("CHANGING TO: ", name);
     this.listEl.hidden = name !== "list";
     this.createEl.hidden = name !== "create";
     this.activeEl.hidden = name !== "active";
     this.summaryEl.hidden = name !== "summary";
-    this.activitiesPanel.classList.toggle("has-content", true);
+    this.activitiesPanelEl.classList.toggle("has-content", true);
   }
 
+  // The main list of exercises. For now, just list the POLL exercises
   _renderList() {
     this.listItemsEl.innerHTML = "";
-    [...this.exercises].reverse().forEach((ex) => {
+    [...this.manager.getExercises()].reverse().forEach((ex) => {
+      if (ex.type !== "POLL") return;
+
       let item = document.createElement("div");
       item.className = "activity-list-item";
       let isActive = ex.end_ts == null;
@@ -539,11 +449,13 @@ export class InstructorActivitiesPanel {
     this._updatePollButton();
   }
 
+  // Shouldn't poll unless there's no active poll.
   _updatePollButton() {
-    let hasActive = this.exercises.some((ex) => ex.end_ts == null);
-    this.pollButton.disabled = hasActive;
+    const activeExercises = this.manager.getActiveExercises();
+    this.pollButton.disabled = activeExercises.some(ex => ex.type === "POLL");
   }
 
+  // Show the timer and stuff. Should only be used for POLL questions.
   _showActiveView(ex) {
     document.querySelector("#activity-active-instructions").textContent =
       ex.instructions ?? "";
@@ -554,6 +466,7 @@ export class InstructorActivitiesPanel {
     this._startTimer(ex.start_ts);
   }
 
+  // This should be used for both POLL and CODE_VARIANT!
   _showSummaryView(ex, { loading = false, groups = undefined } = {}) {
     document.querySelector("#activity-summary-instructions").textContent =
       ex.instructions ?? "";
@@ -562,7 +475,7 @@ export class InstructorActivitiesPanel {
     if (loading) {
       let loadingEl = document.createElement("div");
       loadingEl.className = "summary-loading";
-      loadingEl.textContent = "Generating summary\u2026";
+      loadingEl.textContent = "Generating summary…";
       responsesEl.appendChild(loadingEl);
     } else {
       let resolvedGroups = groups !== undefined ? groups
@@ -572,6 +485,7 @@ export class InstructorActivitiesPanel {
     this._showView("summary");
   }
 
+  // Renders a single student response. Used in _renderResponsesEl (notice plural)
   _renderResponseEl(response, ex) {
     let { student_id, student_identifier, StudentSession, answer } = response;
     let displayName =
@@ -582,8 +496,9 @@ export class InstructorActivitiesPanel {
     return div;
   }
 
+  // Renders all student responses, optionally grouped. 
   _renderResponsesEl(responsesEl, ex, groups) {
-    if (ex.ExerciseResponses.length === 0) {
+    if (!ex.ExerciseResponses || ex.ExerciseResponses.length === 0) {
       responsesEl.textContent = "No responses.";
       return;
     }
@@ -594,7 +509,6 @@ export class InstructorActivitiesPanel {
       return;
     }
 
-    // Build a lookup map: "real_{id}" / "sim_{id}" → response object
     let responseById = {};
     ex.ExerciseResponses.forEach((r) => {
       let key = r.isSimulated ? `sim_${r.id}` : `real_${r.id}`;
@@ -622,10 +536,8 @@ export class InstructorActivitiesPanel {
       headerEl.appendChild(countEl);
       groupEl.appendChild(headerEl);
 
-      // Always show the first response
       groupEl.appendChild(this._renderResponseEl(responses[0], ex));
 
-      // Remaining responses collapsed
       if (responses.length > 1) {
         let extraEl = document.createElement("div");
         extraEl.className = "group-extra-responses";
@@ -666,80 +578,8 @@ export class InstructorActivitiesPanel {
     this.timerInterval = setInterval(update, 1000);
   }
 
-  // NOTE: see also: createCodeExercise (for the FITB type)
-  async _createExercise() {
-    let instructions = document
-      .querySelector("#activity-instructions")
-      .value.trim();
-    let res = await fetch("/exercise", {
-      body: JSON.stringify({
-        lectureId: this.sessionNumber,
-        type: "POLL",
-        instructions,
-      }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json());
-    if (res.error) {
-      alert(res.error);
-      return;
-    }
-
-    let newEx = {
-      id: res.exerciseId,
-      type: "POLL",
-      instructions,
-      start_ts: Date.now(),
-      end_ts: null,
-      ExerciseResponses: [],
-    };
-    this.exercises.push(newEx);
-    this.activeExerciseId = newEx.id;
-    this._renderList();
-    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
-      sessionNumber: this.sessionNumber,
-      exercise: {
-        id: newEx.id,
-        instructions: newEx.instructions,
-        start_ts: newEx.start_ts,
-        type: newEx.type,
-      },
-    });
-    this._showActiveView(newEx);
-  }
-
-  async _finishExercise() {
-    let ex = this.exercises.find((e) => e.id === this.activeExerciseId);
-    if (!ex) return;
-    let res = await fetch("/exercise/finish", {
-      body: JSON.stringify({ exerciseId: ex.id }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json());
-    if (res.error) {
-      alert(res.error);
-      return;
-    }
-
-    ex.type === "CODE_FITB" && this.onFillInBlankDeactivated?.();
-    ex.end_ts = Date.now();
-    this.activeExerciseId = null;
+  _stopTimer() {
     clearInterval(this.timerInterval);
     this.timerInterval = null;
-    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, {
-      sessionNumber: this.sessionNumber,
-      exerciseId: ex.id,
-    });
-    this._renderList();
-    this._showSummaryView(ex, { loading: true });
-
-    // Fetch (or generate) the grouped summary for this exercise.
-    fetch("/exercise/summary", {
-      body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json()).then(({ summary }) => {
-      if (summary) ex.summary = JSON.stringify(summary);
-      let responsesEl = document.querySelector("#activity-summary-responses");
-      responsesEl.innerHTML = "";
-      this._renderResponsesEl(responsesEl, ex, summary ?? null);
-    });
   }
 }

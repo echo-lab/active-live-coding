@@ -13,6 +13,7 @@ import {
 import { InstructorCodeEditor } from "./code-editors.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
+import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
 import {
   versionWidgetExtensions,
@@ -92,10 +93,14 @@ function initialize({
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 
-  let activitiesPanel = null; // forward reference; assigned after panel construction
-  let codeEditor = null;      // forward reference; used inside the version block callback
+  const activitiesManager = new InstructorActivitiesManager({
+    sessionNumber,
+    exercises,
+    socket,
+    userId,
+  });
 
-  codeEditor = new InstructorCodeEditor({
+  let codeEditor = new InstructorCodeEditor({
     node: codeContainer,
     socket,
     doc,
@@ -141,15 +146,9 @@ function initialize({
     },
   );
 
-  activitiesPanel = new InstructorActivitiesPanel({
-    sessionNumber,
-    exercises,
-    socket,
-    userId,
-    activitiesPanel: document.querySelector("#activities-container"),
+  new InstructorActivitiesPanel(activitiesManager, {
+    activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getInstructorCode: () => codeEditor.currentCode(),
-    // onFillInBlankActivated: (ex) => codeEditor.activateFillInBlank(ex),
-    // onFillInBlankDeactivated: () => codeEditor.deactivateFillInBlank(),
   });
 }
