@@ -316,6 +316,13 @@ export class InstructorCodeEditor {
         head,
       });
     }
+
+    if (viewUpdate.focusChanged && !viewUpdate.view.hasFocus) {
+      this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, {
+        anchor: -1,
+        head: -1,
+      });
+    }
   }
 }
 
@@ -366,6 +373,15 @@ export class VariantCodeEditor {
         variantId: this.variantId,
         anchor,
         head,
+      });
+    }
+
+    if (viewUpdate.focusChanged && !viewUpdate.view.hasFocus) {
+      this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, {
+        versionBlockId: this.versionBlockId,
+        variantId: this.variantId,
+        anchor: -1,
+        head: -1,
       });
     }
   }
@@ -421,9 +437,7 @@ export class VariantCodeFollowingEditor {
   handleInstructorCursorChange({anchor, head}) {
     if (anchor > this.view.state.doc.length) return;
     if (head > this.view.state.doc.length) return;
-    this.view.dispatch({
-      effects: setInstructorSelection.of({ anchor, head }),
-    });
+    this.view.dispatch({ effects: setInstructorSelection.of({ anchor, head }) });
   }
 }
 

@@ -158,6 +158,10 @@ export const instructorHighlightField = StateField.define({
     for (let e of tr.effects) {
       if (!e.is(setInstructorSelection)) continue;
       let { anchor, head } = e.value;
+      if (anchor < 0 || head < 0) {
+        highlight = Decoration.none;
+        continue;
+      }
       let [from, to] = [anchor, head];
       if (from > to) {
         [from, to] = [to, from];
@@ -187,6 +191,10 @@ export const instructorCursorField = StateField.define({
     for (let e of tr.effects) {
       if (!e.is(setInstructorSelection)) continue;
       let { head } = e.value;
+      if (head < 0) {
+        cursor = Decoration.none;
+        continue;
+      }
       cursor = Decoration.none.update({
         add: [instructorCursorWidget.range(head, head)],
       });
