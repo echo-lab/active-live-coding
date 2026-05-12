@@ -76,7 +76,7 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
-  async createCodeVariantExercise({ default_answer, versionBlockId }) {
+  async createCodeVariantExercise({ default_answer, instructor_code, versionBlockId }) {
     if (this.exercises.some((e) => e.VersionBlockId === versionBlockId)) {
       alert("This version block already has an exercise.");
       return null;
@@ -86,6 +86,7 @@ export class InstructorActivitiesManager extends EventTarget {
         lectureId: this.sessionNumber,
         type: "CODE_VARIANT",
         default_answer,
+        instructor_code,
         version_block_id: versionBlockId,
       }),
       ...POST_JSON_REQUEST,

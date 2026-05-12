@@ -203,12 +203,13 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager }) {
+  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager, getInstructorCode }) {
     super();
     this.versionBlockId = versionBlockId;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.activitiesManager = activitiesManager;
+    this.getInstructorCodeForExercise = getInstructorCode;  // Substitutes this variant's code w/ string {{ANSWER}}
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
 
@@ -344,8 +345,10 @@ export class VersionBlockWidget extends WidgetType {
   async _askStudents() {
     const activeVariant = this.getActiveVariant();
     const currentCode = activeVariant.editor?.currentCode();
+    const instructor_code = this.getInstructorCodeForExercise?.();
     const newEx = await this.activitiesManager.createCodeVariantExercise({
       default_answer: currentCode,
+      instructor_code,
       versionBlockId: this.versionBlockId,
     });
     // Below: handled by the event listeners...

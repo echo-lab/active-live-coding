@@ -231,6 +231,7 @@ export class InstructorCodeEditor {
         socket: this.socket,
         sessionNumber: this.sessionNumber,
         activitiesManager: this.activitiesManager,
+        getInstructorCode: () => this.codeWithVariantAsPlaceholder(block.id),
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -258,6 +259,26 @@ export class InstructorCodeEditor {
     decorations.between(0, doc.length, (from, to, deco) => {
       result += doc.sliceString(pos, from);
       result += deco.spec.widget.getActiveVariant().editor.currentCode();
+      pos = to;
+    });
+
+    result += doc.sliceString(pos, doc.length);
+    return result;
+  }
+
+  codeWithVariantAsPlaceholder(targetVersionBlockId) {
+    const state = this.view.state;
+    const doc = state.doc;
+    const decorations = state.field(versionBlocksField);
+
+    let result = "";
+    let pos = 0;
+
+    decorations.between(0, doc.length, (from, to, deco) => {
+      result += doc.sliceString(pos, from);
+      result += deco.spec.widget.versionBlockId === targetVersionBlockId
+        ? "{{ANSWER}}"
+        : deco.spec.widget.getActiveVariant().editor.currentCode();
       pos = to;
     });
 
@@ -296,7 +317,14 @@ export class InstructorCodeEditor {
 
       // Step 2: Create a VersionBlockWidget w/ the default variant and add it to the UI.
       const variants = [{ id: variantId, name: "v0", code: variantCode, docVersion: 1 }];
-      const widget = new VersionBlockWidget({versionBlockId, variants, socket: this.socket, sessionNumber: this.sessionNumber, activitiesManager: this.activitiesManager});
+      const widget = new VersionBlockWidget({
+          versionBlockId,
+          variants,
+          socket: this.socket,
+          sessionNumber: this.sessionNumber,
+          activitiesManager: this.activitiesManager,
+          getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId)
+        });
       this.versionBlocks[versionBlockId] = widget;
       this.view.dispatch({
         changes: { from: lineFrom, to: lineTo, insert: "" },  // should this part be earlier?

@@ -9,10 +9,9 @@ const client = new OpenAI(); // reads OPENAI_API_KEY from env
 export async function createSimulatedResponses(exercise) {
   let prompt;
 
-  if (exercise.type === EXERCISE_TYPE.CODE_FITB) {
-    prompt = createFITBPrompt(exercise);
+  if (exercise.type === EXERCISE_TYPE.CODE_VARIANT) {
+    prompt = createVariantPrompt(exercise);
   }
-  // TODO: make the prompt for other exercise types.
 
   if (!prompt) return;
 
@@ -43,33 +42,27 @@ export async function createSimulatedResponses(exercise) {
   return records;
 }
 
-function createFITBPrompt(exercise) {
-  const { instructor_code, code_line_context_start, code_line_context_end } = exercise;
-  const allLines = instructor_code.split('\n');
-
-  let prefix = allLines.slice(0, code_line_context_start - 1).join('\n');
-  let middle = allLines.slice(code_line_context_start - 1, code_line_context_end).join('\n');
-  let suffix = allLines.slice(code_line_context_end).join('\n');
-
-  let code = `${prefix}\n{{ANSWER}}\n${suffix}`;
+function createVariantPrompt(exercise) {
+  const { instructor_code, default_answer } = exercise;
 
   return `Your job is to simulate student responses to an in-class coding exercise.
   In this exercise, the instructor has shared their code and left a portion blank for students to fill in.
   I will provide for you the instructor's code (INSTRUCTOR CODE), which will have the string '{{ANSWER}}' where the student should fill in their own code.
   I will also provide for you what the instructor originally had in their editor where {{ANSWER}} is. We will call that ORIGINAL.
   We don't have access to the actual exercise instructions, so you have to infer it from INSTRUCTOR_CODE and from ORIGINAL.
-  
+
   Give your response in JSON format as a list of strings which contain possible student responses. You should produce ${N} responses in total.
-  Try to vary the responses if possible, but keep them plausible (even if incorrect or incomplete) -- it's okay if some are very simialr or the same.
+  Try to vary the responses somewhat, but keep them plausible (even if incorrect or incomplete) -- it's okay if some are very similar or the same.
+  Some responses should display common misconceptions that a student might have, though only when it is relevant and feels like a plausible student response.
   Make sure you only respond with the JSON-parsable list of responses.
   If it is absolutely impossible to infer the intent of the question, you can return an empty JSON list.
 
   Here is the instructor's code and the code being replaced.
   <INSTRUCTOR_CODE>
-  ${code}
+  ${instructor_code}
   </ INSTRUCTOR_CODE>
   <ORIGINAL>
-  ${middle}
+  ${default_answer}
   </ ORIGINAL>
   `;
 }
