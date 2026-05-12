@@ -26,6 +26,7 @@ export function setVersionBlockReadOnly(v) {
   _readOnly = v;
 }
 
+// MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
   constructor({ versionBlockId, variants }) {
@@ -47,6 +48,10 @@ export class StudentVersionBlockWidget extends WidgetType {
 
   ignoreEvent() {
     return true;
+  }
+
+  getActiveVariant() {
+    return this.variants[this.selectedIndex];
   }
 
   // -------------------------------------------------------

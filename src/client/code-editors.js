@@ -165,6 +165,21 @@ export class StudentCodeEditor {
   }
 
   currentCode() {
+    const state = this.view.state;
+    const doc = state.doc;
+    const decorations = state.field(versionBlocksField);
+
+    let result = "";
+    let pos = 0;
+
+    decorations.between(0, doc.length, (from, to, deco) => {
+      result += doc.sliceString(pos, from);
+      result += deco.spec.widget.getActiveVariant().editor.currentCode();
+      pos = to;
+    });
+
+    result += doc.sliceString(pos, doc.length);
+    return result;
     // TODO: implement this like it is implemented for the InstructorCodeEditor
     return this.view.state.doc.toString();
   }
