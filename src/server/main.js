@@ -355,7 +355,7 @@ app.post("/record-user-action", async (req, res) => {
 // MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = req.body;
+  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -365,14 +365,16 @@ app.post("/exercise", async (req, res) => {
         transaction: t,
       });
       if (!lecture) return { error: `Session #${lectureId} not found` };
-      let activeExercise = await ClassExercise.findOne({
-        where: { LectureSessionId: lectureId, end_ts: null },
-        transaction: t,
-      });
-      if (activeExercise) return { error: "An exercise is already active for this session" };
+      if (version_block_id) {
+        const blockExercise = await ClassExercise.findOne({
+          where: { VersionBlockId: version_block_id },
+          transaction: t,
+        });
+        if (blockExercise) return { error: "This version block already has an exercise" };
+      }
       let exercise = await ClassExercise.createForLecture(
         lectureId,
-        { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end },
+        { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id },
         t,
       );
       return { exerciseId: exercise.id, exercise };

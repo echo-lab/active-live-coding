@@ -236,12 +236,13 @@ export const EXERCISE_TYPE = Object.freeze({
 export class ClassExercise extends Model {
   static async createForLecture(
     lectureId,
-    { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end } = {},
+    { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id } = {},
     transaction,
   ) {
     return ClassExercise.create(
       {
         LectureSessionId: lectureId,
+        VersionBlockId: version_block_id ?? null,
         type,
         instructions,
         instructor_code,

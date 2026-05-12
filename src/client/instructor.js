@@ -102,6 +102,7 @@ function initialize({
     startVersion: docVersion,
     sessionNumber,
     versionBlocks,
+    exercises,
   });
 
   let codeRunner = new PythonCodeRunner();

@@ -198,13 +198,17 @@ export class InstructorCodeEditor {
     startVersion,
     sessionNumber,
     versionBlocks,
-    // extraExtensions = [],
+    exercises = [],
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.versionBlocks = {};
 
+    const exerciseByBlockId = {};
+    for (const ex of exercises) {
+      if (ex.VersionBlockId != null) exerciseByBlockId[ex.VersionBlockId] = ex;
+    }
 
     let state = EditorState.create({
       doc: Text.of(doc),
@@ -225,7 +229,13 @@ export class InstructorCodeEditor {
 
     // Reconstruct any existing version blocks from the server.
     for (const block of versionBlocks) {
-      const widget = new VersionBlockWidget({versionBlockId: block.id, variants: block.variants, socket: this.socket, sessionNumber: this.sessionNumber});
+      const widget = new VersionBlockWidget({
+        versionBlockId: block.id,
+        variants: block.variants,
+        socket: this.socket,
+        sessionNumber: this.sessionNumber,
+        exercise: exerciseByBlockId[block.id] ?? null,
+      });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
         effects: addVersionBlockEffect.of({from: block.from, to: block.to, widget}),
@@ -435,7 +445,7 @@ export class VariantCodeFollowingEditor {
   }
 
   currentCode() {
-    return this.view.state.doc.toString();
+    return this.view?.state?.doc?.toString();
   }
 
   handleInstructorEdit({changes, id}) {

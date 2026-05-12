@@ -203,11 +203,12 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket, sessionNumber }) {
+  constructor({ versionBlockId, variants, socket, sessionNumber, exercise = null }) {
     super();
     this.versionBlockId = versionBlockId;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
+    this.exercise = exercise;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
 
@@ -217,6 +218,7 @@ export class VersionBlockWidget extends WidgetType {
     this.toolbar = null;
     // this.editorContainer = null;
     this.variantContainer = null;
+    this.exerciseBtnContainer = null;
 
     // shape: {id, code, name, el, editor}
     this.variants = variants.map((v) => ({
@@ -270,10 +272,9 @@ export class VersionBlockWidget extends WidgetType {
     const rightGroup = document.createElement("div");
     rightGroup.className = "cm-version-block-right";
 
-    const askBtn = document.createElement("button");
-    askBtn.className = "cm-version-block-btn cm-version-block-ask";
-    askBtn.textContent = "ask students";
-    rightGroup.appendChild(askBtn);
+    this.exerciseBtnContainer = document.createElement("div");
+    rightGroup.appendChild(this.exerciseBtnContainer);
+    this._updateExerciseBtn();
 
     // Probably nix this? Or make it different!
     const closeBtn = document.createElement("button");
@@ -312,6 +313,56 @@ export class VersionBlockWidget extends WidgetType {
 
   ignoreEvent() {
     return true;
+  }
+
+  _updateExerciseBtn() {
+    this.exerciseBtnContainer.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.className = "cm-version-block-btn cm-version-block-ask";
+
+    if (!this.exercise) {
+      btn.textContent = "ask students";
+      btn.addEventListener("mousedown", (e) => { e.preventDefault(); this._askStudents(); });
+    } else if (this.exercise.end_ts) {
+      btn.textContent = "view responses";
+      btn.disabled = true;
+    } else {
+      btn.textContent = "finish exercise";
+      btn.addEventListener("mousedown", (e) => { e.preventDefault(); this._finishExercise(); });
+    }
+
+    this.exerciseBtnContainer.appendChild(btn);
+  }
+
+  async _askStudents() {
+    const activeVariant = this.getActiveVariant();
+    const currentCode = activeVariant.editor?.currentCode();
+    const res = await fetch("/exercise", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lectureId: this.sessionNumber,
+        type: "CODE_VARIANT",
+        default_answer: currentCode,
+        version_block_id: this.versionBlockId,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) { console.error("Failed to create exercise:", data.error); return; }
+    this.exercise = data.exercise;
+    this._updateExerciseBtn();
+  }
+
+  async _finishExercise() {
+    const res = await fetch("/exercise/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exerciseId: this.exercise.id }),
+    });
+    const data = await res.json();
+    if (!data.success) { console.error("Failed to finish exercise:", data); return; }
+    this.exercise = { ...this.exercise, end_ts: Date.now() };
+    this._updateExerciseBtn();
   }
 
   // -------------------------------------------------------
