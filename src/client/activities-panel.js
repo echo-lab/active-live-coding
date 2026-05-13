@@ -324,49 +324,203 @@ export class StudentActivitiesPanel {
   }
 }
 
+// MARK: Helpers for constructing UI for the instructor
+
+// Renders a single student response element.
+function renderResponseEl(response, ex) {
+  let { student_id, student_identifier, StudentSession, answer } = response;
+  let displayName = StudentSession?.student_identifier ?? student_identifier ?? student_id;
+  let div = document.createElement("div");
+  div.className = "summary-response";
+  div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
+  return div;
+}
+
+// Renders all student responses into responsesEl, optionally grouped.
+function renderResponsesEl(responsesEl, ex, groups) {
+  if (!ex.ExerciseResponses || ex.ExerciseResponses.length === 0) {
+    responsesEl.textContent = "No responses.";
+    return;
+  }
+  if (!groups) {
+    ex.ExerciseResponses.forEach((response) => {
+      responsesEl.appendChild(renderResponseEl(response, ex));
+    });
+    return;
+  }
+
+  let responseById = {};
+  ex.ExerciseResponses.forEach((r) => {
+    let key = r.isSimulated ? `sim_${r.id}` : `real_${r.id}`;
+    responseById[key] = r;
+  });
+
+  groups.forEach((group) => {
+    let responses = group.response_ids
+      .map((id) => responseById[id])
+      .filter(Boolean);
+    if (responses.length === 0) return;
+
+    let groupEl = document.createElement("div");
+    groupEl.className = "response-group";
+
+    let headerEl = document.createElement("div");
+    headerEl.className = "group-header";
+    let descEl = document.createElement("span");
+    descEl.className = "group-description";
+    descEl.textContent = group.description;
+    let countEl = document.createElement("span");
+    countEl.className = "group-count";
+    countEl.textContent = `(x${responses.length})`;
+    headerEl.appendChild(descEl);
+    headerEl.appendChild(countEl);
+    groupEl.appendChild(headerEl);
+
+    groupEl.appendChild(renderResponseEl(responses[0], ex));
+
+    if (responses.length > 1) {
+      let extraEl = document.createElement("div");
+      extraEl.className = "group-extra-responses";
+      extraEl.hidden = true;
+      responses.slice(1).forEach((r) => {
+        extraEl.appendChild(renderResponseEl(r, ex));
+      });
+
+      let toggleBtn = document.createElement("button");
+      toggleBtn.className = "group-toggle-btn";
+      toggleBtn.textContent = `▶ Show ${responses.length - 1} more`;
+      toggleBtn.addEventListener("click", () => {
+        let collapsed = extraEl.hidden;
+        extraEl.hidden = !collapsed;
+        toggleBtn.textContent = collapsed
+          ? "▼ Show less"
+          : `▶ Show ${responses.length - 1} more`;
+      });
+
+      groupEl.appendChild(toggleBtn);
+      groupEl.appendChild(extraEl);
+    }
+
+    responsesEl.appendChild(groupEl);
+  });
+}
+
+// MARK: PollExerciseWidget
+class PollExerciseWidget {
+  constructor({ manager, createEl, activeEl, onBack }) {
+    this.createEl = createEl;
+    this.activeEl = activeEl;
+    this.timerInterval = null;
+
+    createEl.querySelector("#activities-back")
+      .addEventListener("click", onBack);
+    activeEl.querySelector("#activities-active-back")
+      .addEventListener("click", onBack);
+
+    createEl.querySelector("#activity-submit-create")
+      .addEventListener("click", async () => {
+        const instructions = createEl.querySelector("#activity-instructions").value.trim();
+        await manager.createPollExercise({ instructions });
+      });
+
+    activeEl.querySelector("#activity-finish")
+      .addEventListener("click", () => manager.finishPollExercise());
+  }
+
+  showCreate() {
+    this.createEl.querySelector("#activity-instructions").value = "";
+    this.createEl.hidden = false;
+    this.activeEl.hidden = true;
+  }
+
+  showActive(ex) {
+    this.activeEl.querySelector("#activity-active-instructions").textContent =
+      ex.instructions ?? "";
+    let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
+    this.activeEl.querySelector("#activity-response-count").textContent =
+      `${count} response${count !== 1 ? "s" : ""}`;
+    this.createEl.hidden = true;
+    this.activeEl.hidden = false;
+    this._startTimer(ex.start_ts);
+  }
+
+  hide() {
+    this.createEl.hidden = true;
+    this.activeEl.hidden = true;
+    this._stopTimer();
+  }
+
+  stopTimer() {
+    this._stopTimer();
+  }
+
+  updateResponseCount(count) {
+    this.activeEl.querySelector("#activity-response-count").textContent =
+      `${count} response${count !== 1 ? "s" : ""}`;
+  }
+
+  renderSummaryResponses(responsesEl, ex, groups) {
+    renderResponsesEl(responsesEl, ex, groups);
+  }
+
+  _startTimer(startTs) {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    const update = () => {
+      let elapsed = Math.floor((Date.now() - startTs) / 1000);
+      let m = Math.floor(elapsed / 60);
+      let s = elapsed % 60;
+      this.activeEl.querySelector("#activity-timer").textContent =
+        `${m}:${String(s).padStart(2, "0")}`;
+    };
+    update();
+    this.timerInterval = setInterval(update, 1000);
+  }
+
+  _stopTimer() {
+    clearInterval(this.timerInterval);
+    this.timerInterval = null;
+  }
+}
+
+// MARK: CodeExerciseSummaryWidget
+class CodeExerciseSummaryWidget {
+  renderSummaryResponses(responsesEl, ex, groups) {
+    renderResponsesEl(responsesEl, ex, groups);
+  }
+}
+
 // MARK: Instructor Panel
 export class InstructorActivitiesPanel {
   constructor(manager, {
     activitiesPanelEl,
     openPanel,
-    getInstructorCode,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
     this.activitiesPanelEl = activitiesPanelEl;
-    this.openPanel = openPanel;  // The resizer...
-    this.getInstructorCode = getInstructorCode;
-    // this.onFillInBlankActivated = onFillInBlankActivated ?? null;
-    // this.onFillInBlankDeactivated = onFillInBlankDeactivated ?? null;
-    this.timerInterval = null;  // Holds the timer update callback, if timer is active
+    this.openPanel = openPanel;
 
-    // DOM refs
+    // DOM refs owned by this panel
     this.listEl = document.querySelector("#activities-list");
     this.listItemsEl = document.querySelector("#activities-list-items");
-    this.createEl = document.querySelector("#activities-create");
-    this.activeEl = document.querySelector("#activities-active");
     this.summaryEl = document.querySelector("#activities-summary");
     this.pollButton = document.querySelector("#poll-button");
 
-    document
-      .querySelector("#activities-back")
-      .addEventListener("click", () => this._showView("list"));
-    document
-      .querySelector("#activities-active-back")
-      .addEventListener("click", () => this._showView("list"));
+    this.pollWidget = new PollExerciseWidget({
+      manager,
+      createEl: document.querySelector("#activities-create"),
+      activeEl: document.querySelector("#activities-active"),
+      onBack: () => this._showView("list"),
+    });
+    this.codeWidget = new CodeExerciseSummaryWidget();
+
     document
       .querySelector("#activities-summary-back")
       .addEventListener("click", () => this._showView("list"));
-    document
-      .querySelector("#activity-submit-create")
-      .addEventListener("click", () => this.#onCreateSubmit());
-    document
-      .querySelector("#activity-finish")
-      .addEventListener("click", () => manager.finishPollExercise());
+
     this.pollButton.addEventListener("click", () => {
       this.openPanel();
       this._showView("create");
-      document.querySelector("#activity-instructions").value = "";
     });
 
     this.#subscribeToManager();
@@ -385,12 +539,12 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL") return;
       this.openPanel();
-      this._renderList();  // Refresh the list
-      this._showActiveView(exercise);  // Show the panel...
+      this._renderList();
+      this._showActiveView(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type === "POLL") this._stopTimer();
+      if (exercise.type === "POLL") this.pollWidget.stopTimer();
       this.openPanel();
       this._renderList();
       this._showSummaryView(exercise, { loading: true });
@@ -399,9 +553,9 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
       const ex = this.manager.getExercise(exerciseId);
       if (!ex) return;
-      const responsesEl = document.querySelector("#activity-summary-responses");
+      const responsesEl = this.summaryEl.querySelector("#activity-summary-responses");
       responsesEl.innerHTML = "";
-      this._renderResponsesEl(responsesEl, ex, groups);
+      this._renderSummaryResponses(responsesEl, ex, groups);
     });
 
     this.manager.addEventListener("showSummary", ({ detail: { exercise } }) => {
@@ -410,22 +564,54 @@ export class InstructorActivitiesPanel {
     });
 
     this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
-      const countEl = document.querySelector("#activity-response-count");
-      countEl.textContent = `${responseCount} response${responseCount !== 1 ? "s" : ""}`;
+      this.pollWidget.updateResponseCount(responseCount);
     });
-  }
-
-  async #onCreateSubmit() {
-    const instructions = document.querySelector("#activity-instructions").value.trim();
-    await this.manager.createPollExercise({ instructions });
   }
 
   _showView(name) {
     this.listEl.hidden = name !== "list";
-    this.createEl.hidden = name !== "create";
-    this.activeEl.hidden = name !== "active";
     this.summaryEl.hidden = name !== "summary";
+    if (name === "create") {
+      this.pollWidget.showCreate();
+    } else if (name !== "active") {
+      // "active" is managed directly by _showActiveView; for all other views, hide poll sections
+      this.pollWidget.hide();
+    }
     this.activitiesPanelEl.classList.toggle("has-content", true);
+  }
+
+  _showActiveView(ex) {
+    this.listEl.hidden = true;
+    this.summaryEl.hidden = true;
+    this.pollWidget.showActive(ex);
+    this.activitiesPanelEl.classList.toggle("has-content", true);
+  }
+
+  _showSummaryView(ex, { loading = false, groups = undefined } = {}) {
+    const instructionsEl = this.summaryEl.querySelector("#activity-summary-instructions");
+    const responsesEl = this.summaryEl.querySelector("#activity-summary-responses");
+    instructionsEl.textContent = ex.instructions ?? "";
+    responsesEl.innerHTML = "";
+    if (loading) {
+      let loadingEl = document.createElement("div");
+      loadingEl.className = "summary-loading";
+      loadingEl.textContent = "Generating summary…";
+      responsesEl.appendChild(loadingEl);
+    } else {
+      let resolvedGroups = groups !== undefined ? groups
+        : (ex.summary ? JSON.parse(ex.summary) : null);
+      this._renderSummaryResponses(responsesEl, ex, resolvedGroups);
+    }
+    this._showView("summary");
+  }
+
+  // Delegates to the relevant widget.
+  _renderSummaryResponses(responsesEl, ex, groups) {
+    if (ex.type === "CODE_VARIANT") {
+      this.codeWidget.renderSummaryResponses(responsesEl, ex, groups);
+    } else {
+      this.pollWidget.renderSummaryResponses(responsesEl, ex, groups);
+    }
   }
 
   _renderList() {
@@ -437,12 +623,10 @@ export class InstructorActivitiesPanel {
       item.className = "activity-list-item";
       let isActive = ex.end_ts == null;
       let badge = isActive ? "Active" : "Done";
-      let preview = ex.type === "CODE_VARIANT"
-        ? `(code variant #${ex.id})`
-        : (ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)");
+      let preview = ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
       item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span>`;
       item.addEventListener("click", () => {
-        if (ex.type === "POLL" && isActive) {
+        if (isActive) {
           this._showActiveView(ex);
         } else {
           this._showSummaryView(ex);
@@ -453,137 +637,8 @@ export class InstructorActivitiesPanel {
     this._updatePollButton();
   }
 
-  // Shouldn't poll unless there's no active poll.
   _updatePollButton() {
     const activeExercises = this.manager.getActiveExercises();
     this.pollButton.disabled = activeExercises.some(ex => ex.type === "POLL");
-  }
-
-  // Show the timer and stuff. Should only be used for POLL questions.
-  _showActiveView(ex) {
-    document.querySelector("#activity-active-instructions").textContent =
-      ex.instructions ?? "";
-    let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
-    document.querySelector("#activity-response-count").textContent =
-      `${count} response${count !== 1 ? "s" : ""}`;
-    this._showView("active");
-    this._startTimer(ex.start_ts);
-  }
-
-  // This should be used for both POLL and CODE_VARIANT!
-  _showSummaryView(ex, { loading = false, groups = undefined } = {}) {
-    document.querySelector("#activity-summary-instructions").textContent =
-      ex.instructions ?? "";
-    let responsesEl = document.querySelector("#activity-summary-responses");
-    responsesEl.innerHTML = "";
-    if (loading) {
-      let loadingEl = document.createElement("div");
-      loadingEl.className = "summary-loading";
-      loadingEl.textContent = "Generating summary…";
-      responsesEl.appendChild(loadingEl);
-    } else {
-      let resolvedGroups = groups !== undefined ? groups
-        : (ex.summary ? JSON.parse(ex.summary) : null);
-      this._renderResponsesEl(responsesEl, ex, resolvedGroups);
-    }
-    this._showView("summary");
-  }
-
-  // Renders a single student response. Used in _renderResponsesEl (notice plural)
-  _renderResponseEl(response, ex) {
-    let { student_id, student_identifier, StudentSession, answer } = response;
-    let displayName =
-      StudentSession?.student_identifier ?? student_identifier ?? student_id;
-    let div = document.createElement("div");
-    div.className = "summary-response";
-    div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
-    return div;
-  }
-
-  // Renders all student responses, optionally grouped. 
-  _renderResponsesEl(responsesEl, ex, groups) {
-    if (!ex.ExerciseResponses || ex.ExerciseResponses.length === 0) {
-      responsesEl.textContent = "No responses.";
-      return;
-    }
-    if (!groups) {
-      ex.ExerciseResponses.forEach((response) => {
-        responsesEl.appendChild(this._renderResponseEl(response, ex));
-      });
-      return;
-    }
-
-    let responseById = {};
-    ex.ExerciseResponses.forEach((r) => {
-      let key = r.isSimulated ? `sim_${r.id}` : `real_${r.id}`;
-      responseById[key] = r;
-    });
-
-    groups.forEach((group) => {
-      let responses = group.response_ids
-        .map((id) => responseById[id])
-        .filter(Boolean);
-      if (responses.length === 0) return;
-
-      let groupEl = document.createElement("div");
-      groupEl.className = "response-group";
-
-      let headerEl = document.createElement("div");
-      headerEl.className = "group-header";
-      let descEl = document.createElement("span");
-      descEl.className = "group-description";
-      descEl.textContent = group.description;
-      let countEl = document.createElement("span");
-      countEl.className = "group-count";
-      countEl.textContent = `(x${responses.length})`;
-      headerEl.appendChild(descEl);
-      headerEl.appendChild(countEl);
-      groupEl.appendChild(headerEl);
-
-      groupEl.appendChild(this._renderResponseEl(responses[0], ex));
-
-      if (responses.length > 1) {
-        let extraEl = document.createElement("div");
-        extraEl.className = "group-extra-responses";
-        extraEl.hidden = true;
-        responses.slice(1).forEach((r) => {
-          extraEl.appendChild(this._renderResponseEl(r, ex));
-        });
-
-        let toggleBtn = document.createElement("button");
-        toggleBtn.className = "group-toggle-btn";
-        toggleBtn.textContent = `▶ Show ${responses.length - 1} more`;
-        toggleBtn.addEventListener("click", () => {
-          let collapsed = extraEl.hidden;
-          extraEl.hidden = !collapsed;
-          toggleBtn.textContent = collapsed
-            ? "▼ Show less"
-            : `▶ Show ${responses.length - 1} more`;
-        });
-
-        groupEl.appendChild(toggleBtn);
-        groupEl.appendChild(extraEl);
-      }
-
-      responsesEl.appendChild(groupEl);
-    });
-  }
-
-  _startTimer(startTs) {
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    const update = () => {
-      let elapsed = Math.floor((Date.now() - startTs) / 1000);
-      let m = Math.floor(elapsed / 60);
-      let s = elapsed % 60;
-      document.querySelector("#activity-timer").textContent =
-        `${m}:${String(s).padStart(2, "0")}`;
-    };
-    update();
-    this.timerInterval = setInterval(update, 1000);
-  }
-
-  _stopTimer() {
-    clearInterval(this.timerInterval);
-    this.timerInterval = null;
   }
 }
