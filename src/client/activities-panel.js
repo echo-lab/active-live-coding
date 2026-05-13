@@ -1,3 +1,9 @@
+import { EditorView, minimalSetup } from "codemirror";
+import { EditorState } from "@codemirror/state";
+import { python } from "@codemirror/lang-python";
+import { indentUnit } from "@codemirror/language";
+import { keymap } from "@codemirror/view";
+import { indentWithTab } from "@codemirror/commands";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
@@ -407,47 +413,149 @@ function renderResponsesEl(responsesEl, ex, groups) {
 
 // MARK: PollExerciseWidget
 class PollExerciseWidget {
-  constructor({ manager, createEl, activeEl, onBack }) {
-    this.createEl = createEl;
-    this.activeEl = activeEl;
+  constructor({ manager, pollEl, onBack, getSelectedCode }) {
+    this.pollEl = pollEl;
     this.timerInterval = null;
+    this.getSelectedCode = getSelectedCode;
+    this._onBack = onBack;
+    this._manager = manager;
 
-    createEl.querySelector("#activities-back")
-      .addEventListener("click", onBack);
-    activeEl.querySelector("#activities-active-back")
-      .addEventListener("click", onBack);
+    this._timerEl = null;
+    this._responseCountEl = null;
+    this._responsesEl = null;
+    this._instructionsInput = null;
 
-    createEl.querySelector("#activity-submit-create")
-      .addEventListener("click", async () => {
-        const instructions = createEl.querySelector("#activity-instructions").value.trim();
-        await manager.createPollExercise({ instructions });
-      });
+    const readOnlyExtensions = [
+      minimalSetup,
+      python(),
+      EditorView.lineWrapping,
+      EditorView.editable.of(false),
+    ];
 
-    activeEl.querySelector("#activity-finish")
-      .addEventListener("click", () => manager.finishPollExercise());
+    this.codeEditorEl = document.createElement("div");
+    this.codeEditorEl.classList.add("poll-code-box");
+    this.codeView = new EditorView({
+      state: EditorState.create({ doc: "", extensions: readOnlyExtensions }),
+      parent: this.codeEditorEl,
+    });
+  }
+
+  _setCode(code) {
+    this.codeView.dispatch({
+      changes: { from: 0, to: this.codeView.state.doc.length, insert: code },
+    });
+  }
+
+  // MARK: Helpers for building :)
+
+  // Empty the interface and start building the shared elements (e.g., the header)
+  _reset() {
+    this._stopTimer();
+    this.codeEditorEl.remove();
+    this.pollEl.innerHTML = "";
+  }
+
+  _buildHeader() {
+    // Create a header w/ a back button and a timer element (which starts out empty)
+    const header = document.createElement("div");
+    header.className = "poll-activity-header";
+    const backBtn = document.createElement("button");
+    backBtn.className = "poll-back-btn";
+    backBtn.textContent = "← Back to list";
+    backBtn.addEventListener("click", this._onBack);
+    this._timerEl = document.createElement("div");
+    this._timerEl.className = "poll-timer";
+    header.appendChild(backBtn);
+    header.appendChild(this._timerEl);
+    this.pollEl.appendChild(header);
+  }
+
+  _buildCodeEditor(code) {
+    this._setCode(code);
+    this.codeEditorEl.hidden = !code;
+    this.pollEl.appendChild(this.codeEditorEl);
   }
 
   showCreate() {
-    this.createEl.querySelector("#activity-instructions").value = "";
-    this.createEl.hidden = false;
-    this.activeEl.hidden = true;
+    this._reset();
+    this._buildHeader();
+    const selectedCode = this.getSelectedCode?.() ?? "";
+    this._buildCodeEditor(selectedCode);
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "poll-instructions-input";
+    textarea.placeholder = "Describe the activity...";
+    this._instructionsInput = textarea;
+    this.pollEl.appendChild(textarea);
+
+    const startBtn = document.createElement("button");
+    startBtn.textContent = "Start Activity";
+    startBtn.addEventListener("click", async () => {
+      const instructions = this._instructionsInput.value.trim();
+      const code = this.codeView.state.doc.toString().trim();
+      await this._manager.createPollExercise({
+        instructions,
+        ...(code ? { instructor_code: code } : {}),
+      });
+    });
+    this.pollEl.appendChild(startBtn);
   }
 
   showActive(ex) {
-    this.activeEl.querySelector("#activity-active-instructions").textContent =
-      ex.instructions ?? "";
+    this._reset();
+    this._buildHeader();
+    const code = ex.instructor_code ?? "";
+    this._buildCodeEditor(code);
+
+    const instructionsEl = document.createElement("div");
+    instructionsEl.className = "poll-instructions-display";
+    instructionsEl.textContent = ex.instructions ?? "";
+    this.pollEl.appendChild(instructionsEl);
+
     let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
-    this.activeEl.querySelector("#activity-response-count").textContent =
-      `${count} response${count !== 1 ? "s" : ""}`;
-    this.createEl.hidden = true;
-    this.activeEl.hidden = false;
+    this._responseCountEl = document.createElement("div");
+    this._responseCountEl.className = "poll-response-count";
+    this._responseCountEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
+    this.pollEl.appendChild(this._responseCountEl);
+
+    const finishBtn = document.createElement("button");
+    finishBtn.textContent = "Finish";
+    finishBtn.addEventListener("click", () => this._manager.finishPollExercise());
+    this.pollEl.appendChild(finishBtn);
+
     this._startTimer(ex.start_ts);
   }
 
-  hide() {
-    this.createEl.hidden = true;
-    this.activeEl.hidden = true;
-    this._stopTimer();
+  showSummary(ex, { loading = false, groups = undefined } = {}) {
+    this._reset();
+    this._buildHeader();
+    const code = ex.instructor_code ?? "";
+    this._buildCodeEditor(code);
+
+    const instructionsEl = document.createElement("div");
+    instructionsEl.className = "poll-instructions-display";
+    instructionsEl.textContent = ex.instructions ?? "";
+    this.pollEl.appendChild(instructionsEl);
+
+    this._responsesEl = document.createElement("div");
+    this.pollEl.appendChild(this._responsesEl);
+
+    if (loading) {
+      const loadingEl = document.createElement("div");
+      loadingEl.className = "summary-loading";
+      loadingEl.textContent = "Generating summary…";
+      this._responsesEl.appendChild(loadingEl);
+    } else {
+      const resolvedGroups = groups ?? (ex.summary ? JSON.parse(ex.summary) : null);
+      renderResponsesEl(this._responsesEl, ex, resolvedGroups);
+    }
+  }
+
+  updateResponses(ex, groups) {
+    if (this._responsesEl) {
+      this._responsesEl.innerHTML = "";
+      renderResponsesEl(this._responsesEl, ex, groups);
+    }
   }
 
   stopTimer() {
@@ -455,12 +563,9 @@ class PollExerciseWidget {
   }
 
   updateResponseCount(count) {
-    this.activeEl.querySelector("#activity-response-count").textContent =
-      `${count} response${count !== 1 ? "s" : ""}`;
-  }
-
-  renderSummaryResponses(responsesEl, ex, groups) {
-    renderResponsesEl(responsesEl, ex, groups);
+    if (this._responseCountEl) {
+      this._responseCountEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
+    }
   }
 
   _startTimer(startTs) {
@@ -469,8 +574,7 @@ class PollExerciseWidget {
       let elapsed = Math.floor((Date.now() - startTs) / 1000);
       let m = Math.floor(elapsed / 60);
       let s = elapsed % 60;
-      this.activeEl.querySelector("#activity-timer").textContent =
-        `${m}:${String(s).padStart(2, "0")}`;
+      if (this._timerEl) this._timerEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
     };
     update();
     this.timerInterval = setInterval(update, 1000);
@@ -484,8 +588,67 @@ class PollExerciseWidget {
 
 // MARK: CodeExerciseSummaryWidget
 class CodeExerciseSummaryWidget {
-  renderSummaryResponses(responsesEl, ex, groups) {
-    renderResponsesEl(responsesEl, ex, groups);
+  constructor({ codeExerciseEl, onBack }) {
+    this.codeExerciseEl = codeExerciseEl;
+    this._onBack = onBack;
+    this._responsesEl = null;
+
+    const readOnlyExtensions = [
+      minimalSetup,
+      python(),
+      EditorView.lineWrapping,
+      EditorView.editable.of(false),
+    ];
+
+    this.codeEditorEl = document.createElement("div");
+    this.codeView = new EditorView({
+      state: EditorState.create({ doc: "", extensions: readOnlyExtensions }),
+      parent: this.codeEditorEl,
+    });
+  }
+
+  showSummary(ex, { loading = false, groups = undefined } = {}) {
+    this.codeEditorEl.remove();
+    this.codeExerciseEl.innerHTML = "";
+
+    const code = ex.instructor_code ?? "";
+    this.codeView.dispatch({
+      changes: { from: 0, to: this.codeView.state.doc.length, insert: code },
+    });
+
+    const backBtn = document.createElement("button");
+    backBtn.className = "poll-back-btn";
+    backBtn.textContent = "← Back to list";
+    backBtn.addEventListener("click", this._onBack);
+    this.codeExerciseEl.appendChild(backBtn);
+
+    this.codeEditorEl.hidden = !code;
+    this.codeExerciseEl.appendChild(this.codeEditorEl);
+
+    const instructionsEl = document.createElement("div");
+    instructionsEl.className = "poll-instructions-display";
+    instructionsEl.textContent = ex.instructions ?? "";
+    this.codeExerciseEl.appendChild(instructionsEl);
+
+    this._responsesEl = document.createElement("div");
+    this.codeExerciseEl.appendChild(this._responsesEl);
+
+    if (loading) {
+      const loadingEl = document.createElement("div");
+      loadingEl.className = "summary-loading";
+      loadingEl.textContent = "Generating summary…";
+      this._responsesEl.appendChild(loadingEl);
+    } else {
+      const resolvedGroups = groups ?? (ex.summary ? JSON.parse(ex.summary) : null);
+      renderResponsesEl(this._responsesEl, ex, resolvedGroups);
+    }
+  }
+
+  updateResponses(ex, groups) {
+    if (this._responsesEl) {
+      this._responsesEl.innerHTML = "";
+      renderResponsesEl(this._responsesEl, ex, groups);
+    }
   }
 }
 
@@ -494,6 +657,7 @@ export class InstructorActivitiesPanel {
   constructor(manager, {
     activitiesPanelEl,
     openPanel,
+    getSelectedCode,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -503,24 +667,27 @@ export class InstructorActivitiesPanel {
     // DOM refs owned by this panel
     this.listEl = document.querySelector("#activities-list");
     this.listItemsEl = document.querySelector("#activities-list-items");
-    this.summaryEl = document.querySelector("#activities-summary");
+    this.pollEl = document.querySelector("#activities-poll");
+    this.codeExerciseEl = document.querySelector("#activities-code-exercise");
     this.pollButton = document.querySelector("#poll-button");
+
+    const onBack = () => this._showView("list");
 
     this.pollWidget = new PollExerciseWidget({
       manager,
-      createEl: document.querySelector("#activities-create"),
-      activeEl: document.querySelector("#activities-active"),
-      onBack: () => this._showView("list"),
+      pollEl: this.pollEl,
+      onBack,
+      getSelectedCode,
     });
-    this.codeWidget = new CodeExerciseSummaryWidget();
-
-    document
-      .querySelector("#activities-summary-back")
-      .addEventListener("click", () => this._showView("list"));
+    this.codeWidget = new CodeExerciseSummaryWidget({
+      codeExerciseEl: this.codeExerciseEl,
+      onBack,
+    });
 
     this.pollButton.addEventListener("click", () => {
       this.openPanel();
-      this._showView("create");
+      this.pollWidget.showCreate();
+      this._showView("poll");
     });
 
     this.#subscribeToManager();
@@ -553,9 +720,11 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
       const ex = this.manager.getExercise(exerciseId);
       if (!ex) return;
-      const responsesEl = this.summaryEl.querySelector("#activity-summary-responses");
-      responsesEl.innerHTML = "";
-      this._renderSummaryResponses(responsesEl, ex, groups);
+      if (ex.type === "CODE_VARIANT") {
+        this.codeWidget.updateResponses(ex, groups);
+      } else {
+        this.pollWidget.updateResponses(ex, groups);
+      }
     });
 
     this.manager.addEventListener("showSummary", ({ detail: { exercise } }) => {
@@ -570,47 +739,23 @@ export class InstructorActivitiesPanel {
 
   _showView(name) {
     this.listEl.hidden = name !== "list";
-    this.summaryEl.hidden = name !== "summary";
-    if (name === "create") {
-      this.pollWidget.showCreate();
-    } else if (name !== "active") {
-      // "active" is managed directly by _showActiveView; for all other views, hide poll sections
-      this.pollWidget.hide();
-    }
+    this.pollEl.hidden = name !== "poll";
+    this.codeExerciseEl.hidden = name !== "code-exercise";
     this.activitiesPanelEl.classList.toggle("has-content", true);
   }
 
   _showActiveView(ex) {
-    this.listEl.hidden = true;
-    this.summaryEl.hidden = true;
     this.pollWidget.showActive(ex);
-    this.activitiesPanelEl.classList.toggle("has-content", true);
+    this._showView("poll");
   }
 
-  _showSummaryView(ex, { loading = false, groups = undefined } = {}) {
-    const instructionsEl = this.summaryEl.querySelector("#activity-summary-instructions");
-    const responsesEl = this.summaryEl.querySelector("#activity-summary-responses");
-    instructionsEl.textContent = ex.instructions ?? "";
-    responsesEl.innerHTML = "";
-    if (loading) {
-      let loadingEl = document.createElement("div");
-      loadingEl.className = "summary-loading";
-      loadingEl.textContent = "Generating summary…";
-      responsesEl.appendChild(loadingEl);
-    } else {
-      let resolvedGroups = groups !== undefined ? groups
-        : (ex.summary ? JSON.parse(ex.summary) : null);
-      this._renderSummaryResponses(responsesEl, ex, resolvedGroups);
-    }
-    this._showView("summary");
-  }
-
-  // Delegates to the relevant widget.
-  _renderSummaryResponses(responsesEl, ex, groups) {
+  _showSummaryView(ex, options = {}) {
     if (ex.type === "CODE_VARIANT") {
-      this.codeWidget.renderSummaryResponses(responsesEl, ex, groups);
+      this.codeWidget.showSummary(ex, options);
+      this._showView("code-exercise");
     } else {
-      this.pollWidget.renderSummaryResponses(responsesEl, ex, groups);
+      this.pollWidget.showSummary(ex, options);
+      this._showView("poll");
     }
   }
 

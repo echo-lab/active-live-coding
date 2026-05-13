@@ -149,6 +149,6 @@ function initialize({
   new InstructorActivitiesPanel(activitiesManager, {
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
-    // getInstructorCode: () => codeEditor.currentCode(),
+    getSelectedCode: () => codeEditor.getSelectedCode(),
   });
 }

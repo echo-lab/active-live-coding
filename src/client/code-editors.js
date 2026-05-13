@@ -283,6 +283,13 @@ export class InstructorCodeEditor {
     return result;
   }
 
+  getSelectedCode() {
+    const state = this.view.state;
+    const { from, to } = state.selection.main;
+    if (from === to) return "";
+    return state.doc.sliceString(from, to);
+  }
+
   codeWithVariantAsPlaceholder(targetVersionBlockId) {
     const state = this.view.state;
     const doc = state.doc;

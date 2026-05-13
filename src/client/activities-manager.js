@@ -44,12 +44,13 @@ export class InstructorActivitiesManager extends EventTarget {
     return this.exercises;
   }
 
-  async createPollExercise({ instructions }) {
+  async createPollExercise({ instructions, instructor_code }) {
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
         type: "POLL",
         instructions,
+        ...(instructor_code ? { instructor_code } : {}),
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -59,6 +60,7 @@ export class InstructorActivitiesManager extends EventTarget {
       id: res.exerciseId,
       type: "POLL",
       instructions,
+      instructor_code: instructor_code ?? null,
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],

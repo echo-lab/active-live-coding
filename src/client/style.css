@@ -583,9 +583,8 @@ td {
 
 /* Activities panel content views */
 #activities-list,
-#activities-create,
-#activities-active,
-#activities-summary,
+#activities-poll,
+#activities-code-exercise,
 #student-activities-list,
 #student-activity {
   width: 100%;
@@ -660,7 +659,6 @@ td {
 }
 
 /* Activity panel header rows (back button + optional timer) */
-#activity-active-header,
 #student-activity-header {
   width: 100%;
   margin-bottom: 14px;
@@ -743,9 +741,7 @@ td {
 }
 
 /* Back buttons — subtle link style */
-#activities-back,
-#activities-active-back,
-#activities-summary-back,
+.poll-back-btn,
 #student-activity-back {
   background: none;
   border: none;
@@ -759,9 +755,7 @@ td {
   align-self: flex-start;
 }
 
-#activities-back:hover,
-#activities-active-back:hover,
-#activities-summary-back:hover,
+.poll-back-btn:hover,
 #student-activity-back:hover {
   color: #4a50cc;
   text-decoration: underline;
@@ -851,7 +845,7 @@ td {
 
 
 /* Create view */
-#activity-instructions,
+.poll-instructions-input,
 #student-answer-input {
   width: 100%;
   min-height: 80px;
@@ -865,7 +859,8 @@ td {
 }
 
 /* Active view */
-#activity-active-header {
+.poll-activity-header {
+  width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -873,16 +868,23 @@ td {
   margin-bottom: 14px;
 }
 
-#activity-timer {
+.poll-code-box {
+  width: 95%;
+  border: solid 1px grey;
+  border-radius: 3px;
+  margin-bottom: 15px;
+  padding: 5px;
+}
+
+.poll-timer {
   font-size: 22px;
   font-weight: bold;
   color: #444;
 }
 
-#activity-active-instructions,
-#activity-summary-instructions,
+.poll-instructions-display,
 #student-activity-instructions {
-  font-size: 14px;
+  font-size: 20px;
   color: #333;
   white-space: pre-wrap;
   padding: 12px 0;
@@ -892,7 +894,7 @@ td {
   width: 100%;
 }
 
-#activity-response-count {
+.poll-response-count {
   font-size: 14px;
   color: #555;
   margin-bottom: 12px;
