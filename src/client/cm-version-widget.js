@@ -29,17 +29,32 @@ export function setVersionBlockReadOnly(v) {
 // MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
-  constructor({ versionBlockId, variants }) {
-    // console.log("Making a version block: ", versionBlockId);
+  constructor({ versionBlockId, variants, activitiesManager = null }) {
     super();
     this.versionBlockId = versionBlockId;
     this.selectedIndex = 0;
     this.tabEls = [];
     this.tabsContainer = null;
     this.variantContainer = null;
-    console.log("variants: ", variants);
+
+    // Student exercise state
+    this._activitiesManager = activitiesManager;
+    this._exerciseId = null;
+    this._studentAnswerEl = null;
+    this._studentAnswerView = null;
+    this._studentTabEl = null;
+    this._studentTabSelected = false;
+    this._submitBtn = null;
+
     // shape: {id, name, code, docVersion, el, editor}
     this.variants = variants.map(v => ({ ...v, ...this._makeVariantFollowingEditor(v) }));
+
+    activitiesManager?.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+      if (exercise.VersionBlockId === this.versionBlockId) this._activateExercise(exercise);
+    });
+    activitiesManager?.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      if (exercise.VersionBlockId === this.versionBlockId) this._deactivateExercise();
+    });
   }
 
   eq(other) {
@@ -93,15 +108,112 @@ export class StudentVersionBlockWidget extends WidgetType {
   }
 
   _selectTab(index) {
-    if (index === this.selectedIndex) return;
+    const fromStudentTab = this._studentTabSelected;
+    if (fromStudentTab) {
+      this._studentTabEl?.classList.remove("selected");
+      if (this._studentAnswerEl) this._studentAnswerEl.hidden = true;
+      this._studentTabSelected = false;
+    }
+    if (!fromStudentTab && index === this.selectedIndex) return;
     this.tabEls[this.selectedIndex]?.classList.remove("selected");
     this.selectedIndex = index;
     this.tabEls[index]?.classList.add("selected");
     this._mountEditor(index);
   }
 
+  _selectStudentTab() {
+    this.tabEls[this.selectedIndex]?.classList.remove("selected");
+    this.variants.forEach(({ el }) => { el.hidden = true; });
+    this._studentTabEl?.classList.add("selected");
+    this._studentTabSelected = true;
+    if (this._studentAnswerEl) this._studentAnswerEl.hidden = false;
+  }
+
   _mountEditor(index) {
     this.variants.forEach(({ el }, idx) => { el.hidden = idx !== index; });
+    if (this._studentAnswerEl) this._studentAnswerEl.hidden = true;
+  }
+
+  // -------------------------------------------------------
+  // MARK: -- exercise (student answer)
+  // -------------------------------------------------------
+
+  _activateExercise(exercise, { readOnly = false } = {}) {
+    if (this._studentAnswerEl) return; // guard against double activation
+    this._exerciseId = exercise.id;
+
+    const priorAnswer = exercise.ExerciseResponses?.[0]?.answer;
+    const initialDoc = priorAnswer ?? exercise.default_answer ?? "";
+
+    const el = document.createElement("div");
+    el.className = "cm-version-block-editor";
+    el.hidden = true;
+    this._studentAnswerEl = el;
+
+    this._studentAnswerView = new EditorView({
+      state: EditorState.create({
+        doc: initialDoc,
+        extensions: [
+          minimalSetup,
+          python(),
+          indentUnit.of("    "),
+          keymap.of([indentWithTab]),
+          EditorView.lineWrapping,
+          ...(readOnly ? [EditorView.editable.of(false)] : []),
+        ],
+      }),
+      parent: el,
+    });
+
+    const tab = document.createElement("div");
+    tab.className = "cm-version-block-tab";
+    const label = document.createElement("span");
+    label.className = "cm-version-block-tab-label";
+    label.textContent = "My Answer";
+    tab.appendChild(label);
+    tab.addEventListener("mousedown", (e) => { e.preventDefault(); this._selectStudentTab(); });
+    this._studentTabEl = tab;
+
+    if (this.variantContainer) {
+      this.variantContainer.appendChild(el);
+      this.tabsContainer.appendChild(tab);
+      if (!readOnly) {
+        this._submitBtn.hidden = false;
+        if (priorAnswer) this._submitBtn.textContent = "Resubmit";
+      }
+      this._selectStudentTab();
+    }
+  }
+
+  _deactivateExercise() {
+    if (this._submitBtn) {
+      this._submitBtn.hidden = true;
+      this._submitBtn.disabled = true;
+    }
+    if (this._studentAnswerView) {
+      this._studentAnswerView.dispatch({
+        effects: StateEffect.appendConfig.of(EditorView.editable.of(false)),
+      });
+    }
+  }
+
+  async _submitAnswer() {
+    if (!this._activitiesManager || !this._exerciseId) return;
+    const answer = this._studentAnswerView.state.doc.toString();
+    this._submitBtn.disabled = true;
+    this._submitBtn.textContent = "Submitting…";
+    try {
+      await this._activitiesManager.submitResponse({ exerciseId: this._exerciseId, answer });
+      this._submitBtn.textContent = "Submitted!";
+      setTimeout(() => {
+        this._submitBtn.disabled = false;
+        this._submitBtn.textContent = "Resubmit";
+      }, 1500);
+    } catch (err) {
+      console.error("Failed to submit answer:", err);
+      this._submitBtn.disabled = false;
+      this._submitBtn.textContent = "Submit";
+    }
   }
 
   // -------------------------------------------------------
@@ -129,7 +241,19 @@ export class StudentVersionBlockWidget extends WidgetType {
     this.tabsContainer = tabsContainer;
     leftGroup.appendChild(tabsContainer);
 
+    // Right group: submit button (shown only during an active exercise)
+    const rightGroup = document.createElement("div");
+    rightGroup.className = "cm-version-block-right";
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "cm-version-block-btn cm-version-block-submit-answer";
+    submitBtn.textContent = "Submit";
+    submitBtn.hidden = true;
+    submitBtn.addEventListener("mousedown", (e) => { e.preventDefault(); this._submitAnswer(); });
+    this._submitBtn = submitBtn;
+    rightGroup.appendChild(submitBtn);
+
     toolbar.appendChild(leftGroup);
+    toolbar.appendChild(rightGroup);
     container.appendChild(toolbar);
 
     this.variantContainer = container;
@@ -141,6 +265,25 @@ export class StudentVersionBlockWidget extends WidgetType {
     this.tabEls = [];
     for (let i = 0; i < this.variants.length; i++) {
       tabsContainer.appendChild(this._makeTabEl(i));
+    }
+
+    // Handle exercise activation that may have happened before toDOM() was called,
+    // or check for a pre-existing exercise from page load.
+    if (this._studentAnswerEl) {
+      container.appendChild(this._studentAnswerEl);
+      this.tabsContainer.appendChild(this._studentTabEl);
+      this._submitBtn.hidden = false;
+      this._selectStudentTab();
+    } else if (this._activitiesManager) {
+      const ex = this._activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
+      if (ex) {
+        const hasResponse = ex.ExerciseResponses?.length > 0;
+        if (!ex.end_ts) {
+          this._activateExercise(ex);
+        } else if (hasResponse) {
+          this._activateExercise(ex, { readOnly: true });
+        }
+      }
     }
 
     return container;

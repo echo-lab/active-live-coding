@@ -24,6 +24,7 @@ import {
   SOCKET_MESSAGE_TYPE,
 } from "../shared-constants.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
+import { StudentActivitiesManager } from "./activities-manager.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -78,6 +79,14 @@ async function initialize({
 
   setVersionBlockReadOnly(true);
 
+  const activitiesManager = new StudentActivitiesManager({
+    sessionNumber,
+    userId,
+    studentIdentifier: email,
+    socket,
+    exercises,
+  });
+
   let codeEditor = new StudentCodeEditor({
     node: instructorCodeContainer,
     doc: lectureDoc,
@@ -85,7 +94,8 @@ async function initialize({
     socket,
     sessionId: sessionNumber,
     extraExtensions: [versionBlocksField],
-    versionBlocks
+    versionBlocks,
+    activitiesManager,
   });
 
   // Set up the run button for when we need it...

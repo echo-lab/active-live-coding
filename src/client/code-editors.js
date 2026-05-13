@@ -22,9 +22,10 @@ const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks}) {
+  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null}) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
+    this.activitiesManager = activitiesManager;
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
@@ -77,7 +78,7 @@ export class StudentCodeEditor {
 
   addVersionBlock({from, to, versionBlockId, variants}) {
     console.log("adding version block: ", {from, to, versionBlockId, variants});
-    const widget = new StudentVersionBlockWidget({versionBlockId, variants});
+    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),

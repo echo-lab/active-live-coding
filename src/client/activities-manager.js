@@ -212,3 +212,69 @@ export class InstructorActivitiesManager extends EventTarget {
     }));
   }
 }
+
+export class StudentActivitiesManager extends EventTarget {
+  constructor({ sessionNumber, userId, studentIdentifier, socket, exercises }) {
+    super();
+    this.sessionNumber = sessionNumber;
+    this.userId = userId;
+    this.studentIdentifier = studentIdentifier;
+    this.socket = socket;
+    this.exercises = exercises.map((ex) => ({ ...ex }));
+
+    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => this.#handleExerciseCreated(msg));
+    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => this.#handleExerciseFinished(msg));
+  }
+
+  getExercise(id) {
+    return this.exercises.find((e) => e.id === id);
+  }
+
+  getExerciseForVersionBlock(versionBlockId) {
+    return this.exercises.find((e) => e.VersionBlockId === versionBlockId) ?? null;
+  }
+
+  getActiveExercises() {
+    return this.exercises.filter((e) => e.end_ts === null);
+  }
+
+  async submitResponse({ exerciseId, answer }) {
+    const res = await fetch("/exercise/response", {
+      body: JSON.stringify({ exerciseId, student_id: this.userId, answer }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) throw new Error(res.error);
+    this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
+      sessionNumber: this.sessionNumber,
+      exerciseId,
+      student_id: this.userId,
+      student_identifier: this.studentIdentifier,
+      answer,
+      responseId: res.responseId,
+    });
+  }
+
+  #handleExerciseCreated(msg) {
+    if (msg.sessionNumber !== this.sessionNumber) return;
+    const ex = msg.exercise;
+    if (ex.type !== "CODE_VARIANT") return;
+    const exercise = {
+      id: ex.id,
+      type: ex.type,
+      default_answer: ex.default_answer,
+      VersionBlockId: ex.version_block_id,
+      start_ts: ex.start_ts,
+      end_ts: null,
+    };
+    this.exercises.push(exercise);
+    this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise } }));
+  }
+
+  #handleExerciseFinished(msg) {
+    if (msg.sessionNumber !== this.sessionNumber) return;
+    const ex = this.exercises.find((e) => e.id === msg.exerciseId);
+    if (!ex) return;
+    ex.end_ts = Date.now();
+    this.dispatchEvent(new CustomEvent("exerciseFinished", { detail: { exercise: ex } }));
+  }
+}
