@@ -291,7 +291,7 @@ export class InstructorCodeEditor {
     this.active = false;
   }
 
-  async createNewVersionBlock({variantCode, from, to }) {
+  async createNewVersionBlock({ variantCode, from, to, autoStartExercise = false }) {
     // Step 0: Make sure we're not creating nested version blocks!
     const decorations = this.view.state.field(versionBlocksField);
     let containsExistingBlock = false;
@@ -334,6 +334,8 @@ export class InstructorCodeEditor {
 
       // Step 3: Broadcast out to the students
       this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: this.sessionNumber, versionBlockId, from: lineFrom, to: lineFrom, variants });
+
+      if (autoStartExercise) widget._askStudents();
     } catch (err) {
       console.error("Failed to create version block:", err);
     }

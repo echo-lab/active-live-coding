@@ -856,28 +856,37 @@ export const versionWidgetTooltipField = StateField.define({
 });
 
 function createVersionWidgetTooltipDOM(view) {
-  let div = document.createElement("div");
-  div.className = "cm-tooltip-version-widget";
-  div.textContent = "New Version";
-  div.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    view.dispatch({ effects: hideVersionWidgetTooltip.of(null) });
+  let container = document.createElement("div");
+  container.className = "cm-tooltip-version-widget";
 
+  function handleClick(autoStartExercise) {
+    view.dispatch({ effects: hideVersionWidgetTooltip.of(null) });
     let state = view.state;
     let { from, to } = state.selection.main;
     let startLine = state.doc.lineAt(from);
     let endLine = state.doc.lineAt(to);
     let lineStart = startLine.number;
     let lineEnd = to > from && to === endLine.from ? endLine.number - 1 : endLine.number;
-
     let firstLine = state.doc.line(lineStart);
     let lastLine = state.doc.line(lineEnd);
     let variantCode = state.doc.sliceString(firstLine.from, lastLine.to);
-
     let callback = state.facet(handleCreateVersionBlock);
-    callback && callback({ variantCode, from: firstLine.from, to: lastLine.to });
-  });
-  return div;
+    callback && callback({ variantCode, from: firstLine.from, to: lastLine.to, autoStartExercise });
+  }
+
+  let newVersionOption = document.createElement("div");
+  newVersionOption.className = "cm-tooltip-version-option";
+  newVersionOption.textContent = "New Version";
+  newVersionOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleClick(false); });
+
+  let askStudentsOption = document.createElement("div");
+  askStudentsOption.className = "cm-tooltip-version-option";
+  askStudentsOption.textContent = "Ask Students";
+  askStudentsOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleClick(true); });
+
+  container.appendChild(newVersionOption);
+  container.appendChild(askStudentsOption);
+  return container;
 }
 
 export const versionWidgetContextMenu = EditorView.domEventHandlers({
@@ -909,15 +918,24 @@ export const versionWidgetTooltipTheme = EditorView.baseTheme({
     backgroundColor: "#2a7a2a",
     color: "white",
     border: "none",
-    padding: "2px 7px",
     borderRadius: "4px",
-    cursor: "pointer",
+    padding: "2px 0",
     "& .cm-tooltip-arrow:before": {
       borderTopColor: "#2a7a2a",
     },
     "& .cm-tooltip-arrow:after": {
       borderTopColor: "transparent",
     },
+  },
+  ".cm-tooltip-version-option": {
+    padding: "3px 10px",
+    cursor: "pointer",
+  },
+  ".cm-tooltip-version-option:hover": {
+    backgroundColor: "#3a9a3a",
+  },
+  ".cm-tooltip-version-option:not(:last-child)": {
+    borderBottom: "1px solid rgba(255,255,255,0.25)",
   },
 });
 
