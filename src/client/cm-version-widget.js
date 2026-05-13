@@ -346,13 +346,15 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager, getInstructorCode }) {
+  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager, getInstructorCode, view, onDissolve }) {
     super();
     this.versionBlockId = versionBlockId;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.activitiesManager = activitiesManager;
     this.getInstructorCodeForExercise = getInstructorCode;  // Substitutes this variant's code w/ string {{ANSWER}}
+    this._outerView = view;
+    this._onDissolve = onDissolve ?? null;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
 
@@ -431,10 +433,16 @@ export class VersionBlockWidget extends WidgetType {
     rightGroup.appendChild(this.exerciseBtnContainer);
     this._updateExerciseBtn();
 
-    // Probably nix this? Or make it different!
     const closeBtn = document.createElement("button");
     closeBtn.className = "cm-version-block-btn cm-version-block-close";
     closeBtn.textContent = "✕";
+    closeBtn.title = "Dissolve version block";
+    closeBtn.addEventListener("mousedown", async (e) => {
+      e.preventDefault();
+      if (window.confirm("Are you sure you want to dissolve this version block?")) {
+        await this.dissolve();
+      }
+    });
     rightGroup.appendChild(closeBtn);
 
     this.toolbar.appendChild(leftGroup);
@@ -468,6 +476,30 @@ export class VersionBlockWidget extends WidgetType {
 
   ignoreEvent() {
     return true;
+  }
+
+  async dissolve() {
+    try {
+      const res = await fetch(`/version-block/${this.versionBlockId}`, { method: "DELETE" });
+      const { ok, error } = await res.json();
+      if (!ok || error) { console.error("Failed to dissolve version block:", error); return; }
+    } catch (err) {
+      console.error("Failed to dissolve version block:", err); return;
+    }
+
+    this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, {
+      sessionId: this.sessionNumber,
+      versionBlockId: this.versionBlockId,
+    });
+
+    for (const { editor } of this.variants) { editor?.destroy(); }
+    this._clearExerciseState();
+
+    this._outerView?.dispatch({
+      effects: removeVersionBlockEffect.of({ versionBlockId: this.versionBlockId }),
+    });
+
+    this._onDissolve?.();
   }
 
   _clearExerciseState() {
@@ -808,17 +840,26 @@ export class VersionBlockWidget extends WidgetType {
 // value: { from, to, versionBlockId, variants: [{id, name, code}] }
 export const addVersionBlockEffect = StateEffect.define();
 
+// value: { versionBlockId }
+export const removeVersionBlockEffect = StateEffect.define();
+
 export const versionBlocksField = StateField.define({
   create: () => Decoration.none,
   update(decorations, tr) {
     decorations = decorations.map(tr.changes);
     for (const e of tr.effects) {
-      if (!e.is(addVersionBlockEffect)) continue;
-      const {from, to, widget } = e.value;
-      decorations = decorations.update({
-        add: [Decoration.replace({ widget, block: true }).range(from, to)],
-        sort: true,
-      });
+      if (e.is(addVersionBlockEffect)) {
+        const { from, to, widget } = e.value;
+        decorations = decorations.update({
+          add: [Decoration.replace({ widget, block: true }).range(from, to)],
+          sort: true,
+        });
+      } else if (e.is(removeVersionBlockEffect)) {
+        const { versionBlockId } = e.value;
+        decorations = decorations.update({
+          filter: (_from, _to, deco) => deco.spec.widget?.versionBlockId !== versionBlockId,
+        });
+      }
     }
     return decorations;
   },

@@ -11,7 +11,7 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { addVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
+import { addVersionBlockEffect, removeVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -63,6 +63,9 @@ export class StudentCodeEditor {
     socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
       this.getVersionBlock(versionBlockId)?.removeVariant(variantId);
     });
+    socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, ({ versionBlockId }) => {
+      this.removeVersionBlock(versionBlockId);
+    });
     // TODO: this is not right
     socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, ({ versionBlockId, variantId, changes, id }) => {
       this.getVersionBlock(versionBlockId)?.getVariantEditor(variantId)?.handleInstructorEdit({changes, id});
@@ -87,6 +90,17 @@ export class StudentCodeEditor {
 
   getVersionBlock(id) {
     return this.versionBlocks.find(v => v.versionBlockId === id);
+  }
+
+  removeVersionBlock(versionBlockId) {
+    const widget = this.getVersionBlock(versionBlockId);
+    if (!widget) return;
+    for (const { editor } of widget.variants) { editor?.view?.destroy(); }  // Maybe this should be somewhere else?
+    this.view.dispatch({
+      effects: removeVersionBlockEffect.of({ versionBlockId }),
+    });
+    const idx = this.versionBlocks.findIndex(v => v.versionBlockId === versionBlockId);
+    if (idx >= 0) this.versionBlocks.splice(idx, 1);
   }
 
   handleInstructorCursorChange({ anchor, head }) {
@@ -233,6 +247,8 @@ export class InstructorCodeEditor {
         sessionNumber: this.sessionNumber,
         activitiesManager: this.activitiesManager,
         getInstructorCode: () => this.codeWithVariantAsPlaceholder(block.id),
+        view: this.view,
+        onDissolve: () => { delete this.versionBlocks[block.id]; },
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -324,7 +340,9 @@ export class InstructorCodeEditor {
           socket: this.socket,
           sessionNumber: this.sessionNumber,
           activitiesManager: this.activitiesManager,
-          getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId)
+          getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId),
+          view: this.view,
+          onDissolve: () => { delete this.versionBlocks[versionBlockId]; },
         });
       this.versionBlocks[versionBlockId] = widget;
       this.view.dispatch({

@@ -160,6 +160,23 @@ app.post("/version-block", async (req, res) => {
   }
 });
 
+// MARK: VersionBlock delete
+
+app.delete("/version-block/:id", async (req, res) => {
+  try {
+    const result = await db.transaction(async (t) => {
+      const block = await VersionBlock.findByPk(req.params.id, { transaction: t });
+      if (!block) return res.status(404).json({ error: "Not found" });
+      await block.update({ deleted: true }, { transaction: t });
+      return { ok: true };
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("Failed to soft-delete version block:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // MARK: Variant CRUD
 
 app.post("/variant", async (req, res) => {
@@ -568,6 +585,10 @@ io.on("connection", async (socket) => {
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, (msg) => {
     io.emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
+  });
+
+  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, (msg) => {
+    io.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {

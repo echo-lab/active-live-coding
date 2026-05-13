@@ -111,6 +111,7 @@ export class LectureSession extends Model {
   async getVersionBlocksWithPositions(transaction) {
     const blocks = await this.getVersionBlocks(
       {
+        where: { deleted: false },
         include: [{ model: Variant, include: [VariantChange] }],
         order: [["createdAt", "ASC"]],
       },
@@ -449,6 +450,7 @@ VersionBlock.init(
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     anchor_pos: { type: DataTypes.INTEGER, allowNull: false },
     anchor_change_number: { type: DataTypes.INTEGER, allowNull: false },
+    deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   { sequelize },
 );
