@@ -6,11 +6,15 @@ const N = 10; // How many simulated responses to create :)
 
 const client = new OpenAI(); // reads OPENAI_API_KEY from env
 
-export async function createSimulatedResponses(exercise) {
+export async function createSimulatedResponses(exercise, additionalContext) {
   let prompt;
 
   if (exercise.type === EXERCISE_TYPE.CODE_VARIANT) {
     prompt = createVariantPrompt(exercise);
+  }
+
+  if (exercise.type === EXERCISE_TYPE.POLL) {
+    prompt = createPollPrompt(exercise, additionalContext);
   }
 
   if (!prompt) return;
@@ -40,6 +44,27 @@ export async function createSimulatedResponses(exercise) {
     }))
   );
   return records;
+}
+
+function createPollPrompt(exercise, additionalContext) {
+  const { instructions, instructor_code } = exercise;
+
+  return `Your job is to simulate student responses to an in-class poll exercise.
+  The instructor has posed a question or prompt to students during a live coding lecture.
+  I will provide the instructor's question (INSTRUCTIONS), the instructor's full code at the time of the poll (INSTRUCTOR_CODE), and optionally the specific code the instructor had selected when creating the poll (SELECTED_CODE).
+
+  Give your response in JSON format as a list of strings which contain possible student responses. You should produce ${N} responses in total.
+  Try to vary the responses somewhat, but keep them plausible -- it's okay if some are very similar.
+  Some responses should display common misconceptions or partial understanding.
+  Make sure you only respond with the JSON-parsable list of responses.
+  If it is absolutely impossible to infer the intent of the question, return an empty JSON list.
+
+  <INSTRUCTIONS>
+  ${instructions}
+  </INSTRUCTIONS>
+  ${additionalContext ? `<INSTRUCTOR_CODE>\n  ${additionalContext}\n  </INSTRUCTOR_CODE>` : ""}
+  ${instructor_code ? `<SELECTED_CODE>\n  ${instructor_code}\n  </SELECTED_CODE>` : ""}
+  `;
 }
 
 function createVariantPrompt(exercise) {

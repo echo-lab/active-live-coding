@@ -407,7 +407,7 @@ app.post("/exercise", async (req, res) => {
 // MARK: Simulate responses
 // Create simulated student responses for an exercise.
 app.post("/simulate-responses", async (req, res) => {
-  const { instructorId, exerciseId } = req.body;
+  const { instructorId, exerciseId, additional_context } = req.body;
   if (!instructorId || !exerciseId)
     return res.json({ error: "instructorId and exerciseId are required" });
 
@@ -421,7 +421,7 @@ app.post("/simulate-responses", async (req, res) => {
     if (exercise.end_ts !== null)
       return res.json({ error: "Exercise is already completed" });
 
-    const records = await createSimulatedResponses(exercise);
+    const records = await createSimulatedResponses(exercise, additional_context);
     res.json({ simulatedResponses: records ?? [] });
   } catch (error) {
     console.error("Failed to simulate responses:", error);

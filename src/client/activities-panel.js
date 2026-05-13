@@ -413,10 +413,11 @@ function renderResponsesEl(responsesEl, ex, groups) {
 
 // MARK: PollExerciseWidget
 class PollExerciseWidget {
-  constructor({ manager, pollEl, onBack, getSelectedCode }) {
+  constructor({ manager, pollEl, onBack, getSelectedCode, getCurrentCode }) {
     this.pollEl = pollEl;
     this.timerInterval = null;
     this.getSelectedCode = getSelectedCode;
+    this.getCurrentCode = getCurrentCode;
     this._onBack = onBack;
     this._manager = manager;
 
@@ -496,6 +497,7 @@ class PollExerciseWidget {
       await this._manager.createPollExercise({
         instructions,
         ...(code ? { instructor_code: code } : {}),
+        full_instructor_code: this.getCurrentCode?.(),
       });
     });
     this.pollEl.appendChild(startBtn);
@@ -658,6 +660,7 @@ export class InstructorActivitiesPanel {
     activitiesPanelEl,
     openPanel,
     getSelectedCode,
+    getCurrentCode,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -678,6 +681,7 @@ export class InstructorActivitiesPanel {
       pollEl: this.pollEl,
       onBack,
       getSelectedCode,
+      getCurrentCode,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,

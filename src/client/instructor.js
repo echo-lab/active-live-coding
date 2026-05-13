@@ -150,5 +150,6 @@ function initialize({
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getSelectedCode: () => codeEditor.getSelectedCode(),
+    getCurrentCode: () => codeEditor.currentCode(),
   });
 }

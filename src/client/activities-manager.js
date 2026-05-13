@@ -44,7 +44,7 @@ export class InstructorActivitiesManager extends EventTarget {
     return this.exercises;
   }
 
-  async createPollExercise({ instructions, instructor_code }) {
+  async createPollExercise({ instructions, instructor_code, full_instructor_code }) {
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
@@ -55,6 +55,29 @@ export class InstructorActivitiesManager extends EventTarget {
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
     if (res.error) { alert(res.error); return; }
+
+    if (shouldSimulateResponses()) {
+      fetch("/simulate-responses", {
+        body: JSON.stringify({ instructorId: this.userId, exerciseId: res.exerciseId, additional_context: full_instructor_code }),
+        ...POST_JSON_REQUEST,
+      })
+        .then((r) => r.json())
+        .then(({ simulatedResponses }) => {
+          const ex = this.exercises.find((e) => e.id === res.exerciseId);
+          if (ex && simulatedResponses) {
+            simulatedResponses.forEach((r) => {
+              ex.ExerciseResponses.push({
+                id: r.id,
+                student_id: r.student_name,
+                student_identifier: r.student_name,
+                StudentSession: null,
+                answer: r.answer,
+                isSimulated: true,
+              });
+            });
+          }
+        });
+    }
 
     const newEx = {
       id: res.exerciseId,
