@@ -922,10 +922,10 @@ function createVersionWidgetTooltipDOM(view) {
 
   let askStudentsOption = document.createElement("div");
   askStudentsOption.className = "cm-tooltip-version-option";
-  askStudentsOption.textContent = "Ask Students";
+  askStudentsOption.textContent = "Create Exercise";
   askStudentsOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleClick(true); });
 
-  container.appendChild(newVersionOption);
+  // container.appendChild(newVersionOption);
   container.appendChild(askStudentsOption);
   return container;
 }
