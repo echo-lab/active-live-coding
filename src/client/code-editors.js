@@ -285,9 +285,22 @@ export class InstructorCodeEditor {
 
   getSelectedCode() {
     const state = this.view.state;
+    const doc = state.doc;
     const { from, to } = state.selection.main;
     if (from === to) return "";
-    return state.doc.sliceString(from, to);
+
+    const decorations = state.field(versionBlocksField);
+    let result = "";
+    let pos = from;
+
+    decorations.between(from, to, (dFrom, dTo, deco) => {
+      result += doc.sliceString(pos, Math.max(pos, dFrom));
+      result += deco.spec.widget.getActiveVariant().editor.currentCode();
+      pos = dTo;
+    });
+
+    result += doc.sliceString(pos, to);
+    return result;
   }
 
   codeWithVariantAsPlaceholder(targetVersionBlockId) {
