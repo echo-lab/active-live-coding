@@ -571,6 +571,60 @@ class PollMcqBuilder {
     });
     this._updateAddBtn();
   }
+
+  static buildActiveChoices(container, choices) {
+    const list = document.createElement("div");
+    list.className = "poll-mcq-choices-display";
+    choices.forEach((choice, i) => {
+      const item = document.createElement("div");
+      item.className = "poll-mcq-choice-item";
+      const label = document.createElement("span");
+      label.className = "poll-mcq-choice-label";
+      label.textContent = String.fromCharCode(65 + i) + ".";
+      const text = document.createElement("span");
+      text.className = "poll-mcq-choice-text";
+      text.textContent = choice;
+      item.appendChild(label);
+      item.appendChild(text);
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
+  static buildSummaryResults(container, choices, responses) {
+    const counts = new Array(choices.length).fill(0);
+    let total = 0;
+    responses.forEach((r) => {
+      const idx = parseInt(r.answer, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < choices.length) {
+        counts[idx]++;
+        total++;
+      }
+    });
+
+    const list = document.createElement("div");
+    list.className = "poll-mcq-results";
+    choices.forEach((choice, i) => {
+      const item = document.createElement("div");
+      item.className = "poll-mcq-result-item";
+      const count = counts[i];
+      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+      const label = document.createElement("span");
+      label.className = "poll-mcq-choice-label";
+      label.textContent = String.fromCharCode(65 + i) + ".";
+      const text = document.createElement("span");
+      text.className = "poll-mcq-choice-text";
+      text.textContent = choice;
+      const countEl = document.createElement("span");
+      countEl.className = "poll-mcq-result-count";
+      countEl.textContent = `${count} response${count !== 1 ? "s" : ""} (${pct}%)`;
+      item.appendChild(label);
+      item.appendChild(text);
+      item.appendChild(countEl);
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
 }
 
 // MARK: PollExerciseWidget
@@ -699,6 +753,10 @@ class PollExerciseWidget {
     instructionsEl.textContent = ex.instructions ?? "";
     this.pollEl.appendChild(instructionsEl);
 
+    if (ex.type === "POLL_MCQ" && ex.default_answer) {
+      PollMcqBuilder.buildActiveChoices(this.pollEl, JSON.parse(ex.default_answer));
+    }
+
     let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
     this._responseCountEl = document.createElement("div");
     this._responseCountEl.className = "poll-response-count";
@@ -727,7 +785,10 @@ class PollExerciseWidget {
     this._responsesEl = document.createElement("div");
     this.pollEl.appendChild(this._responsesEl);
 
-    if (loading) {
+    if (ex.type === "POLL_MCQ") {
+      const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
+      PollMcqBuilder.buildSummaryResults(this._responsesEl, choices, ex.ExerciseResponses ?? []);
+    } else if (loading) {
       const loadingEl = document.createElement("div");
       loadingEl.className = "summary-loading";
       loadingEl.textContent = "Generating summary…";
@@ -741,7 +802,12 @@ class PollExerciseWidget {
   updateResponses(ex, groups) {
     if (this._responsesEl) {
       this._responsesEl.innerHTML = "";
-      renderResponsesEl(this._responsesEl, ex, groups);
+      if (ex.type === "POLL_MCQ") {
+        const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
+        PollMcqBuilder.buildSummaryResults(this._responsesEl, choices, ex.ExerciseResponses ?? []);
+      } else {
+        renderResponsesEl(this._responsesEl, ex, groups);
+      }
     }
   }
 
@@ -882,7 +948,7 @@ export class InstructorActivitiesPanel {
     this.#subscribeToManager();
 
     for (let ex of manager.getActiveExercises()) {
-      if (ex.type === "POLL") {
+      if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
         this.openPanel();
         this._showActiveView(ex);
         break;
@@ -893,17 +959,17 @@ export class InstructorActivitiesPanel {
 
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-      if (exercise.type !== "POLL") return;
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this.openPanel();
       this._renderList();
       this._showActiveView(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type === "POLL") this.pollWidget.stopTimer();
+      if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") this.pollWidget.stopTimer();
       this.openPanel();
       this._renderList();
-      this._showSummaryView(exercise, { loading: true });
+      this._showSummaryView(exercise, { loading: exercise.type === "POLL" });
     });
 
     this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
@@ -951,7 +1017,7 @@ export class InstructorActivitiesPanel {
   _renderList() {
     this.listItemsEl.innerHTML = "";
     [...this.manager.getExercises()].reverse().forEach((ex) => {
-      if (ex.type !== "POLL") return;
+      if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
 
       let item = document.createElement("div");
       item.className = "activity-list-item";

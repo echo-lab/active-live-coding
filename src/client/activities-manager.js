@@ -1,6 +1,7 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
 
+// MARK: Instrutor
 export class InstructorActivitiesManager extends EventTarget {
   constructor({ sessionNumber, userId, socket, exercises }) {
     super();
@@ -202,8 +203,7 @@ export class InstructorActivitiesManager extends EventTarget {
 
   async finishPollExercise() {
     for (let ex of this.getActiveExercises()) {
-      // console.log("active: ", ex);
-      if (ex.type === "POLL") {
+      if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
         this.finishExercise(ex.id);
         break;
       }
@@ -226,6 +226,8 @@ export class InstructorActivitiesManager extends EventTarget {
       exerciseId: ex.id,
     });
     this.dispatchEvent(new CustomEvent("exerciseFinished", { detail: { exercise: ex } }));
+
+    if (ex.type === "POLL_MCQ") return;
 
     fetch("/exercise/summary", {
       body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),
@@ -267,6 +269,7 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 }
 
+// MARK: Student
 export class StudentActivitiesManager extends EventTarget {
   constructor({ sessionNumber, userId, studentIdentifier, socket, exercises }) {
     super();
