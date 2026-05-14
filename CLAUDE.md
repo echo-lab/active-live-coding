@@ -2,13 +2,12 @@ Context:
 - This web app is a research prototype that support CS lectures that use live coding. 
 - Instructors are presented with a code editor where they can write and run Python.
 - Students are presented with a read-only version of the instructor's code editor that updates in real time.
-- We are building off of an older app, so some of the features might be in flux (e.g., the activities panel)
+- We are building off of an older app, so there may be some legacy code around.
 - Instructors can create short exercises for the students, where the student have to enter code or text.
-- To create a text-input exercise, the instructor clicks "poll" and enters a prompt in the instructor activities panel sidebar. Students answer in their own acitvity panel sidebar.
-- To create a code exercise, instructors select one or more lines of code in the editor, right click, and then select "Ask for code". Students then can edit that portion of code, i.e., "fill in the blank".
-- The "fill in the blank" code exercise idea is being changed somewhat, though it will function similarly. The new idea is to have "variant" widgets in the code editor. They look like the fill-in-the-blank exercises, but instructors can create multiple variants, ask students for variants, etc. 
 - Once an instructor marks an active exercise as complete, the app shows a summary on the instructor's screen that aggregates student responses.
-- Not everything is implemented yet (e.g., aggregation for text; the variant blocks).
+- To create a text-input exercise, the instructor clicks "poll" and enters a prompt in the instructor activities panel sidebar. Students answer in their own acitvity panel sidebar.
+- To create a code exercise, instructors select one or more lines of code in the editor, right click, and then select "Create exercise". This creates a "Version Block", and gives each student their own variant they can edit and submit. Instructors can view student responses in the activities panel, and they can walk through different solutions by adding them as variants in the version block.
+- The students have a read-only copy of the instructor's editor that updates in real time. The student editor reflects all of the instructor's Version Blocks, including all variants the instructor has authored, as well as their own variant (i.e., the student response to that exercise). 
 - The app can host multiple lectures at the same time, although it is not expected this will happen very much in practice.
 
 Important files and classes:
@@ -19,7 +18,8 @@ Important files and classes:
   - VariantCodeEditor: which is in charge of broadcasting instructor edits to variants (which live in side of the VersionBlockWidget).
   - StudentCodeEditor: which is in charge of receiving instructor edits, including those that create new version blocks. 
 - The file `cm-version-widget.js` has the code for the VersionBlockWidget class.
-- It may be outdated, but the activity panel logic is defined in `src/client/activities-panel.js`.
+- The activity panel display logic is defined in `src/client/activities-panel.js`.
+- `activities-manager.js` defines an InstructorActivitiesManager and StudentActivitiesManager which both act as a model-controller for activities.
 - The database schema is defined in `src/server/models.js`.
 - The API endpoints live in `src/server/main.js`.
 
