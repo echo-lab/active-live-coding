@@ -56,28 +56,7 @@ export class InstructorActivitiesManager extends EventTarget {
     }).then((r) => r.json());
     if (res.error) { alert(res.error); return; }
 
-    if (shouldSimulateResponses()) {
-      fetch("/simulate-responses", {
-        body: JSON.stringify({ instructorId: this.userId, exerciseId: res.exerciseId, additional_context: full_instructor_code }),
-        ...POST_JSON_REQUEST,
-      })
-        .then((r) => r.json())
-        .then(({ simulatedResponses }) => {
-          const ex = this.exercises.find((e) => e.id === res.exerciseId);
-          if (ex && simulatedResponses) {
-            simulatedResponses.forEach((r) => {
-              ex.ExerciseResponses.push({
-                id: r.id,
-                student_id: r.student_name,
-                student_identifier: r.student_name,
-                StudentSession: null,
-                answer: r.answer,
-                isSimulated: true,
-              });
-            });
-          }
-        });
-    }
+    this.#maybeSimulateResponses(res.exerciseId, full_instructor_code);
 
     const newEx = {
       id: res.exerciseId,
@@ -115,28 +94,7 @@ export class InstructorActivitiesManager extends EventTarget {
     }).then((r) => r.json());
     if (res.error) { alert(res.error); return; }
 
-    if (shouldSimulateResponses()) {
-      fetch("/simulate-responses", {
-        body: JSON.stringify({ instructorId: this.userId, exerciseId: res.exerciseId, additional_context: full_instructor_code }),
-        ...POST_JSON_REQUEST,
-      })
-        .then((r) => r.json())
-        .then(({ simulatedResponses }) => {
-          const ex = this.exercises.find((e) => e.id === res.exerciseId);
-          if (ex && simulatedResponses) {
-            simulatedResponses.forEach((r) => {
-              ex.ExerciseResponses.push({
-                id: r.id,
-                student_id: r.student_name,
-                student_identifier: r.student_name,
-                StudentSession: null,
-                answer: r.answer,
-                isSimulated: true,
-              });
-            });
-          }
-        });
-    }
+    this.#maybeSimulateResponses(res.exerciseId, full_instructor_code);
 
     const newEx = {
       id: res.exerciseId,
@@ -187,28 +145,7 @@ export class InstructorActivitiesManager extends EventTarget {
     }).then((r) => r.json());
     if (res.error) { alert(res.error); return null; }
 
-    if (shouldSimulateResponses()) {
-      fetch("/simulate-responses", {
-        body: JSON.stringify({ instructorId: this.userId, exerciseId: res.exerciseId }),
-        ...POST_JSON_REQUEST,
-      })
-        .then((r) => r.json())
-        .then(({ simulatedResponses }) => {
-          const ex = this.exercises.find((e) => e.id === res.exerciseId);
-          if (ex && simulatedResponses) {
-            simulatedResponses.forEach((r) => {
-              ex.ExerciseResponses.push({
-                id: r.id,
-                student_id: r.student_name,
-                student_identifier: r.student_name,
-                StudentSession: null,
-                answer: r.answer,
-                isSimulated: true,
-              });
-            });
-          }
-        });
-    }
+    this.#maybeSimulateResponses(res.exerciseId);
 
     const newEx = {
       id: res.exerciseId,
@@ -232,6 +169,29 @@ export class InstructorActivitiesManager extends EventTarget {
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
     return newEx;
+  }
+
+  async #maybeSimulateResponses(exerciseId, additionalContext) {
+    if (!shouldSimulateResponses()) return;
+    const body = { instructorId: this.userId, exerciseId };
+    if (additionalContext != null) body.additional_context = additionalContext;
+    const { simulatedResponses } = await fetch("/simulate-responses", {
+      body: JSON.stringify(body),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    const ex = this.exercises.find((e) => e.id === exerciseId);
+    if (ex && simulatedResponses) {
+      simulatedResponses.forEach((r) => {
+        ex.ExerciseResponses.push({
+          id: r.id,
+          student_id: r.student_name,
+          student_identifier: r.student_name,
+          StudentSession: null,
+          answer: r.answer,
+          isSimulated: true,
+        });
+      });
+    }
   }
 
   showSummaryForExercise(id) {
