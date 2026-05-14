@@ -411,6 +411,139 @@ function renderResponsesEl(responsesEl, ex, groups) {
   });
 }
 
+// MARK: PollMcqBuilder
+class PollMcqBuilder {
+  constructor(container) {
+    this._container = container;
+    this._rows = [];
+    this._rowsEl = null;
+    this._addBtn = null;
+  }
+
+  build() {
+    const section = document.createElement("div");
+    section.className = "poll-mcq-section";
+
+    // Header row: title + suggest button
+    const header = document.createElement("div");
+    header.className = "poll-mcq-header";
+
+    const title = document.createElement("span");
+    title.className = "poll-mcq-title";
+    title.textContent = "(Optional) Provide Choices";
+
+    const suggestBtn = document.createElement("button");
+    suggestBtn.className = "poll-mcq-suggest-btn";
+    suggestBtn.textContent = "Suggest Choices";
+
+    header.appendChild(title);
+    header.appendChild(suggestBtn);
+    section.appendChild(header);
+
+    // Rows container
+    this._rowsEl = document.createElement("div");
+    this._rowsEl.className = "poll-mcq-rows";
+    section.appendChild(this._rowsEl);
+
+    // Start with 2 rows
+    this._addRowInternal();
+    this._addRowInternal();
+
+    // Footer: add + clear
+    const footer = document.createElement("div");
+    footer.className = "poll-mcq-footer";
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "poll-mcq-add-btn";
+    addBtn.textContent = "+ Add choice";
+    addBtn.addEventListener("click", () => {
+      this._addRowInternal();
+      this._reindex();
+      this._updateAddBtn();
+    });
+    this._addBtn = addBtn;
+
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "poll-mcq-clear-btn";
+    clearBtn.textContent = "Clear All";
+    clearBtn.addEventListener("click", () => this._clearAll());
+
+    footer.appendChild(addBtn);
+    footer.appendChild(clearBtn);
+    section.appendChild(footer);
+
+    // Submit as MCQ button (stub)
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "poll-mcq-submit-btn";
+    submitBtn.textContent = "Ask as Multiple Choice";
+    section.appendChild(submitBtn);
+
+    this._container.appendChild(section);
+  }
+
+  _addRowInternal() {
+    const index = this._rows.length;
+
+    const rowEl = document.createElement("div");
+    rowEl.className = "poll-mcq-row";
+
+    const label = document.createElement("span");
+    label.className = "poll-mcq-label";
+    label.textContent = String.fromCharCode(65 + index);
+
+    const input = document.createElement("textarea");
+    input.className = "poll-mcq-input";
+    input.placeholder = `Choice ${String.fromCharCode(65 + index)}`;
+
+    rowEl.appendChild(label);
+    rowEl.appendChild(input);
+
+    if (index >= 2) {
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "poll-mcq-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => this._removeRow(rowEl));
+      rowEl.appendChild(removeBtn);
+    }
+
+    this._rowsEl.appendChild(rowEl);
+    this._rows.push({ rowEl, labelEl: label, inputEl: input });
+  }
+
+  _removeRow(rowEl) {
+    const idx = this._rows.findIndex((r) => r.rowEl === rowEl);
+    if (idx < 2) return;
+    rowEl.remove();
+    this._rows.splice(idx, 1);
+    this._reindex();
+    this._updateAddBtn();
+  }
+
+  _reindex() {
+    this._rows.forEach(({ labelEl, inputEl }, i) => {
+      const letter = String.fromCharCode(65 + i);
+      labelEl.textContent = letter;
+      inputEl.placeholder = `Choice ${letter}`;
+    });
+  }
+
+  _updateAddBtn() {
+    if (this._addBtn) this._addBtn.style.visibility = this._rows.length >= 5 ? "hidden" : "";
+  }
+
+  _clearAll() {
+    const extras = this._rows.splice(2);
+    extras.forEach(({ rowEl }) => rowEl.remove());
+    this._rows.forEach(({ inputEl }) => (inputEl.value = ""));
+    this._reindex();
+    this._updateAddBtn();
+  }
+
+  getAnswers() {
+    return this._rows.map(({ inputEl }) => inputEl.value.trim()).filter(Boolean);
+  }
+}
+
 // MARK: PollExerciseWidget
 class PollExerciseWidget {
   constructor({ manager, pollEl, onBack, getSelectedCode, getCurrentCode }) {
@@ -490,7 +623,8 @@ class PollExerciseWidget {
     this.pollEl.appendChild(textarea);
 
     const startBtn = document.createElement("button");
-    startBtn.textContent = "Start Activity";
+    startBtn.textContent = "Ask as Free Response";
+    startBtn.className = "poll-submit-btn";
     startBtn.addEventListener("click", async () => {
       const instructions = this._instructionsInput.value.trim();
       const code = this.codeView.state.doc.toString().trim();
@@ -501,6 +635,8 @@ class PollExerciseWidget {
       });
     });
     this.pollEl.appendChild(startBtn);
+
+    new PollMcqBuilder(this.pollEl).build();
   }
 
   showActive(ex) {
