@@ -969,7 +969,7 @@ export class InstructorActivitiesPanel {
       if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") this.pollWidget.stopTimer();
       this.openPanel();
       this._renderList();
-      this._showSummaryView(exercise, { loading: exercise.type === "POLL" });
+      this._showSummaryView(exercise, { loading: exercise.type === "POLL" || exercise.type === "CODE_VARIANT" });
     });
 
     this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
