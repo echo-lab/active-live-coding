@@ -508,6 +508,7 @@ td {
 
 #instructor-interface #activities-container {
   border-radius: 0px 15px 15px 0px; /* only round the outer right corners */
+  padding-bottom: 30px;
 }
 
 /* Vertical gutter / resizer bar */

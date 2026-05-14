@@ -17,6 +17,7 @@ import {
 } from "./models.js";
 import { ChangeSet } from "@codemirror/state";
 import { createSimulatedResponses } from "./simulate-responses.js";
+import { suggestMcqChoices } from "./suggest-mcq-choices.js";
 import { createGroupSummary } from "./group-responses.js";
 import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
@@ -425,6 +426,18 @@ app.post("/simulate-responses", async (req, res) => {
     res.json({ simulatedResponses: records ?? [] });
   } catch (error) {
     console.error("Failed to simulate responses:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Suggest MCQ choices
+app.post("/suggest-mcq-choices", async (req, res) => {
+  const { instructions, instructor_code, full_instructor_code } = req.body;
+  try {
+    const choices = await suggestMcqChoices({ instructions, instructor_code, full_instructor_code });
+    res.json({ choices });
+  } catch (error) {
+    console.error("Failed to suggest MCQ choices:", error);
     res.json({ error: error.message });
   }
 });

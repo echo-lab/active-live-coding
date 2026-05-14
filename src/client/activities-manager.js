@@ -101,6 +101,15 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
+  async suggestMcqChoices({ instructions, instructor_code, full_instructor_code }) {
+    const res = await fetch("/suggest-mcq-choices", {
+      body: JSON.stringify({ instructorId: this.userId, instructions, instructor_code, full_instructor_code }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) { alert(res.error); return []; }
+    return res.choices ?? [];
+  }
+
   async createCodeVariantExercise({ default_answer, instructor_code, versionBlockId }) {
     if (this.exercises.some((e) => e.VersionBlockId === versionBlockId)) {
       alert("This version block already has an exercise.");

@@ -413,8 +413,9 @@ function renderResponsesEl(responsesEl, ex, groups) {
 
 // MARK: PollMcqBuilder
 class PollMcqBuilder {
-  constructor(container) {
+  constructor(container, { onSuggest } = {}) {
     this._container = container;
+    this._onSuggest = onSuggest;
     this._rows = [];
     this._rowsEl = null;
     this._addBtn = null;
@@ -435,6 +436,18 @@ class PollMcqBuilder {
     const suggestBtn = document.createElement("button");
     suggestBtn.className = "poll-mcq-suggest-btn";
     suggestBtn.textContent = "Suggest Choices";
+    suggestBtn.addEventListener("click", async () => {
+      if (!this._onSuggest) return;
+      suggestBtn.disabled = true;
+      suggestBtn.textContent = "Loading...";
+      try {
+        const choices = await this._onSuggest();
+        if (choices?.length) this.setSuggestedChoices(choices);
+      } finally {
+        suggestBtn.disabled = false;
+        suggestBtn.textContent = "Suggest Choices";
+      }
+    });
 
     header.appendChild(title);
     header.appendChild(suggestBtn);
@@ -542,6 +555,15 @@ class PollMcqBuilder {
   getAnswers() {
     return this._rows.map(({ inputEl }) => inputEl.value.trim()).filter(Boolean);
   }
+
+  setSuggestedChoices(choices) {
+    this._clearAll();
+    choices.slice(0, 5).forEach((choice, i) => {
+      if (i >= this._rows.length) this._addRowInternal();
+      this._rows[i].inputEl.value = choice;
+    });
+    this._updateAddBtn();
+  }
 }
 
 // MARK: PollExerciseWidget
@@ -636,7 +658,17 @@ class PollExerciseWidget {
     });
     this.pollEl.appendChild(startBtn);
 
-    new PollMcqBuilder(this.pollEl).build();
+    new PollMcqBuilder(this.pollEl, {
+      onSuggest: async () => {
+        const instructions = this._instructionsInput.value.trim();
+        const code = this.codeView.state.doc.toString().trim();
+        return this._manager.suggestMcqChoices({
+          instructions,
+          instructor_code: code || null,
+          full_instructor_code: this.getCurrentCode?.(),
+        });
+      },
+    }).build();
   }
 
   showActive(ex) {
