@@ -413,9 +413,10 @@ function renderResponsesEl(responsesEl, ex, groups) {
 
 // MARK: PollMcqBuilder
 class PollMcqBuilder {
-  constructor(container, { onSuggest } = {}) {
+  constructor(container, { onSuggest, onSubmit } = {}) {
     this._container = container;
     this._onSuggest = onSuggest;
+    this._onSubmit = onSubmit;
     this._rows = [];
     this._rowsEl = null;
     this._addBtn = null;
@@ -485,10 +486,16 @@ class PollMcqBuilder {
     footer.appendChild(clearBtn);
     section.appendChild(footer);
 
-    // Submit as MCQ button (stub)
     const submitBtn = document.createElement("button");
     submitBtn.className = "poll-mcq-submit-btn";
     submitBtn.textContent = "Ask as Multiple Choice";
+    submitBtn.addEventListener("click", async () => {
+      if (!this._onSubmit) return;
+      const choices = this.getAnswers();
+      if (choices.length < 2) { alert("Please provide at least 2 choices."); return; }
+      submitBtn.disabled = true;
+      try { await this._onSubmit(choices); } finally { submitBtn.disabled = false; }
+    });
     section.appendChild(submitBtn);
 
     this._container.appendChild(section);
@@ -666,6 +673,16 @@ class PollExerciseWidget {
           instructions,
           instructor_code: code || null,
           full_instructor_code: this.getCurrentCode?.(),
+        });
+      },
+      onSubmit: async (choices) => {
+        const instructions = this._instructionsInput.value.trim();
+        const code = this.codeView.state.doc.toString().trim();
+        await this._manager.createPollMcqExercise({
+          instructions,
+          ...(code ? { instructor_code: code } : {}),
+          full_instructor_code: this.getCurrentCode?.(),
+          choices,
         });
       },
     }).build();

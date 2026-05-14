@@ -101,6 +101,66 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
+  async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices }) {
+    const default_answer = JSON.stringify(choices);
+    const res = await fetch("/exercise", {
+      body: JSON.stringify({
+        lectureId: this.sessionNumber,
+        type: "POLL_MCQ",
+        instructions,
+        default_answer,
+        ...(instructor_code ? { instructor_code } : {}),
+      }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) { alert(res.error); return; }
+
+    if (shouldSimulateResponses()) {
+      fetch("/simulate-responses", {
+        body: JSON.stringify({ instructorId: this.userId, exerciseId: res.exerciseId, additional_context: full_instructor_code }),
+        ...POST_JSON_REQUEST,
+      })
+        .then((r) => r.json())
+        .then(({ simulatedResponses }) => {
+          const ex = this.exercises.find((e) => e.id === res.exerciseId);
+          if (ex && simulatedResponses) {
+            simulatedResponses.forEach((r) => {
+              ex.ExerciseResponses.push({
+                id: r.id,
+                student_id: r.student_name,
+                student_identifier: r.student_name,
+                StudentSession: null,
+                answer: r.answer,
+                isSimulated: true,
+              });
+            });
+          }
+        });
+    }
+
+    const newEx = {
+      id: res.exerciseId,
+      type: "POLL_MCQ",
+      instructions,
+      instructor_code: instructor_code ?? null,
+      default_answer,
+      start_ts: Date.now(),
+      end_ts: null,
+      ExerciseResponses: [],
+    };
+    this.exercises.push(newEx);
+    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
+      sessionNumber: this.sessionNumber,
+      exercise: {
+        id: newEx.id,
+        instructions: newEx.instructions,
+        start_ts: newEx.start_ts,
+        type: newEx.type,
+      },
+    });
+    this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
+  }
+
   async suggestMcqChoices({ instructions, instructor_code, full_instructor_code }) {
     const res = await fetch("/suggest-mcq-choices", {
       body: JSON.stringify({ instructorId: this.userId, instructions, instructor_code, full_instructor_code }),

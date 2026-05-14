@@ -17,6 +17,10 @@ export async function createSimulatedResponses(exercise, additionalContext) {
     prompt = createPollPrompt(exercise, additionalContext);
   }
 
+  if (exercise.type === EXERCISE_TYPE.POLL_MCQ) {
+    prompt = createPollMcqPrompt(exercise, additionalContext);
+  }
+
   if (!prompt) return;
 
   let response = await client.responses.create({
@@ -63,6 +67,32 @@ function createPollPrompt(exercise, additionalContext) {
   ${instructions}
   </INSTRUCTIONS>
   ${additionalContext ? `<INSTRUCTOR_CODE>\n  ${additionalContext}\n  </INSTRUCTOR_CODE>` : ""}
+  ${instructor_code ? `<SELECTED_CODE>\n  ${instructor_code}\n  </SELECTED_CODE>` : ""}
+  `;
+}
+
+function createPollMcqPrompt(exercise, additionalContext) {
+  const { instructions, instructor_code, default_answer } = exercise;
+  const full_instructor_code = additionalContext;
+  const choices = JSON.parse(default_answer);
+  // const choiceList = choices.map((c, i) => `${String.fromCharCode(65 + i)}. ${c}`).join("\n  ");
+
+  return `Your job is to simulate student responses to an in-class multiple-choice poll exercise.
+  Each simulated student picks exactly one of the provided answer choices.
+
+  Give your response as a JSON list of ${N} numbers. Each number must be an integer that's an index of the chosen answer (e.g., 0, 1, 2, 3).
+  Distribute picks plausibly across the choices — most students should choose a reasonable answer, but some may pick incorrect options (especially for difficult questions).
+  Only respond with the JSON-parsable list (e.g., "[0, 2, 4, 4, 1, 4, 2, 2, 3]").
+  
+  I will provide some context, including: the instructor's directions (INSTRUCTIONS), the possible answer choices (CHOICES), the code the instructor highlighted, if any (SELECTED_CODE), and the full contents of the instructor's code editor (INSTRUCTOR_CODE), which may contain irrelevant information.
+
+  <INSTRUCTIONS>
+  ${instructions}
+  </INSTRUCTIONS>
+  <CHOICES>
+  ${choices}
+  </CHOICES>
+  ${full_instructor_code ? `<INSTRUCTOR_CODE>\n  ${full_instructor_code}\n  </INSTRUCTOR_CODE>` : ""}
   ${instructor_code ? `<SELECTED_CODE>\n  ${instructor_code}\n  </SELECTED_CODE>` : ""}
   `;
 }
