@@ -1,7 +1,7 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
 
-// MARK: Instrutor
+// MARK: Instructor
 export class InstructorActivitiesManager extends EventTarget {
   constructor({ sessionNumber, userId, socket, exercises }) {
     super();
@@ -76,6 +76,7 @@ export class InstructorActivitiesManager extends EventTarget {
         instructions: newEx.instructions,
         start_ts: newEx.start_ts,
         type: newEx.type,
+        instructor_code: newEx.instructor_code,
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
@@ -115,6 +116,8 @@ export class InstructorActivitiesManager extends EventTarget {
         instructions: newEx.instructions,
         start_ts: newEx.start_ts,
         type: newEx.type,
+        instructor_code: newEx.instructor_code,
+        default_answer: newEx.default_answer,
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
@@ -314,15 +317,31 @@ export class StudentActivitiesManager extends EventTarget {
   #handleExerciseCreated(msg) {
     if (msg.sessionNumber !== this.sessionNumber) return;
     const ex = msg.exercise;
-    if (ex.type !== "CODE_VARIANT") return;
-    const exercise = {
-      id: ex.id,
-      type: ex.type,
-      default_answer: ex.default_answer,
-      VersionBlockId: ex.version_block_id,
-      start_ts: ex.start_ts,
-      end_ts: null,
-    };
+    let exercise;
+    if (ex.type === "CODE_VARIANT") {
+      exercise = {
+        id: ex.id,
+        type: ex.type,
+        default_answer: ex.default_answer,
+        VersionBlockId: ex.version_block_id,
+        start_ts: ex.start_ts,
+        end_ts: null,
+        ExerciseResponses: [],
+      };
+    } else if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
+      exercise = {
+        id: ex.id,
+        type: ex.type,
+        instructions: ex.instructions,
+        instructor_code: ex.instructor_code ?? null,
+        default_answer: ex.default_answer ?? null,
+        start_ts: ex.start_ts,
+        end_ts: null,
+        ExerciseResponses: [],
+      };
+    } else {
+      return;
+    }
     this.exercises.push(exercise);
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise } }));
   }

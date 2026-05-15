@@ -116,13 +116,9 @@ async function initialize({
     sessionActive = false;
   });
 
-  let activitiesPanel = new StudentActivitiesPanel({
-    sessionNumber,
-    exercises,
+  let activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
-    socket,
     openActivitiesPanel,
-    studentIdentifier: email,
   });
 }
 

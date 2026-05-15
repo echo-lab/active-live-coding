@@ -5,7 +5,6 @@ import { indentUnit } from "@codemirror/language";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { POST_JSON_REQUEST } from "./utils.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
@@ -69,84 +68,49 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor({
-    sessionNumber,
-    exercises,
-    student_id,
-    socket,
-    openActivitiesPanel,
-    studentIdentifier,
-    showFillInBlank,
-    hideFillInBlank,
-  }) {
-    this.sessionNumber = sessionNumber;
-    this.exercises = exercises.map((ex) => ({
-      ...ex,
-      ExerciseResponses: ex.ExerciseResponses ?? [],
-    }));
+  constructor(manager, { student_id, openActivitiesPanel }) {
+    this.manager = manager;
     this.student_id = student_id;
-    this.socket = socket;
+    this.openActivitiesPanel = openActivitiesPanel;
     this.currentExerciseId = null;
-    this.studentIdentifier = studentIdentifier;
-    this.showFillInBlank = showFillInBlank ?? null;
-    this.hideFillInBlank = hideFillInBlank ?? null;
 
-    // DOM refs
     this.listEl = document.querySelector("#student-activities-list");
     this.listItemsEl = document.querySelector("#student-activities-list-items");
     this.placeholderEl = document.querySelector("#student-activities-placeholder");
     this.exerciseEl = document.querySelector("#student-activity");
-    this.instructionsEl = document.querySelector("#student-activity-instructions");
-    this.answerDisplayEl = document.querySelector("#student-answer-display");
-    this.codeSubmittedEl = document.querySelector("#student-code-submitted");
-    this.answerInputEl = document.querySelector("#student-answer-input");
-    this.submitBtn = document.querySelector("#student-submit-btn");
 
-    document
-      .querySelector("#student-activity-back")
-      .addEventListener("click", () => this._showList());
-    this.submitBtn.addEventListener("click", () => this._submitAnswer());
+    this._subscribeToManager();
+    this._init();
+  }
 
-    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
-      if (msg.sessionNumber !== sessionNumber) return;
-      let ex = { ...msg.exercise, end_ts: null, ExerciseResponses: [] };
-      this.exercises.push(ex);
-      this._renderList();
-      openActivitiesPanel();
-      this._showExercise(ex);
-      if (ex.type === "CODE_FITB") {
-        const currentAnswer = ex.default_answer ?? "";
-        this.showFillInBlank?.(ex, currentAnswer, this._makeFitbSubmit(ex));
-      }
-    });
-
-    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => {
-      if (msg.sessionNumber !== sessionNumber) return;
-      let ex = this.exercises.find((e) => e.id === msg.exerciseId);
-      if (ex) ex.end_ts = Date.now();
-      if (ex?.type === "CODE_FITB") {
-        this.hideFillInBlank?.();
-      }
-      if (this.currentExerciseId === msg.exerciseId && ex) {
-        this._showExercise(ex);
-      }
-      this._renderList();
-    });
-
-    // If there's an active exercise on load, open it
-    let active = this.exercises.find((ex) => ex.end_ts == null);
+  _init() {
+    const active = this.manager.exercises.find(
+      (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.end_ts == null
+    );
     if (active) {
-      openActivitiesPanel();
+      this.openActivitiesPanel();
       this._showExercise(active);
-      if (active.type === "CODE_FITB") {
-        const myResponse = active.ExerciseResponses.find((r) => r.student_id === this.student_id);
-        const currentAnswer = myResponse?.answer ?? active.default_answer ?? "";
-        this.showFillInBlank?.(active, currentAnswer, this._makeFitbSubmit(active));
-      }
     } else {
       this._showList();
     }
     this._renderList();
+  }
+
+  _subscribeToManager() {
+    this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
+      this._renderList();
+      this.openActivitiesPanel();
+      this._showExercise(exercise);
+    });
+
+    this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
+      this._renderList();
+      if (this.currentExerciseId === exercise.id) {
+        this._showExercise(exercise);
+      }
+    });
   }
 
   _showList() {
@@ -157,22 +121,30 @@ export class StudentActivitiesPanel {
 
   _renderList() {
     this.listItemsEl.innerHTML = "";
-    let hasItems = this.exercises.length > 0;
-    this.placeholderEl.hidden = hasItems;
-    [...this.exercises].reverse().forEach((ex) => {
-      let myResponse = ex.ExerciseResponses.find(
-        (r) => r.student_id === this.student_id,
-      );
-      let isActive = ex.end_ts == null;
-      let item = document.createElement("div");
+    const pollExercises = this.manager.exercises.filter(
+      (ex) => ex.type === "POLL" || ex.type === "POLL_MCQ"
+    );
+    this.placeholderEl.hidden = pollExercises.length > 0;
+    [...pollExercises].reverse().forEach((ex) => {
+      const myResponse = ex.ExerciseResponses.find((r) => r.student_id === this.student_id);
+      const isActive = ex.end_ts == null;
+      const item = document.createElement("div");
       item.className = "activity-list-item";
-      let badge = isActive ? "Active" : "Done";
-      let preview = ex.instructions
-        ? ex.instructions.slice(0, 60)
-        : "(no instructions)";
-      let answerSnippet = myResponse
-        ? ` — "${myResponse.answer.slice(0, 30)}"`
-        : " — no answer";
+      const badge = isActive ? "Active" : "Done";
+      const preview = ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
+      let answerSnippet;
+      if (myResponse) {
+        if (ex.type === "POLL_MCQ" && ex.default_answer) {
+          const choices = JSON.parse(ex.default_answer);
+          const idx = parseInt(myResponse.answer, 10);
+          const letter = !isNaN(idx) && choices[idx] ? String.fromCharCode(65 + idx) : "?";
+          answerSnippet = ` — Choice ${letter}`;
+        } else {
+          answerSnippet = ` — "${myResponse.answer.slice(0, 30)}"`;
+        }
+      } else {
+        answerSnippet = " — no answer";
+      }
       item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span><span class="activity-item-answer">${answerSnippet}</span>`;
       item.addEventListener("click", () => this._showExercise(ex));
       this.listItemsEl.appendChild(item);
@@ -181,152 +153,235 @@ export class StudentActivitiesPanel {
 
   _showExercise(ex) {
     this.currentExerciseId = ex.id;
-    let myResponse = ex.ExerciseResponses.find(
-      (r) => r.student_id === this.student_id,
-    );
-    let isActive = ex.end_ts == null;
-
-    this.instructionsEl.textContent = ex.instructions ?? "";
-
-    if (ex.type === "CODE_FITB") {
-      this.answerInputEl.hidden = true;
-      this.answerDisplayEl.hidden = true;
-      this.codeSubmittedEl.hidden = true;
-
-      // Fill-in-the-blank: student answers in the main code editor widget, not the sidebar.
-      this.submitBtn.hidden = true;
-
-      if (isActive && myResponse) {
-        this.codeSubmittedEl.innerHTML = "";
-        this.codeSubmittedEl.appendChild(
-          createAnswerDisplay(myResponse.answer, "CODE_FITB", { label: "Your submission:", startExpanded: true })
-        );
-        this.codeSubmittedEl.hidden = false;
-      } else if (isActive) {
-        this.answerDisplayEl.textContent = "Answer in the code editor.";
-        this.answerDisplayEl.classList.remove("no-answer");
-        this.answerDisplayEl.hidden = false;
-      } else if (myResponse) {
-        this.codeSubmittedEl.innerHTML = "";
-        this.codeSubmittedEl.appendChild(
-          createAnswerDisplay(myResponse.answer, "CODE_FITB", { label: "Your submission:", startExpanded: true })
-        );
-        this.codeSubmittedEl.hidden = false;
-      } else {
-        this.answerDisplayEl.textContent = "You didn't submit an answer.";
-        this.answerDisplayEl.classList.add("no-answer");
-        this.answerDisplayEl.hidden = false;
-      }
-    } else {
-      // POLL
-
-      if (myResponse) {
-        this.codeSubmittedEl.innerHTML = "";
-        this.codeSubmittedEl.appendChild(
-          createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
-        );
-        this.codeSubmittedEl.hidden = false;
-        this.answerDisplayEl.hidden = true;
-        this.answerInputEl.value = myResponse.answer;
-      } else if (!isActive) {
-        this.codeSubmittedEl.hidden = true;
-        this.answerDisplayEl.textContent = "You didn't submit an answer.";
-        this.answerDisplayEl.classList.add("no-answer");
-        this.answerDisplayEl.hidden = false;
-        this.answerInputEl.value = "";
-      } else {
-        this.codeSubmittedEl.hidden = true;
-        this.answerDisplayEl.hidden = true;
-        this.answerInputEl.value = "";
-      }
-
-      this.answerInputEl.hidden = !isActive;
-      this.submitBtn.hidden = !isActive;
-      this.submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
-    }
-
+    const latestEx = this.manager.getExercise(ex.id) ?? ex;
+    this.exerciseEl.innerHTML = "";
     this.listEl.hidden = true;
     this.exerciseEl.hidden = false;
-  }
-
-  _showCollapsibleCode(code) {
-    this.codeSubmittedEl.innerHTML = "";
-    this.codeSubmittedEl.appendChild(
-      createAnswerDisplay(code, "POLL", { label: "Your submission:", startExpanded: true })
-    );
-    this.codeSubmittedEl.hidden = false;
-  }
-
-  _makeFitbSubmit(ex) {
-    return async (code) => {
-      const res = await fetch("/exercise/response", {
-        body: JSON.stringify({ exerciseId: ex.id, student_id: this.student_id, answer: code }),
-        ...POST_JSON_REQUEST,
-      }).then((r) => r.json());
-      if (res.error) { alert(res.error); return; }
-
-      const idx = ex.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
-      if (idx >= 0) {
-        ex.ExerciseResponses[idx].answer = code;
-      } else {
-        ex.ExerciseResponses.push({ student_id: this.student_id, answer: code });
-      }
-
-      this.codeSubmittedEl.innerHTML = "";
-      this.codeSubmittedEl.appendChild(
-        createAnswerDisplay(code, "CODE_FITB", { label: "Your submission:", startExpanded: true })
-      );
-      this.codeSubmittedEl.hidden = false;
-      this._renderList();
-
-      this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
-        sessionNumber: this.sessionNumber,
-        exerciseId: ex.id,
-        student_id: this.student_id,
-        student_identifier: this.studentIdentifier,
-        answer: code,
-        responseId: res.responseId,
-      });
-    };
-  }
-
-  async _submitAnswer() {
-    let exerciseId = this.currentExerciseId;
-    let ex = this.exercises.find((e) => e.id === exerciseId);
-    let answer = this.answerInputEl.value.trim();
-    if (!answer) return;
-    let res = await fetch("/exercise/response", {
-      body: JSON.stringify({ exerciseId, student_id: this.student_id, answer }),
-      ...POST_JSON_REQUEST,
-    }).then((r) => r.json());
-    if (res.error) {
-      alert(res.error);
-      return;
+    const isActive = latestEx.end_ts == null;
+    const myResponse = latestEx.ExerciseResponses.find((r) => r.student_id === this.student_id);
+    if (latestEx.type === "POLL") {
+      isActive ? this._showPollActive(latestEx, myResponse) : this._showPollComplete(latestEx, myResponse);
+    } else if (latestEx.type === "POLL_MCQ") {
+      isActive ? this._showPollMcqActive(latestEx, myResponse) : this._showPollMcqComplete(latestEx, myResponse);
     }
+  }
 
-    if (ex) {
-      let idx = ex.ExerciseResponses.findIndex(
-        (r) => r.student_id === this.student_id,
-      );
-      if (idx >= 0) {
-        ex.ExerciseResponses[idx].answer = answer;
-      } else {
-        ex.ExerciseResponses.push({ student_id: this.student_id, answer });
-      }
-    }
+  // --- Shared helpers ---
 
-    this._showCollapsibleCode(answer);
-    this.submitBtn.textContent = "Resubmit";
-    this._renderList();
+  _buildScreenHeader() {
+    const header = document.createElement("div");
+    header.className = "poll-activity-header";
+    const backBtn = document.createElement("button");
+    backBtn.className = "poll-back-btn";
+    backBtn.textContent = "← Back to list";
+    backBtn.addEventListener("click", () => this._showList());
+    header.appendChild(backBtn);
+    this.exerciseEl.appendChild(header);
+  }
 
-    this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
-      sessionNumber: this.sessionNumber,
-      exerciseId,
-      student_id: this.student_id,
-      student_identifier: this.studentIdentifier,
-      answer,
-      responseId: res.responseId,
+  _buildCodeEditorIfPresent(code) {
+    if (!code) return;
+    const codeBoxEl = document.createElement("div");
+    codeBoxEl.className = "poll-code-box";
+    new EditorView({
+      state: EditorState.create({
+        doc: code,
+        extensions: [minimalSetup, python(), EditorView.lineWrapping, EditorView.editable.of(false)],
+      }),
+      parent: codeBoxEl,
     });
+    this.exerciseEl.appendChild(codeBoxEl);
+  }
+
+  _buildInstructions(text) {
+    const el = document.createElement("div");
+    el.className = "poll-instructions-display";
+    el.textContent = text ?? "";
+    this.exerciseEl.appendChild(el);
+  }
+
+  _updateLocalResponse(ex, answer) {
+    const managerEx = this.manager.getExercise(ex.id);
+    if (!managerEx) return;
+    const idx = managerEx.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
+    if (idx >= 0) {
+      managerEx.ExerciseResponses[idx].answer = answer;
+    } else {
+      managerEx.ExerciseResponses.push({ student_id: this.student_id, answer });
+    }
+  }
+
+  // --- Screen 2: POLL active ---
+
+  _showPollActive(ex, myResponse) {
+    this._buildScreenHeader();
+    this._buildCodeEditorIfPresent(ex.instructor_code);
+    this._buildInstructions(ex.instructions);
+
+    if (myResponse) {
+      const submittedEl = document.createElement("div");
+      submittedEl.appendChild(
+        createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
+      );
+      this.exerciseEl.appendChild(submittedEl);
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "poll-instructions-input";
+    textarea.placeholder = "Your answer...";
+    textarea.maxLength = 500;
+    textarea.value = myResponse?.answer ?? "";
+    this.exerciseEl.appendChild(textarea);
+
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "poll-submit-btn";
+    submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
+    submitBtn.addEventListener("click", async () => {
+      const answer = textarea.value.trim();
+      if (!answer) return;
+      submitBtn.disabled = true;
+      try {
+        await this.manager.submitResponse({ exerciseId: ex.id, answer });
+        this._updateLocalResponse(ex, answer);
+        this._renderList();
+        this._showExercise(ex);
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+    this.exerciseEl.appendChild(submitBtn);
+  }
+
+  // --- Screen 3: POLL complete ---
+
+  _showPollComplete(ex, myResponse) {
+    this._buildScreenHeader();
+    this._buildCodeEditorIfPresent(ex.instructor_code);
+    this._buildInstructions(ex.instructions);
+
+    if (myResponse) {
+      const submittedEl = document.createElement("div");
+      submittedEl.appendChild(
+        createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
+      );
+      this.exerciseEl.appendChild(submittedEl);
+    } else {
+      const noAnswerEl = document.createElement("div");
+      noAnswerEl.className = "no-answer-message";
+      noAnswerEl.textContent = "You didn't submit an answer.";
+      this.exerciseEl.appendChild(noAnswerEl);
+    }
+  }
+
+  // --- Screen 4: POLL_MCQ active ---
+
+  _showPollMcqActive(ex, myResponse) {
+    this._buildScreenHeader();
+    this._buildCodeEditorIfPresent(ex.instructor_code);
+    this._buildInstructions(ex.instructions);
+
+    const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
+    const selectedIndex = myResponse ? parseInt(myResponse.answer, 10) : null;
+
+    const choicesEl = document.createElement("div");
+    choicesEl.className = "poll-mcq-choices-display";
+
+    choices.forEach((choice, i) => {
+      const item = document.createElement("div");
+      item.className = "poll-mcq-choice-item";
+      item.style.cursor = "pointer";
+
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `mcq-${ex.id}`;
+      radio.value = String(i);
+      radio.checked = selectedIndex === i;
+      radio.style.flexShrink = "0";
+      radio.style.marginRight = "6px";
+
+      const label = document.createElement("span");
+      label.className = "poll-mcq-choice-label";
+      label.textContent = String.fromCharCode(65 + i) + ".";
+
+      const text = document.createElement("span");
+      text.className = "poll-mcq-choice-text";
+      text.textContent = choice;
+
+      item.addEventListener("click", () => { radio.checked = true; });
+
+      item.appendChild(radio);
+      item.appendChild(label);
+      item.appendChild(text);
+      choicesEl.appendChild(item);
+    });
+    this.exerciseEl.appendChild(choicesEl);
+
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "poll-submit-btn";
+    submitBtn.textContent = myResponse ? "Change Answer" : "Submit";
+    submitBtn.addEventListener("click", async () => {
+      const checked = choicesEl.querySelector(`input[name="mcq-${ex.id}"]:checked`);
+      if (!checked) return;
+      const answer = checked.value;
+      submitBtn.disabled = true;
+      try {
+        await this.manager.submitResponse({ exerciseId: ex.id, answer });
+        this._updateLocalResponse(ex, answer);
+        this._renderList();
+        this._showExercise(ex);
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+    this.exerciseEl.appendChild(submitBtn);
+  }
+
+  // --- Screen 5: POLL_MCQ complete ---
+
+  _showPollMcqComplete(ex, myResponse) {
+    this._buildScreenHeader();
+    this._buildCodeEditorIfPresent(ex.instructor_code);
+    this._buildInstructions(ex.instructions);
+
+    const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
+
+    if (myResponse) {
+      const selectedIdx = parseInt(myResponse.answer, 10);
+      const choicesEl = document.createElement("div");
+      choicesEl.className = "poll-mcq-choices-display";
+
+      choices.forEach((choice, i) => {
+        const item = document.createElement("div");
+        item.className = "poll-mcq-choice-item";
+        const isSelected = i === selectedIdx;
+        if (isSelected) {
+          item.style.fontWeight = "600";
+          item.style.color = "var(--color-active, #2e7d32)";
+        }
+
+        const label = document.createElement("span");
+        label.className = "poll-mcq-choice-label";
+        label.textContent = String.fromCharCode(65 + i) + ".";
+
+        const text = document.createElement("span");
+        text.className = "poll-mcq-choice-text";
+        text.textContent = isSelected ? choice + " ✓" : choice;
+
+        item.appendChild(label);
+        item.appendChild(text);
+        choicesEl.appendChild(item);
+      });
+      this.exerciseEl.appendChild(choicesEl);
+    } else {
+      const noAnswerEl = document.createElement("div");
+      noAnswerEl.className = "no-answer-message";
+      noAnswerEl.textContent = "You didn't submit an answer.";
+      this.exerciseEl.appendChild(noAnswerEl);
+    }
   }
 }
 

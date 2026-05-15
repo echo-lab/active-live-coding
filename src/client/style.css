@@ -997,6 +997,13 @@ td {
   font-style: italic;
 }
 
+.no-answer-message {
+  color: #888;
+  font-style: italic;
+  font-size: 14px;
+  padding: 8px 0;
+}
+
 .cm-version-block-widget {
   width: 100%;
   border: 2px solid #646cffab;
