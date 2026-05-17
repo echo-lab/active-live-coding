@@ -919,43 +919,16 @@ class CodeExerciseSummaryWidget {
     this.codeExerciseEl = codeExerciseEl;
     this._onBack = onBack;
     this._responsesEl = null;
-
-    const readOnlyExtensions = [
-      minimalSetup,
-      python(),
-      EditorView.lineWrapping,
-      EditorView.editable.of(false),
-    ];
-
-    this.codeEditorEl = document.createElement("div");
-    this.codeView = new EditorView({
-      state: EditorState.create({ doc: "", extensions: readOnlyExtensions }),
-      parent: this.codeEditorEl,
-    });
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
-    this.codeEditorEl.remove();
     this.codeExerciseEl.innerHTML = "";
-
-    const code = ex.instructor_code ?? "";
-    this.codeView.dispatch({
-      changes: { from: 0, to: this.codeView.state.doc.length, insert: code },
-    });
 
     const backBtn = document.createElement("button");
     backBtn.className = "poll-back-btn";
     backBtn.textContent = "← Back to list";
     backBtn.addEventListener("click", this._onBack);
     this.codeExerciseEl.appendChild(backBtn);
-
-    this.codeEditorEl.hidden = !code;
-    this.codeExerciseEl.appendChild(this.codeEditorEl);
-
-    const instructionsEl = document.createElement("div");
-    instructionsEl.className = "poll-instructions-display";
-    instructionsEl.textContent = ex.instructions ?? "";
-    this.codeExerciseEl.appendChild(instructionsEl);
 
     this._responsesEl = document.createElement("div");
     this.codeExerciseEl.appendChild(this._responsesEl);

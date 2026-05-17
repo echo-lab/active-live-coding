@@ -230,12 +230,6 @@ export class StudentVersionBlockWidget extends WidgetType {
     const leftGroup = document.createElement("div");
     leftGroup.className = "cm-version-block-left";
 
-    const hashBtn = document.createElement("button");
-    hashBtn.className = "cm-version-block-btn cm-version-block-hash";
-    hashBtn.textContent = "#";
-    hashBtn.disabled = true;
-    leftGroup.appendChild(hashBtn);
-
     const tabsContainer = document.createElement("div");
     tabsContainer.className = "cm-version-block-tabs";
     this.tabsContainer = tabsContainer;
@@ -407,11 +401,11 @@ export class VersionBlockWidget extends WidgetType {
     const leftGroup = document.createElement("div");
     leftGroup.className = "cm-version-block-left";
 
-    const hashBtn = document.createElement("button");
-    hashBtn.className = "cm-version-block-btn cm-version-block-hash";
-    hashBtn.textContent = "#";
-    hashBtn.title = "Version block options";
-    leftGroup.appendChild(hashBtn);
+    // const hashBtn = document.createElement("button");
+    // hashBtn.className = "cm-version-block-btn cm-version-block-hash";
+    // hashBtn.textContent = "#";
+    // hashBtn.title = "Version block options";
+    // leftGroup.appendChild(hashBtn);
 
     const tabsContainer = document.createElement("div");
     tabsContainer.className = "cm-version-block-tabs";
@@ -426,7 +420,7 @@ export class VersionBlockWidget extends WidgetType {
       e.preventDefault();
       await this._createVariant();
     });
-    leftGroup.appendChild(addBtn);
+    this.addBtn = addBtn;
 
     // Right group: ask students + X
     const rightGroup = document.createElement("div");
@@ -467,6 +461,7 @@ export class VersionBlockWidget extends WidgetType {
     for (let i = 0; i < this.variants.length; i++) {
       tabsContainer.appendChild(this._makeTabEl(i));
     }
+    tabsContainer.appendChild(addBtn);
     this._updateDeleteBtnVisibility();
 
     return container;
@@ -702,7 +697,7 @@ export class VersionBlockWidget extends WidgetType {
       this.variantContainer.appendChild(variant.el);
       const newIndex = this.variants.length - 1;
       const tabEl = this._makeTabEl(newIndex);
-      this.tabsContainer.appendChild(tabEl);
+      this.tabsContainer.insertBefore(tabEl, this.addBtn);
       this._updateDeleteBtnVisibility();
       this._selectTab(newIndex);
     } catch (err) {
