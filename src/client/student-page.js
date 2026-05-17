@@ -47,7 +47,8 @@ const { openPanel: openActivitiesPanel } = makeActivitiesPanelResizable(
   toggleActivitiesBtn,
   /*gutterWidth=*/ 12,
   /*minCodeWidth=*/ 400,
-  /*minActivitiesWidth=*/ 300
+  /*minActivitiesWidth=*/ 300,
+  /*initiallyCollapsed*/true
 );
 
 // Handle the email stuff.
