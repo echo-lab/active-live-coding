@@ -289,8 +289,12 @@ export class InstructorCodeEditor {
   getSelectedCode() {
     const state = this.view.state;
     const doc = state.doc;
-    const { from, to } = state.selection.main;
+    let { from, to } = state.selection.main;
     if (from === to) return "";
+
+    // Select the whole lines
+    from = doc.lineAt(from).from;
+    to = doc.lineAt(to).from == to ? to - 1 : doc.lineAt(to).to;
 
     const decorations = state.field(versionBlocksField);
     let result = "";
