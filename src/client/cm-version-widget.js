@@ -40,6 +40,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     // Student exercise state
     this._activitiesManager = activitiesManager;
     this._exerciseId = null;
+    this._exerciseReadOnly = false;
     this._studentAnswerEl = null;
     this._studentAnswerView = null;
     this._studentTabEl = null;
@@ -145,6 +146,7 @@ export class StudentVersionBlockWidget extends WidgetType {
   _activateExercise(exercise, { readOnly = false } = {}) {
     if (this._studentAnswerEl) return; // guard against double activation
     this._exerciseId = exercise.id;
+    this._exerciseReadOnly = readOnly;
 
     const priorAnswer = exercise.ExerciseResponses?.[0]?.answer;
     const initialDoc = priorAnswer ?? exercise.default_answer ?? "";
@@ -190,6 +192,7 @@ export class StudentVersionBlockWidget extends WidgetType {
   }
 
   _deactivateExercise() {
+    this._exerciseReadOnly = true;
     if (this._submitBtn) {
       this._submitBtn.hidden = true;
       this._submitBtn.disabled = true;
@@ -273,7 +276,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     if (this._studentAnswerEl) {
       container.appendChild(this._studentAnswerEl);
       this.tabsContainer.appendChild(this._studentTabEl);
-      this._submitBtn.hidden = false;
+      this._submitBtn.hidden = this._exerciseReadOnly;
       this._selectStudentTab();
     } else if (this._activitiesManager) {
       const ex = this._activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
