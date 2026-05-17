@@ -1010,9 +1010,7 @@ export class InstructorActivitiesPanel {
     });
 
     this.pollButton.addEventListener("click", () => {
-      this.openPanel();
-      this.pollWidget.showCreate();
-      this._showView("poll");
+      this.openPollCreate();
     });
 
     this.#subscribeToManager();
@@ -1060,6 +1058,12 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
       this.pollWidget.updateResponseCount(responseCount);
     });
+  }
+
+  openPollCreate() {
+    this.openPanel();
+    this.pollWidget.showCreate();
+    this._showView("poll");
   }
 
   _showView(name) {

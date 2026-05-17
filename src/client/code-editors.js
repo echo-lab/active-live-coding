@@ -11,7 +11,8 @@ import {
 } from "./cm-extensions.js";
 import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from "./cm-diff-extensions.js";
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
-import { addVersionBlockEffect, removeVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionWidgetExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
+import { addVersionBlockEffect, removeVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionBlockExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
+import { versionWidgetTooltipExtensions } from "./cm-tooltip.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -214,6 +215,7 @@ export class InstructorCodeEditor {
     sessionNumber,
     versionBlocks,
     activitiesManager,
+    onCreatePoll,
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
@@ -231,7 +233,8 @@ export class InstructorCodeEditor {
         ),
         capLength,
         fillInBlankViewField,
-        ...versionWidgetExtensions(this.createNewVersionBlock.bind(this)),
+        ...versionBlockExtensions(),
+        ...versionWidgetTooltipExtensions(this.createNewVersionBlock.bind(this), onCreatePoll),
       ],
     });
 

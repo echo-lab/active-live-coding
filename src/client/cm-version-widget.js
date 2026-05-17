@@ -1,5 +1,5 @@
 import { StateEffect, StateField, Facet, EditorState, Text, ChangeSet } from "@codemirror/state";
-import { EditorView, showTooltip, WidgetType, Decoration, keymap } from "@codemirror/view";
+import { EditorView, WidgetType, Decoration, keymap } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
@@ -16,7 +16,7 @@ import { POST_JSON_REQUEST, PATCH_JSON_REQUEST } from "./utils.js";
 // Registry of live widget instances keyed by versionBlockId.
 const widgetInstances = new Map();
 
-// Callbacks for instructor-side actions (set via versionWidgetExtensions).
+// Callbacks for instructor-side actions (set via versionBlockExtensions).
 let _versionBlockCallbacks = null;
 
 // Whether the inner editors should be read-only (set to true on student side).
@@ -866,120 +866,6 @@ export const versionBlocksField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-// ============================================================
-// MARK: Tooltip for instructor to create a Version Widget
-// ============================================================
-
-export const handleCreateVersionBlock = Facet.define({
-  combine: (values) => (values.length ? values.at(-1) : null),
-});
-
-const showVersionWidgetTooltip = StateEffect.define();
-const hideVersionWidgetTooltip = StateEffect.define();
-
-export const versionWidgetTooltipField = StateField.define({
-  create() {
-    return null;
-  },
-  update(tooltip, tr) {
-    if (tr.docChanged || tr.selection) tooltip = null;
-    for (let e of tr.effects) {
-      if (e.is(showVersionWidgetTooltip)) tooltip = e.value;
-      if (e.is(hideVersionWidgetTooltip)) tooltip = null;
-    }
-    return tooltip;
-  },
-  provide: (f) =>
-    showTooltip.computeN([f], (state) => {
-      let t = state.field(f);
-      return t ? [t] : [];
-    }),
-});
-
-function createVersionWidgetTooltipDOM(view) {
-  let container = document.createElement("div");
-  container.className = "cm-tooltip-version-widget";
-
-  function handleClick(autoStartExercise) {
-    view.dispatch({ effects: hideVersionWidgetTooltip.of(null) });
-    let state = view.state;
-    let { from, to } = state.selection.main;
-    let startLine = state.doc.lineAt(from);
-    let endLine = state.doc.lineAt(to);
-    let lineStart = startLine.number;
-    let lineEnd = to > from && to === endLine.from ? endLine.number - 1 : endLine.number;
-    let firstLine = state.doc.line(lineStart);
-    let lastLine = state.doc.line(lineEnd);
-    let variantCode = state.doc.sliceString(firstLine.from, lastLine.to);
-    let callback = state.facet(handleCreateVersionBlock);
-    callback && callback({ variantCode, from: firstLine.from, to: lastLine.to, autoStartExercise });
-  }
-
-  let newVersionOption = document.createElement("div");
-  newVersionOption.className = "cm-tooltip-version-option";
-  newVersionOption.textContent = "New Version";
-  newVersionOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleClick(false); });
-
-  let askStudentsOption = document.createElement("div");
-  askStudentsOption.className = "cm-tooltip-version-option";
-  askStudentsOption.textContent = "Create Exercise";
-  askStudentsOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleClick(true); });
-
-  // container.appendChild(newVersionOption);
-  container.appendChild(askStudentsOption);
-  return container;
-}
-
-export const versionWidgetContextMenu = EditorView.domEventHandlers({
-  contextmenu(event, view) {
-    event.preventDefault();
-    let pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    if (pos == null) return true;
-
-    let { from, to } = view.state.selection.main;
-    if (pos < from || pos > to) {
-      view.dispatch({ selection: { anchor: pos } });
-    }
-
-    let tooltipPos = view.state.selection.main.head;
-    view.dispatch({
-      effects: showVersionWidgetTooltip.of({
-        pos: tooltipPos,
-        above: true,
-        arrow: true,
-        create: (v) => ({ dom: createVersionWidgetTooltipDOM(v) }),
-      }),
-    });
-    return true;
-  },
-});
-
-export const versionWidgetTooltipTheme = EditorView.baseTheme({
-  ".cm-tooltip.cm-tooltip-version-widget": {
-    backgroundColor: "#2a7a2a",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    padding: "2px 0",
-    "& .cm-tooltip-arrow:before": {
-      borderTopColor: "#2a7a2a",
-    },
-    "& .cm-tooltip-arrow:after": {
-      borderTopColor: "transparent",
-    },
-  },
-  ".cm-tooltip-version-option": {
-    padding: "3px 10px",
-    cursor: "pointer",
-  },
-  ".cm-tooltip-version-option:hover": {
-    backgroundColor: "#3a9a3a",
-  },
-  ".cm-tooltip-version-option:not(:last-child)": {
-    borderBottom: "1px solid rgba(255,255,255,0.25)",
-  },
-});
-
 // Rejects any transaction that would modify the version block line or its surrounding newlines.
 const versionBlockProtection = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged) return tr;
@@ -996,13 +882,6 @@ const versionBlockProtection = EditorState.transactionFilter.of((tr) => {
   return blocked ? [] : tr;
 });
 
-export function versionWidgetExtensions(onCreateVersionBlock) {
-  return [
-    handleCreateVersionBlock.of(onCreateVersionBlock),
-    versionWidgetTooltipField,
-    versionWidgetContextMenu,
-    versionWidgetTooltipTheme,
-    versionBlocksField,
-    versionBlockProtection,
-  ];
+export function versionBlockExtensions() {
+  return [versionBlocksField, versionBlockProtection];
 }

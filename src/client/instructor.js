@@ -15,9 +15,6 @@ import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
-import {
-  versionWidgetExtensions,
-} from "./cm-version-widget.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -100,6 +97,8 @@ function initialize({
     userId,
   });
 
+  let activitiesPanel;
+
   let codeEditor = new InstructorCodeEditor({
     node: codeContainer,
     socket,
@@ -108,6 +107,7 @@ function initialize({
     sessionNumber,
     versionBlocks,
     activitiesManager,
+    onCreatePoll: () => activitiesPanel?.openPollCreate(),
   });
 
   let codeRunner = new PythonCodeRunner();
@@ -146,7 +146,7 @@ function initialize({
     },
   );
 
-  new InstructorActivitiesPanel(activitiesManager, {
+  activitiesPanel = new InstructorActivitiesPanel(activitiesManager, {
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getSelectedCode: () => codeEditor.getSelectedCode(),
