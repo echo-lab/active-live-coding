@@ -622,7 +622,7 @@ class PollMcqBuilder {
     this._clearAll();
     choices.slice(0, 5).forEach((choice, i) => {
       if (i >= this._rows.length) this._addRowInternal();
-      this._rows[i].inputEl.value = choice;
+      this._rows[i].inputEl.value = choice.replaceAll('\\n', '\n');
     });
     this._updateAddBtn();
   }
