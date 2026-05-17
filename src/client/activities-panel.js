@@ -1043,6 +1043,11 @@ export class InstructorActivitiesPanel {
     this._showView("poll");
   }
 
+  openActivePoll(exercise) {
+    this.openPanel();
+    this._showActiveView(exercise);
+  }
+
   _showView(name) {
     this.listEl.hidden = name !== "list";
     this.pollEl.hidden = name !== "poll";

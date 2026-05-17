@@ -107,7 +107,16 @@ function initialize({
     sessionNumber,
     versionBlocks,
     activitiesManager,
-    onCreatePoll: () => activitiesPanel?.openPollCreate(),
+    onCreatePoll: () => {
+      const activePoll = activitiesManager
+        .getActiveExercises()
+        .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
+      if (activePoll) {
+        activitiesPanel?.openActivePoll(activePoll);
+      } else {
+        activitiesPanel?.openPollCreate();
+      }
+    },
   });
 
   let codeRunner = new PythonCodeRunner();
