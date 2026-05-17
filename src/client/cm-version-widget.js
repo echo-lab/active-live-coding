@@ -186,6 +186,7 @@ export class StudentVersionBlockWidget extends WidgetType {
       if (!readOnly) {
         this._submitBtn.hidden = false;
         if (priorAnswer) this._submitBtn.textContent = "Resubmit";
+        this.variantContainer.classList.add("exercise-open");
       }
       this._selectStudentTab();
     }
@@ -202,6 +203,7 @@ export class StudentVersionBlockWidget extends WidgetType {
         effects: StateEffect.appendConfig.of(EditorView.editable.of(false)),
       });
     }
+    this.variantContainer?.classList.remove("exercise-open");
   }
 
   async _submitAnswer() {
@@ -277,6 +279,7 @@ export class StudentVersionBlockWidget extends WidgetType {
       container.appendChild(this._studentAnswerEl);
       this.tabsContainer.appendChild(this._studentTabEl);
       this._submitBtn.hidden = this._exerciseReadOnly;
+      if (!this._exerciseReadOnly) container.classList.add("exercise-open");
       this._selectStudentTab();
     } else if (this._activitiesManager) {
       const ex = this._activitiesManager.getExerciseForVersionBlock(this.versionBlockId);

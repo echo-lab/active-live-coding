@@ -1179,8 +1179,19 @@ td {
   50%       { border-color: #a600ff; }
 }
 
+@keyframes cm-version-block-toolbar-flash {
+  /* 0%, 100% { border-color: #646cffab; } */
+  0%, 100% { background-color: #646cff3b; }
+  50%       { background-color: #646cff7b; }
+}
+
 .cm-version-block-widget.exercise-open {
-  animation: cm-version-block-border-flash 2.5s ease-in-out infinite;
+  /* animation: cm-version-block-border-flash 2.5s ease-in-out infinite; */
+  border: 2px dashed #ff9600;
+}
+
+.cm-version-block-widget.exercise-open .cm-version-block-toolbar{
+  animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite;
 }
 
 .cm-version-block-timer {
