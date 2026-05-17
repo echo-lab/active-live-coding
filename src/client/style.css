@@ -376,6 +376,7 @@ pre {
 }
 
 /* Poll button */
+.poll-finish-button,
 #poll-button {
   padding: 6px 12px;
   border: 1px solid #ccc;
@@ -385,6 +386,7 @@ pre {
   font-size: 14px;
 }
 
+.poll-finish-button:hover,
 #poll-button:hover {
   background: #e8e8ff;
   border-color: #646cff;
@@ -868,6 +870,17 @@ td {
   align-items: center;
   width: 100%;
   margin-bottom: 14px;
+}
+
+.poll-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: small;
+}
+
+.poll-header-right button {
+  border-color:darkgrey;
 }
 
 .poll-code-box {

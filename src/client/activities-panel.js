@@ -752,8 +752,11 @@ class PollExerciseWidget {
     backBtn.addEventListener("click", this._onBack);
     this._timerEl = document.createElement("div");
     this._timerEl.className = "poll-timer";
+    this._headerRightEl = document.createElement("div");
+    this._headerRightEl.className = "poll-header-right";
+    this._headerRightEl.appendChild(this._timerEl);
     header.appendChild(backBtn);
-    header.appendChild(this._timerEl);
+    header.appendChild(this._headerRightEl);
     this.pollEl.appendChild(header);
   }
 
@@ -830,13 +833,14 @@ class PollExerciseWidget {
     let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
     this._responseCountEl = document.createElement("div");
     this._responseCountEl.className = "poll-response-count";
-    this._responseCountEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
+    this._responseCountEl.textContent = `Responses so far: ${count}`;
     this.pollEl.appendChild(this._responseCountEl);
 
     const finishBtn = document.createElement("button");
     finishBtn.textContent = "Finish";
+    finishBtn.className = "poll-finish-button";
     finishBtn.addEventListener("click", () => this._manager.finishPollExercise());
-    this.pollEl.appendChild(finishBtn);
+    this._headerRightEl.appendChild(finishBtn);
 
     this._startTimer(ex.start_ts);
   }
@@ -887,7 +891,7 @@ class PollExerciseWidget {
 
   updateResponseCount(count) {
     if (this._responseCountEl) {
-      this._responseCountEl.textContent = `${count} response${count !== 1 ? "s" : ""}`;
+      this._responseCountEl.textContent = `Responses so far: ${count}`;
     }
   }
 
