@@ -252,8 +252,11 @@ export class StudentVersionBlockWidget extends WidgetType {
     this._submitBtn = submitBtn;
     rightGroup.appendChild(submitBtn);
 
-    toolbar.appendChild(leftGroup);
-    toolbar.appendChild(rightGroup);
+    const toolbarInner = document.createElement("div");
+    toolbarInner.className = "cm-version-block-toolbar-inner";
+    toolbarInner.appendChild(leftGroup);
+    toolbarInner.appendChild(rightGroup);
+    toolbar.appendChild(toolbarInner);
     container.appendChild(toolbar);
 
     this.variantContainer = container;
@@ -445,8 +448,11 @@ export class VersionBlockWidget extends WidgetType {
     });
     rightGroup.appendChild(closeBtn);
 
-    this.toolbar.appendChild(leftGroup);
-    this.toolbar.appendChild(rightGroup);
+    const toolbarInner = document.createElement("div");
+    toolbarInner.className = "cm-version-block-toolbar-inner";
+    toolbarInner.appendChild(leftGroup);
+    toolbarInner.appendChild(rightGroup);
+    this.toolbar.appendChild(toolbarInner);
     container.appendChild(this.toolbar);
 
     // Editor area
