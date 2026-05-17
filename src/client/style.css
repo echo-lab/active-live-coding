@@ -1033,7 +1033,7 @@ td {
 .cm-version-block-widget::after {
   content: '';
   position: absolute;
-  left: calc(900px + 16px);
+  left: calc(750px + 16px);
   top: 0;
   bottom: 0;
   border-left: 1px dashed #646cffab;
@@ -1052,7 +1052,7 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  max-width: 900px;
+  max-width: 750px;
 }
 
 .cm-version-block-left {
