@@ -196,8 +196,6 @@ export class StudentCodeEditor {
 
     result += doc.sliceString(pos, doc.length);
     return result;
-    // TODO: implement this like it is implemented for the InstructorCodeEditor
-    return this.view.state.doc.toString();
   }
 
   stopFollowing() {

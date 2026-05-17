@@ -66,6 +66,10 @@ export class StudentVersionBlockWidget extends WidgetType {
   }
 
   getActiveVariant() {
+    if (this._studentTabSelected && this._studentAnswerView) {
+      // This is kind of a hack -- it would be better if we created a dedicated class in code-editors.js.
+      return { editor: { currentCode: () => this._studentAnswerView.state.doc.toString() } };
+    }
     return this.variants[this.selectedIndex];
   }
 

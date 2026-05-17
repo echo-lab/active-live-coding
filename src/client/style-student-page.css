@@ -120,13 +120,6 @@
   font-size: 0.7em;
 }
 
-#playground-code-container #run-button {
-  position: absolute;
-  top: 10px;
-  right: 5px;
-  z-index: 999;
-  opacity: 95%;
-}
 
 #exercise-submit-btn {
   position: absolute;
@@ -147,9 +140,9 @@
   border: 1px solid #4a90e2;
 }
 
-#playground-code-container.exercise-active #run-button {
+/* #playground-code-container.exercise-active #run-button {
   width: 90px;
-}
+} */
 
 @keyframes flash-tab-change {
   from {

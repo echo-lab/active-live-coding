@@ -99,13 +99,31 @@ async function initialize({
     activitiesManager,
   });
 
-  // Set up the run button for when we need it...
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(codeOutputsEl);
   const fitbOnRun = async (code) => {
     const res = await codeRunner.asyncRun(code);
     consoleOutput.addResult({ fileName: "<exercise>", ...res });
   };
+
+  let runInteractions = new RunInteractions({
+    runButtonEl,
+    codeEditor,
+    codeRunner,
+    consoleOutput,
+    sessionNumber,
+    source: CLIENT_TYPE.STUDENT,
+    userId,
+  });
+
+  function syncRunButtonVisibility() {
+    runButtonEl.hidden = !activitiesManager.getActiveExercises()
+      .some((ex) => ex.type === "CODE_VARIANT");
+  }
+  syncRunButtonVisibility();
+  activitiesManager.addEventListener("exerciseCreated", syncRunButtonVisibility);
+  activitiesManager.addEventListener("exerciseFinished", syncRunButtonVisibility);
+
   socket.on(
     SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN,
     (msg) => sessionActive && consoleOutput.addResult(msg)

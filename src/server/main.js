@@ -358,6 +358,8 @@ app.post("/record-user-action", async (req, res) => {
           );
         }
         await lecture.createInstructorAction(record, { transaction: t });
+      } else if (source === CLIENT_TYPE.STUDENT) {
+        console.log("Student action logging not supported.")
       } else {
         throw new Error(`User action with unknown source: ${source}`);
       }
