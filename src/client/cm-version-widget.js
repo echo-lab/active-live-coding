@@ -478,28 +478,23 @@ export class VersionBlockWidget extends WidgetType {
     return true;
   }
 
-  async dissolve() {
-    try {
-      const res = await fetch(`/version-block/${this.versionBlockId}`, { method: "DELETE" });
-      const { ok, error } = await res.json();
-      if (!ok || error) { console.error("Failed to dissolve version block:", error); return; }
-    } catch (err) {
-      console.error("Failed to dissolve version block:", err); return;
-    }
-
-    this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, {
-      sessionId: this.sessionNumber,
-      versionBlockId: this.versionBlockId,
+  // Takes a CodeMirror state and returns the position of the VersionBlockWidget.
+  getPosition(state) {
+    const decorations = state.field(versionBlocksField);
+    let from = null, to = null;
+    decorations.between(0, state.doc.length, (f, t, deco) => {
+      if (deco.spec.widget?.versionBlockId === this.versionBlockId) {
+        from = f; to = t; return false;
+      }
     });
+    return {from, to};
+  }
 
+  async dissolve() {
+    await this._onDissolve?.();  // from InstructorCodeEditor.
+    // Cleanup
     for (const { editor } of this.variants) { editor?.destroy(); }
     this._clearExerciseState();
-
-    this._outerView?.dispatch({
-      effects: removeVersionBlockEffect.of({ versionBlockId: this.versionBlockId }),
-    });
-
-    this._onDissolve?.();
   }
 
   _clearExerciseState() {

@@ -81,7 +81,7 @@ export class StudentCodeEditor {
   }
 
   addVersionBlock({from, to, versionBlockId, variants}) {
-    console.log("adding version block: ", {from, to, versionBlockId, variants});
+    // console.log("adding version block: ", {from, to, versionBlockId, variants});
     const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager});
     this.versionBlocks.push(widget);
     this.view.dispatch({
@@ -251,7 +251,7 @@ export class InstructorCodeEditor {
         activitiesManager: this.activitiesManager,
         getInstructorCode: () => this.codeWithVariantAsPlaceholder(block.id),
         view: this.view,
-        onDissolve: () => { delete this.versionBlocks[block.id]; },
+        onDissolve: () => this.dissolveVersionBlock(block.id),
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -266,6 +266,28 @@ export class InstructorCodeEditor {
 
   getDocVersion() {
     return this.docVersion;
+  }
+
+  async dissolveVersionBlock(versionBlockId) {
+    await this._destroyVersionBlockBackend(versionBlockId);
+
+    const widget = this.versionBlocks[versionBlockId];
+    delete this.versionBlocks[versionBlockId];
+
+    let {from, to} = widget.getPosition(this.view.state);
+    if (from == null) {
+      console.log("Version block deleted, but not present in editor:", widget);
+      return;
+    }
+    const code = widget?.getActiveVariant()?.editor?.currentCode() ?? "";
+
+    // Need to do this in two separate transactions, for some reason!
+    this.view.dispatch({
+      effects: removeVersionBlockEffect.of({ versionBlockId }),
+    });
+    this.view.dispatch({
+      changes: { from, to, insert: code },
+    });
   }
 
   currentCode() {
@@ -369,7 +391,7 @@ export class InstructorCodeEditor {
           activitiesManager: this.activitiesManager,
           getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId),
           view: this.view,
-          onDissolve: () => { delete this.versionBlocks[versionBlockId]; },
+          onDissolve: () => this.dissolveVersionBlock(versionBlockId),
         });
       this.versionBlocks[versionBlockId] = widget;
       this.view.dispatch({
@@ -385,6 +407,22 @@ export class InstructorCodeEditor {
       console.error("Failed to create version block:", err);
     }
   }
+
+  async _destroyVersionBlockBackend(versionBlockId) {
+    try {
+      const res = await fetch(`/version-block/${versionBlockId}`, { method: "DELETE" });
+      const { ok, error } = await res.json();
+      if (!ok || error) { console.error("Failed to dissolve version block:", error); return; }
+    } catch (err) {
+      console.error("Failed to dissolve version block:", err); return;
+    }
+
+    this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, {
+      sessionId: this.sessionNumber,
+      versionBlockId,
+    });
+  }
+
 
   broadcastInstructorChanges(viewUpdate) {
     if (!this.active) return;
