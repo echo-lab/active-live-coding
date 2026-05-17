@@ -314,6 +314,14 @@ export class StudentActivitiesPanel {
       item.appendChild(radio);
       item.appendChild(label);
       item.appendChild(text);
+      if (selectedIndex === i) {
+        const yourAnswerEl = document.createElement("span");
+        yourAnswerEl.className = "your-answer-label";
+        yourAnswerEl.textContent = "(your answer)";
+        yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
+        yourAnswerEl.style.marginLeft = "8px";
+        item.appendChild(yourAnswerEl);
+      }
       choicesEl.appendChild(item);
     });
     this.exerciseEl.appendChild(choicesEl);
@@ -360,7 +368,6 @@ export class StudentActivitiesPanel {
         const isSelected = i === selectedIdx;
         if (isSelected) {
           item.style.fontWeight = "600";
-          item.style.color = "var(--color-active, #2e7d32)";
         }
 
         const label = document.createElement("span");
@@ -369,10 +376,18 @@ export class StudentActivitiesPanel {
 
         const text = document.createElement("span");
         text.className = "poll-mcq-choice-text";
-        text.textContent = isSelected ? choice + " ✓" : choice;
+        text.textContent = choice;
 
         item.appendChild(label);
         item.appendChild(text);
+        if (isSelected) {
+          const yourAnswerEl = document.createElement("span");
+          yourAnswerEl.className = "your-answer-label";
+          yourAnswerEl.textContent = "(your answer)";
+          yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
+          yourAnswerEl.style.marginLeft = "8px";
+          item.appendChild(yourAnswerEl);
+        }
         choicesEl.appendChild(item);
       });
       this.exerciseEl.appendChild(choicesEl);

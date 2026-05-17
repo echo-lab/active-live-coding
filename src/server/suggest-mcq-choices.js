@@ -19,7 +19,7 @@ function buildPrompt({ instructions, instructor_code, full_instructor_code }) {
   let prompt = `You are helping an instructor create a multiple-choice question for a live coding lecture.
 Suggest 4 plausible answer choices. Include one correct answer and three plausible but incorrect distractors.
 If possible, the incorrect answers should also have educational value (e.g., surfacing common misconceptions, etc.).
-Return ONLY a JSON array of exactly 4 short strings. No other text.
+Return ONLY a JSON array of exactly 4 strings (the choices). No other text. Don't make the choices longer than they need to be, though make sure they answer the question.
 If the response contains a newline, don't escape the backslash (i.e., you should use \\n instead of \\\\n).
 Do not return responses that only differ in the amount of whitespace.
 
