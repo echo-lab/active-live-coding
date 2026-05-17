@@ -714,6 +714,7 @@ td {
 .answer-display-content {
   max-height: 250px;
   overflow-y: auto;
+  background-color: white;
 }
 
 .summary-response .answer-display-content {

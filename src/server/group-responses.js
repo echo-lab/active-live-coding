@@ -10,7 +10,6 @@ export async function createGroupSummary(exercise, realResponses, simulatedRespo
   ];
 
   if (allResponses.length <= 3) return;  // Not worth grouping just 3!
-  if (exercise.type !== EXERCISE_TYPE.CODE_VARIANT) return;
 
   const prompt = buildPrompt(exercise, allResponses);
   if (!prompt) return;
@@ -34,7 +33,44 @@ function buildPrompt(exercise, allResponses) {
   if (exercise.type === EXERCISE_TYPE.CODE_VARIANT) {
     return buildPromptVariant(exercise, allResponses);
   }
+  if (exercise.type === EXERCISE_TYPE.POLL) {
+    return buildPromptPoll(exercise, allResponses);
+  }
   return;
+}
+
+function buildPromptPoll(exercise, allResponses) {
+  const { instructions, instructor_code } = exercise;
+
+
+  return `You are analyzing student responses to an in-class discussion question and coming up with reasonable groupings.
+
+The question the instructor asked students:
+<Question>
+${instructions}
+</Question>
+
+${ instructor_code ?  `The instructor provided the following code as context: <Code>${instructor_code}</Code>`: ''}
+
+Here are the student responses, each with a unique ID and their answer:
+<Student responses>
+${allResponses.map((r) => `<response id='${r.id}'>${r.answer}</response>`).join("\n")}
+</Student responses>
+
+Group these responses into approximately 2-5 groups based on their conceptual approach or common theme (e.g., similar idea, same misconception, same type of answer).
+Each group should have a very short description (<6 words) and a list of the response IDs that belong to it.
+Every response should appear in exactly one group, and it's okay if the last group is "miscellaneous".
+
+Return your answer as a JSON array with no additional text. Each element should be an object with:
+- "description": a short string (a few words) describing what this group of responses has in common
+- "response_ids": an array of response ID strings
+
+Example format:
+[
+  { "description": "memory management", "response_ids": ["real_1", "sim_3"] },
+  { "description": "garbage collection", "response_ids": ["real_2", "sim_1", "sim_2"] }
+]
+`;
 }
 
 function buildPromptVariant(exercise, allResponses) {
