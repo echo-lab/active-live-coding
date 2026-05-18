@@ -387,6 +387,11 @@ export class VersionBlockWidget extends WidgetType {
     activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
     });
+    this._summaryDisplayListener = ({ detail: { exerciseId } }) => {
+      const ex = this.activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
+      this.container?.classList.toggle("code-summary-active", !!ex && ex.id === exerciseId);
+    };
+    activitiesManager.addEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
   }
 
   eq(other) {
@@ -506,6 +511,7 @@ export class VersionBlockWidget extends WidgetType {
     // Cleanup
     for (const { editor } of this.variants) { editor?.destroy(); }
     this._clearExerciseState();
+    this.activitiesManager.removeEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
   }
 
   _clearExerciseState() {

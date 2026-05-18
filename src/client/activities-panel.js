@@ -1049,6 +1049,8 @@ export class InstructorActivitiesPanel {
   }
 
   _showView(name) {
+    if (name !== "code-exercise") this.manager.notifyCodeSummaryDisplayed(null);
+    // if (name === "code-exercise") ==> we already notified w/ the actual exercise
     this.listEl.hidden = name !== "list";
     this.pollEl.hidden = name !== "poll";
     this.codeExerciseEl.hidden = name !== "code-exercise";
@@ -1062,6 +1064,7 @@ export class InstructorActivitiesPanel {
 
   _showSummaryView(ex, options = {}) {
     if (ex.type === "CODE_VARIANT") {
+      this.manager.notifyCodeSummaryDisplayed(ex.id);
       this.codeWidget.showSummary(ex, options);
       this._showView("code-exercise");
     } else {

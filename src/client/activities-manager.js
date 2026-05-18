@@ -204,6 +204,10 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("showSummary", { detail: { exercise: ex } }));
   }
 
+  notifyCodeSummaryDisplayed(exerciseId) {
+    this.dispatchEvent(new CustomEvent("codeSummaryDisplayed", { detail: { exerciseId } }));
+  }
+
   async finishPollExercise() {
     for (let ex of this.getActiveExercises()) {
       if (ex.type === "POLL" || ex.type === "POLL_MCQ") {

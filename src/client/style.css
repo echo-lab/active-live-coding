@@ -1190,6 +1190,10 @@ td {
   border: 2px dashed #ff9600;
 }
 
+.cm-version-block-widget.code-summary-active {
+  border-color: #22c55e;
+}
+
 .cm-version-block-widget.exercise-open .cm-version-block-toolbar{
   animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite;
 }
