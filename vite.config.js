@@ -2,6 +2,9 @@ import { resolve } from "path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  server: {
+	  allowedHosts: ["livecoding.cs.vt.edu"],
+  },
   build: {
     rollupOptions: {
       input: {
