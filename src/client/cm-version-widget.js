@@ -174,6 +174,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     const tab = document.createElement("div");
     tab.className = "cm-version-block-tab";
     tab.classList.add("my-answer");
+    this._myAnswerTab = tab;
     const label = document.createElement("span");
     label.className = "cm-version-block-tab-label";
     label.textContent = "My Answer";
@@ -308,10 +309,15 @@ export class StudentVersionBlockWidget extends WidgetType {
   addVariant(v) {
     const variant = { ...v, ...this._makeVariantFollowingEditor(v) };
     this.variants.push(variant);
-    this.variantContainer.appendChild(variant.el);
+    if (!this.variantContainer) return;
     const newIndex = this.variants.length - 1;
     const tabEl = this._makeTabEl(newIndex);
-    this.tabsContainer.appendChild(tabEl);
+    this.variantContainer.appendChild(variant.el);
+    if (this._myAnswerTab) {
+      this.tabsContainer.insertBefore(tabEl, this._myAnswerTab);
+    } else {
+      this.tabsContainer.appendChild(tabEl);
+    }
     this._selectTab(newIndex);
   }
 
