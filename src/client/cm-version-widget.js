@@ -29,13 +29,15 @@ export function setVersionBlockReadOnly(v) {
 // MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
-  constructor({ versionBlockId, variants, activitiesManager = null }) {
+  constructor({ versionBlockId, variants, activitiesManager = null, outerView = null }) {
     super();
     this.versionBlockId = versionBlockId;
     this.selectedIndex = 0;
     this.tabEls = [];
     this.tabsContainer = null;
     this.variantContainer = null;
+
+    this._outerView = outerView;
 
     // Student exercise state
     this._activitiesManager = activitiesManager;
@@ -51,7 +53,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     this.variants = variants.map(v => ({ ...v, ...this._makeVariantFollowingEditor(v) }));
 
     activitiesManager?.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-      if (exercise.VersionBlockId === this.versionBlockId) this._activateExercise(exercise);
+      if (exercise.VersionBlockId === this.versionBlockId) this._activateExercise(exercise, {shouldScroll: true});
     });
     activitiesManager?.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       if (exercise.VersionBlockId === this.versionBlockId) this._deactivateExercise();
@@ -77,6 +79,15 @@ export class StudentVersionBlockWidget extends WidgetType {
   // -------------------------------------------------------
   // MARK: -- helpers
   // -------------------------------------------------------
+
+  getPosition(state) {
+    const decorations = state.field(versionBlocksField);
+    let from = null;
+    decorations.between(0, state.doc.length, (f, _t, deco) => {
+      if (deco.spec.widget?.versionBlockId === this.versionBlockId) { from = f; return false; }
+    });
+    return from;
+  }
 
   _makeVariantFollowingEditor(v) {
     const el = document.createElement("div");
@@ -143,7 +154,7 @@ export class StudentVersionBlockWidget extends WidgetType {
   // MARK: -- exercise (student answer)
   // -------------------------------------------------------
 
-  _activateExercise(exercise, { readOnly = false } = {}) {
+  _activateExercise(exercise, { readOnly = false, shouldScroll = false } = {}) {
     if (this._studentAnswerEl) return; // guard against double activation
     this._exerciseId = exercise.id;
     this._exerciseReadOnly = readOnly;
@@ -191,6 +202,17 @@ export class StudentVersionBlockWidget extends WidgetType {
         this.variantContainer.classList.add("exercise-open");
       }
       this._selectStudentTab();
+    }
+    if (shouldScroll && this._outerView) {
+      const from = this.getPosition(this._outerView.state);
+      if (from !== null) {
+        const scroller = this._outerView.scrollDOM;
+        scroller.style.scrollBehavior = "smooth";
+        this._outerView.dispatch({
+          effects: EditorView.scrollIntoView(from, { y: "nearest", yMargin: 40 }),
+        });
+        // setTimeout(() => { scroller.style.scrollBehavior = ""; }, 600);
+      }
     }
   }
 

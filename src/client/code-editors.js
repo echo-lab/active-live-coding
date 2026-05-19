@@ -82,7 +82,7 @@ export class StudentCodeEditor {
 
   addVersionBlock({from, to, versionBlockId, variants}) {
     // console.log("adding version block: ", {from, to, versionBlockId, variants});
-    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager});
+    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),
