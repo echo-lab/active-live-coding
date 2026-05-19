@@ -47,6 +47,13 @@ const socket = io();
 // Initialize w/ the Server
 ///////////////////////////////
 
+const modal = document.querySelector("#start-session-modal");
+const sessionNameInput = document.querySelector("#session-name-input");
+const startModalBtn = document.querySelector("#start-session-modal-btn");
+const sessionError = document.querySelector("#start-session-error");
+
+sessionNameInput.focus();
+
 async function getOrCreateSession(sessionName) {
   const response = await fetch("/lecture-session", {
     body: JSON.stringify({ sessionName, userId }),
@@ -54,28 +61,33 @@ async function getOrCreateSession(sessionName) {
   });
   let res = await response.json();
   if (res.error) {
-    alert(res.error);
     return null;
   }
+  modal.style.display = "none";
   document.querySelector("#session-name-display").innerText =
     `Lecture ID: ${sessionName}`;
   initialize(res);
   return res.sessionNumber;
 }
 
-// If it's not disabled already, start button should create a new session
-startButton.addEventListener("click", async () => {
-  startButton.disabled = true;
-  let sessionName = prompt("Session name: ");
+const tryStartSession = async () => {
+  const sessionName = sessionNameInput.value.trim();
   if (!sessionName) {
-    alert("Please enter a valid session name");
-    startButton.disabled = false;
+    sessionError.textContent = "Please enter a valid session name.";
     return;
   }
-  let sessionNumber = await getOrCreateSession(sessionName);
+  startModalBtn.disabled = true;
+  const sessionNumber = await getOrCreateSession(sessionName);
   if (!sessionNumber) {
-    startButton.disabled = false;
+    sessionError.textContent = "Could not start session -- the name you chose is already taken.";
+    sessionError.style.color = "red";
+    startModalBtn.disabled = false;
   }
+};
+
+startModalBtn.addEventListener("click", tryStartSession);
+sessionNameInput.addEventListener("keypress", (ev) => {
+  ev.key === "Enter" && tryStartSession();
 });
 
 // Start up the editor and hook up the end session button.

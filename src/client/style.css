@@ -424,8 +424,10 @@ pre {
 
 .modal {
   font-size: large;
-  width: 400px;
+  width: 300px;
   padding: 50px;
+  padding-left: 100px;
+  padding-right: 100px;
   height: auto;
   border: solid 1px grey;
   border-radius: 50px;
