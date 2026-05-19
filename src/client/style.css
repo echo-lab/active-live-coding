@@ -1094,10 +1094,31 @@ td {
 }
 
 .cm-version-block-tab.selected {
-  background: #646cff;
-  color: #fff;
+  background: #b1b5ff;
+  color: black;
   border-color: #646cff;
 }
+
+.cm-version-block-tab.my-answer {
+  border: 1px dashed #ff9600;
+}
+
+.cm-version-block-tab.my-answer.selected {
+  border-color: black;
+}
+
+@keyframes cm-answer-tab-flash {
+  /* 0%, 100% { border-color: #646cffab; } */
+  0%, 100% { background-color: #ffe600; }
+  50%       { background-color: #ffbe41; }
+}
+
+.exercise-open .cm-version-block-tab.my-answer:not(.selected) {
+  /* background-color: #ffe700; */
+  animation: cm-answer-tab-flash 2.0s ease-in-out infinite;
+}
+
+
 
 .cm-version-block-tab-label {
   cursor: pointer;
@@ -1195,7 +1216,8 @@ td {
 }
 
 .cm-version-block-widget.exercise-open .cm-version-block-toolbar{
-  animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite;
+  /* animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite; */
+  background-color: #fff7ad;
 }
 
 .cm-version-block-timer {

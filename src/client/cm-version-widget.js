@@ -173,6 +173,7 @@ export class StudentVersionBlockWidget extends WidgetType {
 
     const tab = document.createElement("div");
     tab.className = "cm-version-block-tab";
+    tab.classList.add("my-answer");
     const label = document.createElement("span");
     label.className = "cm-version-block-tab-label";
     label.textContent = "My Answer";
