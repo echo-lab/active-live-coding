@@ -97,13 +97,13 @@ export const versionWidgetContextMenu = EditorView.domEventHandlers({
 
 export const versionWidgetTooltipTheme = EditorView.baseTheme({
   ".cm-tooltip.cm-tooltip-version-widget": {
-    backgroundColor: "#2a7a2a",
+    backgroundColor: "#5861ff",
     color: "white",
     border: "none",
     borderRadius: "4px",
     padding: "2px 0",
     "& .cm-tooltip-arrow:before": {
-      borderTopColor: "#2a7a2a",
+      borderTopColor: "##5861ff",
     },
     "& .cm-tooltip-arrow:after": {
       borderTopColor: "transparent",
@@ -114,7 +114,7 @@ export const versionWidgetTooltipTheme = EditorView.baseTheme({
     cursor: "pointer",
   },
   ".cm-tooltip-version-option:hover": {
-    backgroundColor: "#3a9a3a",
+    backgroundColor: "#9298ff",
   },
   ".cm-tooltip-version-option:not(:last-child)": {
     borderBottom: "1px solid rgba(255,255,255,0.25)",
