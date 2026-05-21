@@ -1,7 +1,7 @@
 /* Styles for the student activity page */
 
 #student-page-interface #app {
-  min-width: 1200px;
+  min-width: 800;
   width: 97vw;
   max-width: 1800px;
   padding-top: 0px;
