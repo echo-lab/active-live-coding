@@ -392,8 +392,9 @@ export class InstructorCodeEditor {
           onDissolve: () => this.dissolveVersionBlock(versionBlockId),
         });
       this.versionBlocks[versionBlockId] = widget;
+      const isAtDocEnd = lineTo >= state.doc.length;
       this.view.dispatch({
-        changes: { from: lineFrom, to: lineTo, insert: "" },  // should this part be earlier?
+        changes: { from: lineFrom, to: lineTo, insert: isAtDocEnd ? "\n" : "" },
         effects: addVersionBlockEffect.of({from: lineFrom, to: lineFrom, widget}),
       });
 
