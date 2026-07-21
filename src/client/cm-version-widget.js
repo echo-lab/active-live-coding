@@ -288,7 +288,7 @@ export class StudentVersionBlockWidget extends WidgetType {
 
     this.variantContainer = container;
     this.variants.forEach(({ el }, idx) => {
-      el.hidden = idx !== 0;
+      el.hidden = idx !== this.selectedIndex;
       container.appendChild(el);
     });
 
@@ -495,7 +495,7 @@ export class VersionBlockWidget extends WidgetType {
 
     // Editor area
     this.variants.forEach(({el}, idx) => {
-        el.hidden = idx !== 0;
+        el.hidden = idx !== this.selectedIndex;
         container.appendChild(el);
     });
     this.variantContainer = container; // Should be separate from the main container, but eh.
