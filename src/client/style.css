@@ -1049,6 +1049,10 @@ td {
   user-select: none;
 }
 
+.minimized .cm-version-block-toolbar {
+  background: #f9f9fc;
+}
+
 .cm-version-block-toolbar-inner {
   display: flex;
   align-items: center;
@@ -1220,6 +1224,88 @@ td {
 .cm-version-block-widget.exercise-open .cm-version-block-toolbar{
   /* animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite; */
   background-color: #fff7ad;
+}
+
+.cm-version-block-btn.cm-version-block-minimize {
+  font-size: 11px;
+  color: #888;
+}
+
+.cm-version-block-widget.minimized {
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  border-width: 1px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-toolbar {
+  padding: 1px 6px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-toolbar-inner {
+  gap: 2px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-left,
+.cm-version-block-widget.minimized .cm-version-block-right,
+.cm-version-block-widget.minimized .cm-version-block-tabs {
+  gap: 0px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab {
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font-size: 10px;
+  line-height: 1.3;
+  border-radius: 0;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab:not(:first-child)::before {
+  content: "|";
+  margin-right: 2px;
+  color: #ccc;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab.selected {
+  background: transparent;
+  color: inherit;
+  font-weight: bold;
+  border: none;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab-label {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-tab-delete {
+  font-size: 10px;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-btn {
+  font-size: 10px;
+  padding: 0 3px;
+  line-height: 1.3;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+.cm-version-block-widget.minimized .cm-version-block-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.cm-version-block-widget.minimized .cm-version-block-response-count,
+.cm-version-block-widget.minimized .cm-version-block-timer {
+  font-size: 10px;
+  padding: 0 3px;
+  margin-right: 4px;
 }
 
 .cm-version-block-timer {

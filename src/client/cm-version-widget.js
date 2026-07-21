@@ -393,11 +393,13 @@ export class VersionBlockWidget extends WidgetType {
     this._onDissolve = onDissolve ?? null;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
+    this.isMinimized = true;
 
     this.innerView = null;
 
     this.tabEls = [];
     this.toolbar = null;
+    this.minimizeBtn = null;
     this.container = null;
     this.variantContainer = null;
     this.exerciseBtnContainer = null;
@@ -471,8 +473,18 @@ export class VersionBlockWidget extends WidgetType {
     rightGroup.className = "cm-version-block-right";
 
     this.exerciseBtnContainer = document.createElement("div");
+    this.exerciseBtnContainer.style.fontSize = "10px";  // else it's too tall!
     rightGroup.appendChild(this.exerciseBtnContainer);
     this._updateExerciseBtn();
+
+    const minimizeBtn = document.createElement("button");
+    minimizeBtn.className = "cm-version-block-btn cm-version-block-minimize";
+    minimizeBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      this._setMinimized(!this.isMinimized);
+    });
+    this.minimizeBtn = minimizeBtn;
+    rightGroup.appendChild(minimizeBtn);
 
     const closeBtn = document.createElement("button");
     closeBtn.className = "cm-version-block-btn cm-version-block-close";
@@ -507,6 +519,7 @@ export class VersionBlockWidget extends WidgetType {
     }
     tabsContainer.appendChild(addBtn);
     this._updateDeleteBtnVisibility();
+    this._setMinimized(this.isMinimized);
 
     return container;
   }
@@ -724,6 +737,15 @@ export class VersionBlockWidget extends WidgetType {
     this.variants.forEach(({el}, idx) => {
         el.hidden = (idx !== index);
     });
+  }
+
+  _setMinimized(minimized) {
+    this.isMinimized = minimized;
+    this.container?.classList.toggle("minimized", minimized);
+    if (this.minimizeBtn) {
+      this.minimizeBtn.textContent = minimized ? "⤢" : "_";
+      this.minimizeBtn.title = minimized ? "Expand version block" : "Minimize version block";
+    }
   }
 
   // -------------------------------------------------------
