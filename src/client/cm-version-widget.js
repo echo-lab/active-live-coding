@@ -33,9 +33,11 @@ export class StudentVersionBlockWidget extends WidgetType {
     super();
     this.versionBlockId = versionBlockId;
     this.selectedIndex = 0;
+    this.isMinimized = true;
     this.tabEls = [];
     this.tabsContainer = null;
     this.variantContainer = null;
+    this.minimizeBtn = null;
 
     this._outerView = outerView;
 
@@ -148,6 +150,15 @@ export class StudentVersionBlockWidget extends WidgetType {
   _mountEditor(index) {
     this.variants.forEach(({ el }, idx) => { el.hidden = idx !== index; });
     if (this._studentAnswerEl) this._studentAnswerEl.hidden = true;
+  }
+
+  _setMinimized(minimized) {
+    this.isMinimized = minimized;
+    this.variantContainer?.classList.toggle("minimized", minimized);
+    if (this.minimizeBtn) {
+      this.minimizeBtn.textContent = minimized ? "⤢" : "_";
+      this.minimizeBtn.title = minimized ? "Expand version block" : "Minimize version block";
+    }
   }
 
   // -------------------------------------------------------
@@ -279,6 +290,15 @@ export class StudentVersionBlockWidget extends WidgetType {
     this._submitBtn = submitBtn;
     rightGroup.appendChild(submitBtn);
 
+    const minimizeBtn = document.createElement("button");
+    minimizeBtn.className = "cm-version-block-btn cm-version-block-minimize";
+    minimizeBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      this._setMinimized(!this.isMinimized);
+    });
+    this.minimizeBtn = minimizeBtn;
+    rightGroup.appendChild(minimizeBtn);
+
     const toolbarInner = document.createElement("div");
     toolbarInner.className = "cm-version-block-toolbar-inner";
     toolbarInner.appendChild(leftGroup);
@@ -316,6 +336,8 @@ export class StudentVersionBlockWidget extends WidgetType {
         }
       }
     }
+
+    this._setMinimized(this.isMinimized);
 
     return container;
   }
