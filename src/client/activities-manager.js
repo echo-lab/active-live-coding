@@ -45,13 +45,15 @@ export class InstructorActivitiesManager extends EventTarget {
     return this.exercises;
   }
 
-  async createPollExercise({ instructions, instructor_code, full_instructor_code }) {
+  async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
+    const hasAnchor = code_anchor_from != null && code_anchor_to != null;
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
         type: "POLL",
         instructions,
         ...(instructor_code ? { instructor_code } : {}),
+        ...(hasAnchor ? { code_anchor_from, code_anchor_to, code_anchor_doc_version } : {}),
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -64,6 +66,7 @@ export class InstructorActivitiesManager extends EventTarget {
       type: "POLL",
       instructions,
       instructor_code: instructor_code ?? null,
+      ...(hasAnchor ? { code_anchor_from, code_anchor_to } : {}),
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -77,13 +80,15 @@ export class InstructorActivitiesManager extends EventTarget {
         start_ts: newEx.start_ts,
         type: newEx.type,
         instructor_code: newEx.instructor_code,
+        ...(hasAnchor ? { code_anchor_from, code_anchor_to } : {}),
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
-  async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices }) {
+  async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
     const default_answer = JSON.stringify(choices);
+    const hasAnchor = code_anchor_from != null && code_anchor_to != null;
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
@@ -91,6 +96,7 @@ export class InstructorActivitiesManager extends EventTarget {
         instructions,
         default_answer,
         ...(instructor_code ? { instructor_code } : {}),
+        ...(hasAnchor ? { code_anchor_from, code_anchor_to, code_anchor_doc_version } : {}),
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -104,6 +110,7 @@ export class InstructorActivitiesManager extends EventTarget {
       instructions,
       instructor_code: instructor_code ?? null,
       default_answer,
+      ...(hasAnchor ? { code_anchor_from, code_anchor_to } : {}),
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -118,6 +125,7 @@ export class InstructorActivitiesManager extends EventTarget {
         type: newEx.type,
         instructor_code: newEx.instructor_code,
         default_answer: newEx.default_answer,
+        ...(hasAnchor ? { code_anchor_from, code_anchor_to } : {}),
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
@@ -298,6 +306,10 @@ export class StudentActivitiesManager extends EventTarget {
     return this.exercises.find((e) => e.VersionBlockId === versionBlockId) ?? null;
   }
 
+  getExercises() {
+    return this.exercises;
+  }
+
   getActiveExercises() {
     return this.exercises.filter((e) => e.end_ts === null);
   }
@@ -339,6 +351,8 @@ export class StudentActivitiesManager extends EventTarget {
         instructions: ex.instructions,
         instructor_code: ex.instructor_code ?? null,
         default_answer: ex.default_answer ?? null,
+        code_anchor_from: ex.code_anchor_from ?? null,
+        code_anchor_to: ex.code_anchor_to ?? null,
         start_ts: ex.start_ts,
         end_ts: null,
         ExerciseResponses: [],

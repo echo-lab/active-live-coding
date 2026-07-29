@@ -375,7 +375,19 @@ app.post("/record-user-action", async (req, res) => {
 // MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
-  const { lectureId, type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id } = req.body;
+  const {
+    lectureId,
+    type,
+    instructions,
+    instructor_code,
+    default_answer,
+    code_line_context_start,
+    code_line_context_end,
+    code_anchor_from,
+    code_anchor_to,
+    code_anchor_doc_version,
+    version_block_id,
+  } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
 
@@ -394,7 +406,18 @@ app.post("/exercise", async (req, res) => {
       }
       let exercise = await ClassExercise.createForLecture(
         lectureId,
-        { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id },
+        {
+          type,
+          instructions,
+          instructor_code,
+          default_answer,
+          code_line_context_start,
+          code_line_context_end,
+          code_anchor_from,
+          code_anchor_to,
+          code_anchor_doc_version,
+          version_block_id,
+        },
         t,
       );
       return { exerciseId: exercise.id, exercise };

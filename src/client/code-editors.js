@@ -13,6 +13,15 @@ import { exerciseDiffGutter, setExerciseBaseCode, reviewEditorExtensions } from 
 import { activateFillInBlankEffect, fillInBlankViewField } from "./cm-fill-in-the-blank.js";
 import { addVersionBlockEffect, removeVersionBlockEffect, VersionBlockWidget, versionBlocksField, versionBlockExtensions, StudentVersionBlockWidget } from "./cm-version-widget.js";
 import { versionWidgetTooltipExtensions } from "./cm-tooltip.js";
+import {
+  DRAFT_POLL_ID,
+  addPollMarkerEffect,
+  removePollMarkerEffect,
+  getPollMarkerPosition,
+  pollMarkerExtensions,
+  setPollPanelOpen,
+  clearPollPanelOpen,
+} from "./cm-poll-marker.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -23,7 +32,7 @@ const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null}) {
+  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker}) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     this.activitiesManager = activitiesManager;
@@ -35,6 +44,7 @@ export class StudentCodeEditor {
         ...followInstructorExtensions,
         EditorView.editable.of(false),
         capLength,
+        ...pollMarkerExtensions(onOpenPollMarker),
         ...extraExtensions,
       ],
     });
@@ -43,6 +53,14 @@ export class StudentCodeEditor {
     this.pendingQueue = []; // if we fall behind, buffer instructor edits.
     this.versionBlocks = [];
     versionBlocks.forEach(v => this.addVersionBlock({...v, versionBlockId: v.id}));
+
+    // Reconstruct any existing poll markers (persisted, position already resolved server-side).
+    if (activitiesManager) {
+      activitiesManager.getExercises().forEach((ex) => this._maybeAddPollMarker(ex));
+      activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+        this._maybeAddPollMarker(exercise);
+      });
+    }
 
     socket.on(
       SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
@@ -91,6 +109,21 @@ export class StudentCodeEditor {
 
   getVersionBlock(id) {
     return this.versionBlocks.find(v => v.versionBlockId === id);
+  }
+
+  _maybeAddPollMarker(ex) {
+    if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
+    if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
+    this.view.dispatch({
+      effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
+    });
+  }
+
+  // Toggles the "lightly highlighted" state for the poll whose sidebar view is currently open.
+  setPollHighlightOpen(id) {
+    this.view.dispatch({
+      effects: id != null ? setPollPanelOpen.of(id) : clearPollPanelOpen.of(null),
+    });
   }
 
   removeVersionBlock(versionBlockId) {
@@ -213,13 +246,15 @@ export class InstructorCodeEditor {
     sessionNumber,
     versionBlocks,
     activitiesManager,
-    onCreatePoll,
+    onCreatePollRequested,
+    onOpenPollMarker,
   }) {
     this.docVersion = startVersion;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.activitiesManager = activitiesManager;
     this.versionBlocks = {};
+    this.onCreatePollRequested = onCreatePollRequested;
 
     let state = EditorState.create({
       doc: Text.of(doc),
@@ -232,7 +267,8 @@ export class InstructorCodeEditor {
         capLength,
         fillInBlankViewField,
         ...versionBlockExtensions(),
-        ...versionWidgetTooltipExtensions(this.createNewVersionBlock.bind(this), onCreatePoll),
+        ...versionWidgetTooltipExtensions(this.createNewVersionBlock.bind(this), this.requestCreatePoll.bind(this)),
+        ...pollMarkerExtensions(onOpenPollMarker),
       ],
     });
 
@@ -256,6 +292,71 @@ export class InstructorCodeEditor {
         effects: addVersionBlockEffect.of({from: block.from, to: block.to, widget}),
       });
     }
+
+    // Reconstruct any existing poll markers (persisted, position already resolved server-side).
+    for (const ex of activitiesManager.getExercises()) {
+      this._maybeAddPollMarker(ex);
+    }
+  }
+
+  _maybeAddPollMarker(ex) {
+    if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
+    if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
+    this.view.dispatch({
+      effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
+    });
+  }
+
+  // Checks for overlap w/ an existing version block (not supported yet -- silently no-op),
+  // then forwards to the caller-supplied handler w/ the snapped {from, to, code}.
+  requestCreatePoll({ from, to }) {
+    if (from == null) {
+      this.onCreatePollRequested?.({ from: null, to: null, code: "" });
+      return;
+    }
+
+    const decorations = this.view.state.field(versionBlocksField);
+    let overlapsVersionBlock = false;
+    decorations.between(from, to, () => { overlapsVersionBlock = true; return false; });
+    if (overlapsVersionBlock) return;
+
+    const code = this.view.state.doc.sliceString(from, to);
+    this.onCreatePollRequested?.({ from, to, code });
+  }
+
+  startPollDraft({ from, to }) {
+    this.abandonPollDraft(); // Guard against a second right-click before the first draft resolves.
+    this.view.dispatch({
+      effects: addPollMarkerEffect.of({ id: DRAFT_POLL_ID, from, to, isDraft: true }),
+    });
+  }
+
+  abandonPollDraft() {
+    this.view.dispatch({
+      effects: removePollMarkerEffect.of({ id: DRAFT_POLL_ID }),
+    });
+  }
+
+  finalizePollDraft(exerciseId) {
+    const { from, to } = getPollMarkerPosition(this.view.state, DRAFT_POLL_ID);
+    if (from == null) return; // No draft was pending (e.g., poll created w/o a code selection).
+    this.view.dispatch({ effects: removePollMarkerEffect.of({ id: DRAFT_POLL_ID }) });
+    this.view.dispatch({ effects: addPollMarkerEffect.of({ id: exerciseId, from, to, isDraft: false }) });
+  }
+
+  // Reads the draft's CURRENT anchor at submit time, reflecting any edits made while the
+  // create panel was open.
+  getPollDraftAnchor() {
+    const { from, to } = getPollMarkerPosition(this.view.state, DRAFT_POLL_ID);
+    if (from == null) return null;
+    return { from, to, docVersion: this.getDocVersion() };
+  }
+
+  // Toggles the "lightly highlighted" state for the poll whose sidebar view is currently open.
+  setPollHighlightOpen(id) {
+    this.view.dispatch({
+      effects: id != null ? setPollPanelOpen.of(id) : clearPollPanelOpen.of(null),
+    });
   }
 
   getVersionBlock(id) {

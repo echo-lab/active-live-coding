@@ -8,6 +8,7 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
+import { DRAFT_POLL_ID } from "./cm-poll-marker.js";
 
 // MARK: Code/Poll HTML
 function trimAnswer(text) {
@@ -68,10 +69,11 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, openActivitiesPanel }) {
+  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange }) {
     this.manager = manager;
     this.student_id = student_id;
     this.openActivitiesPanel = openActivitiesPanel;
+    this.onPollPanelOpenChange = onPollPanelOpenChange;
     this.currentExerciseId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
@@ -117,6 +119,15 @@ export class StudentActivitiesPanel {
     this.currentExerciseId = null;
     this.exerciseEl.hidden = true;
     this.listEl.hidden = false;
+    this.onPollPanelOpenChange?.(null);
+  }
+
+  // Opens the sidebar to a specific exercise (e.g. from clicking its code-editor gutter marker).
+  showExerciseById(id) {
+    const ex = this.manager.getExercise(id);
+    if (!ex) return;
+    this.openActivitiesPanel();
+    this._showExercise(ex);
   }
 
   _renderList() {
@@ -164,6 +175,7 @@ export class StudentActivitiesPanel {
     } else if (latestEx.type === "POLL_MCQ") {
       isActive ? this._showPollMcqActive(latestEx, myResponse) : this._showPollMcqComplete(latestEx, myResponse);
     }
+    this.onPollPanelOpenChange?.(latestEx.id);
   }
 
   // --- Shared helpers ---
@@ -699,12 +711,14 @@ class PollMcqBuilder {
 
 // MARK: PollExerciseWidget
 class PollExerciseWidget {
-  constructor({ manager, pollEl, onBack, getSelectedCode, getCurrentCode }) {
+  constructor({ manager, pollEl, onBack, getSelectedCode, getCurrentCode, onAbandonDraft, getPollDraftAnchor }) {
     this.pollEl = pollEl;
     this.timerInterval = null;
     this.getSelectedCode = getSelectedCode;
     this.getCurrentCode = getCurrentCode;
     this._onBack = onBack;
+    this._onAbandonDraft = onAbandonDraft;
+    this._getPollDraftAnchor = getPollDraftAnchor;
     this._manager = manager;
 
     this._timerEl = null;
@@ -742,14 +756,17 @@ class PollExerciseWidget {
     this.pollEl.innerHTML = "";
   }
 
-  _buildHeader() {
+  _buildHeader({ isDraft = false } = {}) {
     // Create a header w/ a back button and a timer element (which starts out empty)
     const header = document.createElement("div");
     header.className = "poll-activity-header";
     const backBtn = document.createElement("button");
     backBtn.className = "poll-back-btn";
     backBtn.textContent = "← Back to list";
-    backBtn.addEventListener("click", this._onBack);
+    backBtn.addEventListener("click", () => {
+      if (isDraft) this._onAbandonDraft?.();
+      this._onBack();
+    });
     this._timerEl = document.createElement("div");
     this._timerEl.className = "poll-timer";
     this._headerRightEl = document.createElement("div");
@@ -766,10 +783,10 @@ class PollExerciseWidget {
     this.pollEl.appendChild(this.codeEditorEl);
   }
 
-  showCreate() {
+  showCreate({ code: presetCode } = {}) {
     this._reset();
-    this._buildHeader();
-    const selectedCode = this.getSelectedCode?.() ?? "";
+    this._buildHeader({ isDraft: presetCode !== undefined });
+    const selectedCode = presetCode !== undefined ? presetCode : (this.getSelectedCode?.() ?? "");
     this._buildCodeEditor(selectedCode);
 
     const textarea = document.createElement("textarea");
@@ -784,10 +801,12 @@ class PollExerciseWidget {
     startBtn.addEventListener("click", async () => {
       const instructions = this._instructionsInput.value.trim();
       const code = this.codeView.state.doc.toString().trim();
+      const anchor = this._getPollDraftAnchor?.();
       await this._manager.createPollExercise({
         instructions,
         ...(code ? { instructor_code: code } : {}),
         full_instructor_code: this.getCurrentCode?.(),
+        ...(anchor ? { code_anchor_from: anchor.from, code_anchor_to: anchor.to, code_anchor_doc_version: anchor.docVersion } : {}),
       });
     });
     this.pollEl.appendChild(startBtn);
@@ -805,11 +824,13 @@ class PollExerciseWidget {
       onSubmit: async (choices) => {
         const instructions = this._instructionsInput.value.trim();
         const code = this.codeView.state.doc.toString().trim();
+        const anchor = this._getPollDraftAnchor?.();
         await this._manager.createPollMcqExercise({
           instructions,
           ...(code ? { instructor_code: code } : {}),
           full_instructor_code: this.getCurrentCode?.(),
           choices,
+          ...(anchor ? { code_anchor_from: anchor.from, code_anchor_to: anchor.to, code_anchor_doc_version: anchor.docVersion } : {}),
         });
       },
     }).build();
@@ -959,11 +980,16 @@ export class InstructorActivitiesPanel {
     openPanel,
     getSelectedCode,
     getCurrentCode,
+    onAbandonPollDraft,
+    getPollDraftAnchor,
+    onPollPanelOpenChange,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
     this.activitiesPanelEl = activitiesPanelEl;
     this.openPanel = openPanel;
+    this.onPollPanelOpenChange = onPollPanelOpenChange;
+    this._currentPollId = null;
 
     // DOM refs owned by this panel
     this.listEl = document.querySelector("#activities-list");
@@ -980,6 +1006,8 @@ export class InstructorActivitiesPanel {
       onBack,
       getSelectedCode,
       getCurrentCode,
+      onAbandonDraft: onAbandonPollDraft,
+      getPollDraftAnchor,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,
@@ -1037,15 +1065,27 @@ export class InstructorActivitiesPanel {
     });
   }
 
-  openPollCreate() {
+  openPollCreate({ from, to, code } = {}) {
     this.openPanel();
-    this.pollWidget.showCreate();
+    this.pollWidget.showCreate(from != null ? { code } : {});
+    this._currentPollId = from != null ? DRAFT_POLL_ID : null;
     this._showView("poll");
   }
 
   openActivePoll(exercise) {
     this.openPanel();
     this._showActiveView(exercise);
+  }
+
+  // Opens the sidebar to a specific exercise regardless of active/finished state --
+  // e.g. from clicking its code-editor gutter marker.
+  openExercise(ex) {
+    this.openPanel();
+    if (ex.end_ts == null) {
+      this._showActiveView(ex);
+    } else {
+      this._showSummaryView(ex);
+    }
   }
 
   _showView(name) {
@@ -1055,19 +1095,23 @@ export class InstructorActivitiesPanel {
     this.pollEl.hidden = name !== "poll";
     this.codeExerciseEl.hidden = name !== "code-exercise";
     this.activitiesPanelEl.classList.toggle("has-content", true);
+    this.onPollPanelOpenChange?.(name === "poll" ? this._currentPollId : null);
   }
 
   _showActiveView(ex) {
+    this._currentPollId = ex.id;
     this.pollWidget.showActive(ex);
     this._showView("poll");
   }
 
   _showSummaryView(ex, options = {}) {
     if (ex.type === "CODE_VARIANT") {
+      this._currentPollId = null;
       this.manager.notifyCodeSummaryDisplayed(ex.id);
       this.codeWidget.showSummary(ex, options);
       this._showView("code-exercise");
     } else {
+      this._currentPollId = ex.id;
       this.pollWidget.showSummary(ex, options);
       this._showView("poll");
     }

@@ -88,6 +88,8 @@ async function initialize({
     exercises,
   });
 
+  let activitiesPanel;
+
   let codeEditor = new StudentCodeEditor({
     node: instructorCodeContainer,
     doc: lectureDoc,
@@ -97,6 +99,7 @@ async function initialize({
     extraExtensions: [versionBlocksField],
     versionBlocks,
     activitiesManager,
+    onOpenPollMarker: (exerciseId) => activitiesPanel?.showExerciseById(exerciseId),
   });
 
   let codeRunner = new PythonCodeRunner();
@@ -135,9 +138,10 @@ async function initialize({
     sessionActive = false;
   });
 
-  let activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
+  activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
     openActivitiesPanel,
+    onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
   });
 }
 

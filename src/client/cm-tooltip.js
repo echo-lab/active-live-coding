@@ -52,8 +52,20 @@ function createVersionWidgetTooltipDOM(view) {
 
   function handleCreatePollClick() {
     view.dispatch({ effects: hideVersionWidgetTooltip.of(null) });
-    let callback = view.state.facet(handleCreatePoll);
-    callback && callback();
+    let state = view.state;
+    let callback = state.facet(handleCreatePoll);
+    let { from, to } = state.selection.main;
+    if (from === to) {
+      callback && callback({ from: null, to: null });
+      return;
+    }
+    let startLine = state.doc.lineAt(from);
+    let endLine = state.doc.lineAt(to);
+    let lineStart = startLine.number;
+    let lineEnd = to > from && to === endLine.from ? endLine.number - 1 : endLine.number;
+    let firstLine = state.doc.line(lineStart);
+    let lastLine = state.doc.line(lineEnd);
+    callback && callback({ from: firstLine.from, to: lastLine.to });
   }
 
   let createPollOption = document.createElement("div");

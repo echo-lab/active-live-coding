@@ -90,7 +90,7 @@ export class LectureSession extends Model {
 
   // Returns all exercises for this lecture with every student's responses.
   async getExercisesForInstructor(transaction) {
-    return this.getClassExercises(
+    const exercises = await this.getClassExercises(
       {
         include: [
           {
@@ -106,6 +106,38 @@ export class LectureSession extends Model {
       },
       { transaction },
     );
+    return this._resolvePollAnchors(exercises, transaction);
+  }
+
+  // Given exercises belonging to this lecture, resolves each POLL/POLL_MCQ's
+  // code_anchor_from/code_anchor_to to their CURRENT positions by replaying
+  // InstructorChanges since code_anchor_doc_version -- same technique as
+  // getVersionBlocksWithPositions, just for a [from, to) range instead of a point.
+  async _resolvePollAnchors(exercises, transaction) {
+    const needsResolution = exercises.some(
+      (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.code_anchor_from != null,
+    );
+    if (!needsResolution) return exercises;
+
+    const allChanges = await this.getInstructorChanges(
+      { attributes: ["change_number", "change"], order: ["change_number"] },
+      { transaction },
+    );
+
+    return exercises.map((ex) => {
+      if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null) return ex;
+
+      let from = ex.code_anchor_from;
+      let to = ex.code_anchor_to;
+      for (const { change_number, change } of allChanges) {
+        if (change_number >= ex.code_anchor_doc_version) {
+          const cs = ChangeSet.fromJSON(JSON.parse(change));
+          from = cs.mapPos(from, -1);
+          to = cs.mapPos(to, 1);
+        }
+      }
+      return { ...ex.toJSON(), code_anchor_from: from, code_anchor_to: to };
+    });
   }
 
   async getVersionBlocksWithPositions(transaction) {
@@ -163,7 +195,7 @@ export class LectureSession extends Model {
 
   // Returns all exercises for this lecture with only the given student's response (if any).
   async getExercisesForStudent(studentId, transaction) {
-    return this.getClassExercises(
+    const exercises = await this.getClassExercises(
       {
         include: [
           {
@@ -176,6 +208,7 @@ export class LectureSession extends Model {
       },
       { transaction },
     );
+    return this._resolvePollAnchors(exercises, transaction);
   }
 }
 
@@ -238,7 +271,18 @@ export const EXERCISE_TYPE = Object.freeze({
 export class ClassExercise extends Model {
   static async createForLecture(
     lectureId,
-    { type, instructions, instructor_code, default_answer, code_line_context_start, code_line_context_end, version_block_id } = {},
+    {
+      type,
+      instructions,
+      instructor_code,
+      default_answer,
+      code_line_context_start,
+      code_line_context_end,
+      code_anchor_from,
+      code_anchor_to,
+      code_anchor_doc_version,
+      version_block_id,
+    } = {},
     transaction,
   ) {
     return ClassExercise.create(
@@ -251,6 +295,9 @@ export class ClassExercise extends Model {
         default_answer,
         code_line_context_start,
         code_line_context_end,
+        code_anchor_from,
+        code_anchor_to,
+        code_anchor_doc_version,
         start_ts: Date.now(),
       },
       { transaction },
@@ -302,6 +349,18 @@ ClassExercise.init(
       allowNull: true,
     },
     code_line_context_end: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    code_anchor_from: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    code_anchor_to: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    code_anchor_doc_version: {
       type: DataTypes.INTEGER,
       allowNull: true,
     },

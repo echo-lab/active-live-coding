@@ -119,15 +119,24 @@ function initialize({
     sessionNumber,
     versionBlocks,
     activitiesManager,
-    onCreatePoll: () => {
+    onCreatePollRequested: ({ from, to, code }) => {
       const activePoll = activitiesManager
         .getActiveExercises()
         .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
       if (activePoll) {
         activitiesPanel?.openActivePoll(activePoll);
-      } else {
-        activitiesPanel?.openPollCreate();
+        return;
       }
+      if (from == null) {
+        activitiesPanel?.openPollCreate();
+        return;
+      }
+      codeEditor.startPollDraft({ from, to });
+      activitiesPanel?.openPollCreate({ from, to, code });
+    },
+    onOpenPollMarker: (exerciseId) => {
+      const ex = activitiesManager.getExercise(exerciseId);
+      if (ex) activitiesPanel?.openExercise(ex);
     },
   });
 
@@ -167,10 +176,20 @@ function initialize({
     },
   );
 
+  // Once a poll draft is actually submitted, swap its draft marker for a persisted one.
+  activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+    if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") {
+      codeEditor.finalizePollDraft(exercise.id);
+    }
+  });
+
   activitiesPanel = new InstructorActivitiesPanel(activitiesManager, {
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     getSelectedCode: () => codeEditor.getSelectedCode(),
     getCurrentCode: () => codeEditor.currentCode(),
+    onAbandonPollDraft: () => codeEditor.abandonPollDraft(),
+    getPollDraftAnchor: () => codeEditor.getPollDraftAnchor(),
+    onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
   });
 }
