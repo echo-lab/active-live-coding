@@ -114,6 +114,7 @@ export class StudentCodeEditor {
   _maybeAddPollMarker(ex) {
     if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
+    if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
       effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
     });
@@ -302,6 +303,7 @@ export class InstructorCodeEditor {
   _maybeAddPollMarker(ex) {
     if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
+    if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
       effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
     });
@@ -320,7 +322,21 @@ export class InstructorCodeEditor {
     decorations.between(from, to, () => { overlapsVersionBlock = true; return false; });
     if (overlapsVersionBlock) return;
 
-    const code = this.view.state.doc.sliceString(from, to);
+    // Trim leading/trailing whitespace so the anchor tightly bounds the selected code -- this
+    // keeps boundary-adjacent edits from landing inside the range, and lets it fully collapse
+    // (rather than leaving a whitespace-only remainder) if the code is later deleted.
+    const doc = this.view.state.doc;
+    const raw = doc.sliceString(from, to);
+    const lead = raw.match(/^\s*/)[0].length;
+    const trail = raw.match(/\s*$/)[0].length;
+    from = from + lead;
+    to = Math.max(from, to - trail);
+    if (from >= to) {
+      this.onCreatePollRequested?.({ from: null, to: null, code: "" });
+      return;
+    }
+
+    const code = doc.sliceString(from, to);
     this.onCreatePollRequested?.({ from, to, code });
   }
 

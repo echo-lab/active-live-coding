@@ -132,10 +132,15 @@ export class LectureSession extends Model {
       for (const { change_number, change } of allChanges) {
         if (change_number >= ex.code_anchor_doc_version) {
           const cs = ChangeSet.fromJSON(JSON.parse(change));
-          from = cs.mapPos(from, -1);
-          to = cs.mapPos(to, 1);
+          // assoc=1 for from / -1 for to: edits landing exactly on a boundary are excluded
+          // from the range, matching CodeMirror's own non-inclusive Decoration.mark semantics
+          // (the same convention used by the live client-side marker in cm-poll-marker.js).
+          from = cs.mapPos(from, 1);
+          to = cs.mapPos(to, -1);
         }
       }
+      // The anchored code was entirely deleted -- report no anchor rather than a collapsed range.
+      if (to <= from) return { ...ex.toJSON(), code_anchor_from: null, code_anchor_to: null };
       return { ...ex.toJSON(), code_anchor_from: from, code_anchor_to: to };
     });
   }
