@@ -151,26 +151,44 @@ class PollGutterMarker extends GutterMarker {
 const pollMarkerGutterColumn = gutter({
   class: "cm-poll-marker-gutter",
   markers(view) {
-    const builder = new RangeSetBuilder();
     const doc = view.state.doc;
-    const seenLines = new Set();
+    // Group by line start first: CodeMirror gutters support multiple independent
+    // markers at the same position, but RangeSetBuilder requires them added in a
+    // single ascending pass, so we can't add each poll to the builder as we see it.
+    const byLine = new Map();
     view.state.field(pollMarkersField).between(0, doc.length, (from, to, deco) => {
       const lineStart = doc.lineAt(from).from;
-      if (seenLines.has(lineStart)) return; // two polls starting on the same line: show just one marker (rare)
-      seenLines.add(lineStart);
-      builder.add(lineStart, lineStart, new PollGutterMarker(deco.spec.pollId, deco.spec.isDraft));
+      let entries = byLine.get(lineStart);
+      if (!entries) byLine.set(lineStart, (entries = []));
+      entries.push({ pollId: deco.spec.pollId, isDraft: deco.spec.isDraft });
     });
+
+    const builder = new RangeSetBuilder();
+    for (const [lineStart, entries] of byLine) {
+      // Deterministic order (poll ids are auto-incrementing, so this is creation order)
+      // rather than whatever order the underlying RangeSet happened to yield.
+      entries.sort((a, b) => (a.pollId > b.pollId ? 1 : a.pollId < b.pollId ? -1 : 0));
+      for (const { pollId, isDraft } of entries) {
+        builder.add(lineStart, lineStart, new PollGutterMarker(pollId, isDraft));
+      }
+    }
     return builder.finish();
   },
 });
 
 const pollMarkerTheme = EditorView.baseTheme({
-  ".cm-poll-marker-gutter": { width: "16px" },
-  ".cm-poll-marker-gutter .cm-gutterElement": { padding: "0" },
+  ".cm-poll-marker-gutter": { minWidth: "16px" },
+  ".cm-poll-marker-gutter .cm-gutterElement": {
+    padding: "0",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: "2px",
+  },
   ".cm-poll-marker-icon": {
+    flexShrink: "0",
     width: "13px",
     height: "13px",
-    marginTop: "3px",
     marginLeft: "1px",
     borderRadius: "50%",
     display: "flex",

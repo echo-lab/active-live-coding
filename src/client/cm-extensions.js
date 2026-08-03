@@ -1,9 +1,26 @@
-import { basicSetup, EditorView } from "codemirror";
 import { EditorState, StateEffect, StateField, Facet } from "@codemirror/state";
-import { indentUnit } from "@codemirror/language";
+import { indentUnit, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
+import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { closeBrackets, autocompletion, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import { lintKeymap } from "@codemirror/lint";
 
-import { showTooltip, Decoration, WidgetType, lineNumbers, highlightActiveLine } from "@codemirror/view";
+import {
+  EditorView,
+  showTooltip,
+  Decoration,
+  WidgetType,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  drawSelection,
+  dropCursor,
+  rectangularSelection,
+  crosshairCursor,
+  keymap,
+} from "@codemirror/view";
 
 const CONTEXT_LINES = 1; // How many lines above/below the selected code to capture
 const MAX_DOC_LENGTH = 100000;
@@ -227,8 +244,34 @@ const instructorCursorWidget = Decoration.widget({
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Export related extensions in groups
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Inlined from CodeMirror's basicSetup (see codemirror/dist/index.js), minus foldGutter()
+// and foldKeymap -- this app has no use for code folding, and the fold gutter column was
+// making the editor gutter unnecessarily wide by default.
 export const basicExtensions = [
-  basicSetup,
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
   python(),
   indentUnit.of("    "),
 ];

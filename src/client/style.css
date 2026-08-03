@@ -1044,6 +1044,7 @@ td {
 
 .cm-version-block-toolbar {
   padding: 3px 6px;
+  border-top: 1px solid #646cffab;
   border-bottom: 1px solid #646cffab;
   background: #f0f0ff;
   user-select: none;
