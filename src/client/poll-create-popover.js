@@ -11,14 +11,17 @@ import { positionPopover } from "./popover-position.js";
 // dismisses it -- it stays open through clicks elsewhere on the page so it doesn't
 // disappear mid-edit.
 export class PollCreatePopover {
-  constructor({ manager, getCurrentCode, onAbandonDraft, getPollDraftAnchor, onHighlightChange }) {
+  constructor({ manager, getCurrentCode, onAbandonDraft, getPollDraftAnchor, onHighlightChange, showPollPopover, hidePollPopover }) {
     this._manager = manager;
     this._getCurrentCode = getCurrentCode;
     this._onAbandonDraft = onAbandonDraft;
     this._getPollDraftAnchor = getPollDraftAnchor;
     this._onHighlightChange = onHighlightChange;
+    this._showPollPopover = showPollPopover;
+    this._hidePollPopover = hidePollPopover;
 
     this._rootEl = null;
+    this._anchorKey = null;
     this._isDraft = false;
     this._submitted = false;
     this._code = "";
@@ -32,14 +35,25 @@ export class PollCreatePopover {
     this._code = "";
     this._build();
     this._position(anchorEl.getBoundingClientRect());
+    this._promptEl.focus();
   }
 
-  openForSelection({ code, anchorRect }) {
+  openForSelection({ code, at }) {
     this.close();
     this._isDraft = true;
     this._code = code ?? "";
-    this._build();
-    this._position(anchorRect);
+    this._anchorKey = "create";
+    this._showPollPopover({
+      key: this._anchorKey,
+      at,
+      getRange: () => this._getPollDraftAnchor?.(),
+      mount: (containerEl) => this._build({ container: containerEl, anchored: true }),
+      unmount: () => {},
+    });
+    // The widget's DOM isn't attached to the live tree until CM applies the decoration inside
+    // dispatch() (toDOM() returns a detached node) -- by the time showPollPopover()'s dispatch
+    // call above returns, it is, so focusing here (rather than inside _build()) works reliably.
+    this._promptEl.focus();
     this._onHighlightChange?.(true);
   }
 
@@ -49,8 +63,12 @@ export class PollCreatePopover {
 
   close() {
     if (!this._rootEl) return;
-    this._rootEl.remove();
+    const anchorKey = this._anchorKey;
+    const rootEl = this._rootEl;
     this._rootEl = null;
+    this._anchorKey = null;
+    if (anchorKey) this._hidePollPopover(anchorKey);
+    else rootEl.remove();
     this._mcqBuilder = null;
     if (this._isDraft && !this._submitted) this._onAbandonDraft?.();
     this._isDraft = false;
@@ -60,9 +78,9 @@ export class PollCreatePopover {
 
   // MARK: Building
 
-  _build() {
+  _build({ container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover";
+    root.className = "poll-popover" + (anchored ? " poll-popover--anchored" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");
@@ -138,9 +156,8 @@ export class PollCreatePopover {
     footer.appendChild(submitBtn);
     root.appendChild(footer);
 
-    document.body.appendChild(root);
+    container.appendChild(root);
     this._rootEl = root;
-    prompt.focus();
   }
 
   async _submit(submitBtn) {

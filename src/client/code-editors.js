@@ -18,13 +18,13 @@ import {
   addPollMarkerEffect,
   removePollMarkerEffect,
   getPollMarkerPosition,
-  coordsForRange,
   pollMarkerExtensions,
   setPollPanelOpen,
   clearPollPanelOpen,
   setPollHover,
   clearPollHover,
 } from "./cm-poll-marker.js";
+import { showPollPopoverEffect, hidePollPopoverEffect, pollPopoverExtensions } from "./cm-poll-popover.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { keymap } from "@codemirror/view";
@@ -48,6 +48,7 @@ export class StudentCodeEditor {
         EditorView.editable.of(false),
         capLength,
         ...pollMarkerExtensions(onOpenPollMarker),
+        ...pollPopoverExtensions(),
         ...extraExtensions,
       ],
     });
@@ -130,21 +131,42 @@ export class StudentCodeEditor {
     });
   }
 
-  // Screen-space anchor for an already-created poll, looked up by id from its live marker
-  // position. Returns null if the poll has no marker (e.g. a standalone poll with no code anchor).
-  coordsForPollMarker(id) {
-    const { from, to } = getPollMarkerPosition(this.view.state, id);
-    if (from == null) return null;
-    return coordsForRange(this.view, from, to);
+  // Live doc position of an already-created poll's marker, looked up by id. Returns null if the
+  // poll has no marker (e.g. a standalone poll with no code anchor).
+  getPollAnchorPosition(id) {
+    const { from } = getPollMarkerPosition(this.view.state, id);
+    return from;
   }
 
-  // Scrolls a poll's anchored code into view -- used before positioning the active-poll popover
-  // so coordsForPollMarker() has real coordinates to measure (e.g. on page load, before the
-  // editor's viewport has ever been near the anchor). No-op if the poll has no code anchor.
+  // Live [from, to) span of an already-created poll's marker, looked up by id -- used to fit the
+  // active-poll popover beside the widest line of the anchored code. Returns null if the poll has
+  // no marker.
+  getPollAnchorRange(id) {
+    const { from, to } = getPollMarkerPosition(this.view.state, id);
+    return from == null ? null : { from, to };
+  }
+
+  // Scrolls a poll's anchored code into view -- used before opening the active-poll popover so
+  // the code is on-screen (e.g. on page load, before the editor's viewport has ever been near
+  // the anchor). No-op if the poll has no code anchor.
   scrollToPollMarker(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     if (from == null) return;
     this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+  }
+
+  // Mounts a popover panel as a CodeMirror decoration anchored to doc position `at`, keyed by
+  // `key` (replacing any existing popover under the same key). `getRange()` (optional) returns
+  // the live `{from, to}` span the popover should fit itself beside, re-read on every
+  // reposition. `mount(anchorEl, view)` appends the panel's DOM into `anchorEl`;
+  // `unmount(anchorEl)` is called when the popover is hidden or its anchor is torn down (e.g.
+  // scrolled far out of view).
+  showPollPopover({ key, at, getRange, mount, unmount }) {
+    this.view.dispatch({ effects: showPollPopoverEffect.of({ key, at, getRange, mount, unmount }) });
+  }
+
+  hidePollPopover(key) {
+    this.view.dispatch({ effects: hidePollPopoverEffect.of({ key }) });
   }
 
   removeVersionBlock(versionBlockId) {
@@ -290,6 +312,7 @@ export class InstructorCodeEditor {
         ...versionBlockExtensions(),
         ...versionWidgetTooltipExtensions(this.createNewVersionBlock.bind(this), this.requestCreatePoll.bind(this)),
         ...pollMarkerExtensions(onOpenPollMarker),
+        ...pollPopoverExtensions(),
       ],
     });
 
@@ -388,27 +411,43 @@ export class InstructorCodeEditor {
     return { from, to, docVersion: this.getDocVersion() };
   }
 
-  // Screen-space anchor for the poll-create popover -- see coordsForRange in cm-poll-marker.js.
-  coordsForPollAnchor(from, to) {
-    return coordsForRange(this.view, from, to);
+  // Live doc position of an already-created poll's marker, looked up by id (so it reflects any
+  // edits made since the poll was created). Returns null if the poll has no marker (e.g. a
+  // standalone poll with no code anchor).
+  getPollAnchorPosition(id) {
+    const { from } = getPollMarkerPosition(this.view.state, id);
+    return from;
   }
 
-  // Screen-space anchor for an already-created poll, looked up by id from its live marker
-  // position (so it reflects any edits made since the poll was created). Returns null if the
-  // poll has no marker (e.g. a standalone poll with no code anchor).
-  coordsForPollMarker(id) {
+  // Live [from, to) span of an already-created poll's marker, looked up by id -- used to fit the
+  // active-poll popover beside the widest line of the anchored code. Returns null if the poll has
+  // no marker.
+  getPollAnchorRange(id) {
     const { from, to } = getPollMarkerPosition(this.view.state, id);
-    if (from == null) return null;
-    return coordsForRange(this.view, from, to);
+    return from == null ? null : { from, to };
   }
 
-  // Scrolls a poll's anchored code into view -- used before positioning the active-poll popover
-  // so coordsForPollMarker() has real coordinates to measure (e.g. on page load, before the
-  // editor's viewport has ever been near the anchor). No-op if the poll has no code anchor.
+  // Scrolls a poll's anchored code into view -- used before opening the active-poll popover so
+  // the code is on-screen (e.g. on page load, before the editor's viewport has ever been near
+  // the anchor). No-op if the poll has no code anchor.
   scrollToPollMarker(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     if (from == null) return;
     this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+  }
+
+  // Mounts a popover panel as a CodeMirror decoration anchored to doc position `at`, keyed by
+  // `key` (replacing any existing popover under the same key). `getRange()` (optional) returns
+  // the live `{from, to}` span the popover should fit itself beside, re-read on every
+  // reposition. `mount(anchorEl, view)` appends the panel's DOM into `anchorEl`;
+  // `unmount(anchorEl)` is called when the popover is hidden or its anchor is torn down (e.g.
+  // scrolled far out of view).
+  showPollPopover({ key, at, getRange, mount, unmount }) {
+    this.view.dispatch({ effects: showPollPopoverEffect.of({ key, at, getRange, mount, unmount }) });
+  }
+
+  hidePollPopover(key) {
+    this.view.dispatch({ effects: hidePollPopoverEffect.of({ key }) });
   }
 
   // Highlights the draft's code range the same way hovering its gutter "?" icon does --

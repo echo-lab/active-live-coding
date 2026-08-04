@@ -28,9 +28,12 @@ function buildLiveHeader() {
 // the anchored code (code-linked polls) -- same anchor the create popover used. Stays open for
 // as long as the poll is active; only closes when the poll finishes or a new one replaces it.
 export class InstructorActivePollPopover {
-  constructor({ manager }) {
+  constructor({ manager, showPollPopover, hidePollPopover }) {
     this._manager = manager;
+    this._showPollPopover = showPollPopover;
+    this._hidePollPopover = hidePollPopover;
     this._rootEl = null;
+    this._anchorKey = null;
     this._exerciseId = null;
     this._responseCountEl = null;
     this._timerEl = null;
@@ -41,31 +44,53 @@ export class InstructorActivePollPopover {
     return this._rootEl != null && this._exerciseId === id;
   }
 
-  open({ exercise, anchorRect }) {
+  // `anchor` is either `{kind: "code", at, getRange}` (a live doc position, plus a live
+  // `() => {from, to}` getter for fitting the popover beside the widest anchored line) or
+  // `{kind: "standalone", anchorEl}` (e.g. the toolbar poll button).
+  open({ exercise, anchor }) {
     if (this.isOpenFor(exercise.id)) return;
     this.close();
     this._exerciseId = exercise.id;
-    this._build(exercise);
-    positionPopover(this._rootEl, anchorRect);
+    if (anchor?.kind === "code") {
+      this._anchorKey = `active:${exercise.id}`;
+      this._showPollPopover({
+        key: this._anchorKey,
+        at: anchor.at,
+        getRange: anchor.getRange,
+        mount: (containerEl) => this._build(exercise, { container: containerEl, anchored: true }),
+        unmount: () => this._stopTimer(),
+      });
+    } else {
+      this._build(exercise);
+      positionPopover(this._rootEl, anchor?.anchorEl?.getBoundingClientRect());
+    }
     this._startTimer(exercise.start_ts);
   }
 
   close() {
-    this._stopTimer();
-    this._rootEl?.remove();
+    if (!this._rootEl) return;
+    const anchorKey = this._anchorKey;
+    const rootEl = this._rootEl;
     this._rootEl = null;
+    this._anchorKey = null;
     this._exerciseId = null;
     this._responseCountEl = null;
     this._timerEl = null;
+    if (anchorKey) {
+      this._hidePollPopover(anchorKey); // synchronously triggers unmount() -> _stopTimer()
+    } else {
+      this._stopTimer();
+      rootEl.remove();
+    }
   }
 
   updateResponseCount(count) {
     if (this._responseCountEl) this._responseCountEl.textContent = `Responses so far: ${count}`;
   }
 
-  _build(exercise) {
+  _build(exercise, { container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover poll-popover--active";
+    root.className = "poll-popover poll-popover--active" + (anchored ? " poll-popover--anchored" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");
@@ -104,7 +129,7 @@ export class InstructorActivePollPopover {
 
     root.appendChild(footer);
 
-    document.body.appendChild(root);
+    container.appendChild(root);
     this._rootEl = root;
   }
 
@@ -131,10 +156,13 @@ export class InstructorActivePollPopover {
 // side. Anchored beside the linked code for code-anchored polls, or a fixed point supplied by
 // the caller for standalone polls (students have no "poll" button to anchor to).
 export class StudentActivePollPopover {
-  constructor({ manager, student_id }) {
+  constructor({ manager, student_id, showPollPopover, hidePollPopover }) {
     this._manager = manager;
     this._student_id = student_id;
+    this._showPollPopover = showPollPopover;
+    this._hidePollPopover = hidePollPopover;
     this._rootEl = null;
+    this._anchorKey = null;
     this._exerciseId = null;
   }
 
@@ -142,18 +170,37 @@ export class StudentActivePollPopover {
     return this._rootEl != null && this._exerciseId === id;
   }
 
-  open({ exercise, anchorRect }) {
+  // `anchor` is either `{kind: "code", at, getRange}` (a live doc position, plus a live
+  // `() => {from, to}` getter for fitting the popover beside the widest anchored line) or
+  // `{kind: "standalone", rect}` (a fixed screen rect -- students have no button to anchor to).
+  open({ exercise, anchor }) {
     if (this.isOpenFor(exercise.id)) return;
     this.close();
     this._exerciseId = exercise.id;
-    this._build(exercise);
-    positionPopover(this._rootEl, anchorRect);
+    if (anchor?.kind === "code") {
+      this._anchorKey = `active:${exercise.id}`;
+      this._showPollPopover({
+        key: this._anchorKey,
+        at: anchor.at,
+        getRange: anchor.getRange,
+        mount: (containerEl) => this._build(exercise, { container: containerEl, anchored: true }),
+        unmount: () => {},
+      });
+    } else {
+      this._build(exercise);
+      positionPopover(this._rootEl, anchor?.rect);
+    }
   }
 
   close() {
-    this._rootEl?.remove();
+    if (!this._rootEl) return;
+    const anchorKey = this._anchorKey;
+    const rootEl = this._rootEl;
     this._rootEl = null;
+    this._anchorKey = null;
     this._exerciseId = null;
+    if (anchorKey) this._hidePollPopover(anchorKey);
+    else rootEl.remove();
   }
 
   _myResponse(exercise) {
@@ -171,9 +218,9 @@ export class StudentActivePollPopover {
     }
   }
 
-  _build(exercise) {
+  _build(exercise, { container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover poll-popover--active";
+    root.className = "poll-popover poll-popover--active" + (anchored ? " poll-popover--anchored" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");
@@ -194,7 +241,7 @@ export class StudentActivePollPopover {
       this._buildTextAnswer(root, exercise, myResponse);
     }
 
-    document.body.appendChild(root);
+    container.appendChild(root);
     this._rootEl = root;
   }
 

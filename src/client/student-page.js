@@ -139,22 +139,30 @@ async function initialize({
     sessionActive = false;
   });
 
-  const studentActivePollPopover = new StudentActivePollPopover({ manager: activitiesManager, student_id: userId });
+  const studentActivePollPopover = new StudentActivePollPopover({
+    manager: activitiesManager,
+    student_id: userId,
+    showPollPopover: (args) => codeEditor.showPollPopover(args),
+    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+  });
 
   activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
     openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
     activePopover: studentActivePollPopover,
-    getAnchorRect: (ex) => {
+    getAnchor: (ex) => {
       if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
-        const rect = codeEditor.coordsForPollMarker(ex.id);
-        if (rect) return rect;
+        const at = codeEditor.getPollAnchorPosition(ex.id);
+        if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
       }
       // Standalone polls (no code anchor) have no dedicated element to anchor to on the
       // student side -- pin the popover to the editor pane's top-right corner instead.
       const paneRect = instructorCodeContainer.getBoundingClientRect();
-      return { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 };
+      return {
+        kind: "standalone",
+        rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
+      };
     },
     scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });

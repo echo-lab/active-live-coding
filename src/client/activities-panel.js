@@ -68,13 +68,13 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange, activePopover, getAnchorRect, scrollToExercise }) {
+  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange, activePopover, getAnchor, scrollToExercise }) {
     this.manager = manager;
     this.student_id = student_id;
     this.openActivitiesPanel = openActivitiesPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
-    this._getAnchorRect = getAnchorRect;
+    this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this.currentExerciseId = null;
 
@@ -87,12 +87,11 @@ export class StudentActivitiesPanel {
     this._init();
   }
 
-  // On page load, an already-active poll's code marker may be scrolled out of view (or not yet
-  // laid out), so coordsForPollMarker() can't measure real coordinates yet. Scroll it into view
-  // first, then wait a frame for CodeMirror to apply the scroll before positioning the popover.
+  // On page load, an already-active poll's code marker may not yet be scrolled into view --
+  // scroll it into view before opening the popover so its code is on-screen right away.
   _openActivePopoverOnLoad(ex) {
     this._scrollToExercise?.(ex);
-    requestAnimationFrame(() => this._openActivePopover(ex));
+    this._openActivePopover(ex);
   }
 
   _init() {
@@ -129,7 +128,7 @@ export class StudentActivitiesPanel {
   }
 
   _openActivePopover(ex) {
-    this._activePopover.open({ exercise: ex, anchorRect: this._getAnchorRect(ex) });
+    this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this.onPollPanelOpenChange?.(ex.id);
   }
 
@@ -771,7 +770,7 @@ export class InstructorActivitiesPanel {
     openPanel,
     onPollPanelOpenChange,
     activePopover,
-    getAnchorRect,
+    getAnchor,
     scrollToExercise,
   }) {
     /** @type {InstructorActivitiesManager} */
@@ -780,7 +779,7 @@ export class InstructorActivitiesPanel {
     this.openPanel = openPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
-    this._getAnchorRect = getAnchorRect;
+    this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this._currentPollId = null;
 
@@ -814,12 +813,11 @@ export class InstructorActivitiesPanel {
     this._renderList();
   }
 
-  // On page load, an already-active poll's code marker may be scrolled out of view (or not yet
-  // laid out), so coordsForPollMarker() can't measure real coordinates yet. Scroll it into view
-  // first, then wait a frame for CodeMirror to apply the scroll before positioning the popover.
+  // On page load, an already-active poll's code marker may not yet be scrolled into view --
+  // scroll it into view before opening the popover so its code is on-screen right away.
   _openActivePopoverOnLoad(ex) {
     this._scrollToExercise?.(ex);
-    requestAnimationFrame(() => this._openActivePopover(ex));
+    this._openActivePopover(ex);
   }
 
   #subscribeToManager() {
@@ -883,7 +881,7 @@ export class InstructorActivitiesPanel {
 
   _openActivePopover(ex) {
     this._currentPollId = ex.id;
-    this._activePopover.open({ exercise: ex, anchorRect: this._getAnchorRect(ex) });
+    this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this.onPollPanelOpenChange?.(ex.id);
   }
 

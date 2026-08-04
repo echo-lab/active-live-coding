@@ -136,9 +136,15 @@ function initialize({
     onAbandonDraft: () => codeEditor.abandonPollDraft(),
     getPollDraftAnchor: () => codeEditor.getPollDraftAnchor(),
     onHighlightChange: (highlighted) => codeEditor.setPollDraftHighlighted(highlighted),
+    showPollPopover: (args) => codeEditor.showPollPopover(args),
+    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
   });
 
-  const instructorActivePollPopover = new InstructorActivePollPopover({ manager: activitiesManager });
+  const instructorActivePollPopover = new InstructorActivePollPopover({
+    manager: activitiesManager,
+    showPollPopover: (args) => codeEditor.showPollPopover(args),
+    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+  });
 
   // Shared by both poll-creation entry points (toolbar button and right-click-on-selection) so
   // the "only one active poll at a time" guard can't be bypassed by either one.
@@ -156,8 +162,8 @@ function initialize({
     }
     pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
     codeEditor.startPollDraft({ from, to });
-    const anchorRect = codeEditor.coordsForPollAnchor(from, to);
-    pollCreatePopover.openForSelection({ code, anchorRect });
+    const at = codeEditor.getPollDraftAnchor()?.from;
+    pollCreatePopover.openForSelection({ code, at });
   }
 
   document.querySelector("#poll-button").addEventListener("click", (e) => {
@@ -212,12 +218,12 @@ function initialize({
     openPanel: openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
     activePopover: instructorActivePollPopover,
-    getAnchorRect: (ex) => {
+    getAnchor: (ex) => {
       if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
-        const rect = codeEditor.coordsForPollMarker(ex.id);
-        if (rect) return rect;
+        const at = codeEditor.getPollAnchorPosition(ex.id);
+        if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
       }
-      return document.querySelector("#poll-button").getBoundingClientRect();
+      return { kind: "standalone", anchorEl: document.querySelector("#poll-button") };
     },
     scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });

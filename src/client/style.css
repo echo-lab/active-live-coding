@@ -1440,6 +1440,7 @@ td {
 
 .poll-mcq-input {
   flex: 1;
+  min-width: 0;
   padding: 5px 8px;
   font-size: 13px;
   border: 1px solid #ccc;
@@ -1551,6 +1552,8 @@ td {
 
 .poll-mcq-choice-text {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .poll-mcq-results {
@@ -1578,6 +1581,39 @@ td {
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
   padding: 14px 16px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+/* Anchor for a popover mounted as a CodeMirror decoration: a zero-footprint inline element
+   (contributes no line height/flow width regardless of the panel's size inside it) that lives
+   in-flow beside the anchored code, so it scrolls with the document natively. */
+.cm-poll-popover-anchor {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  vertical-align: top;
+  line-height: 0;
+}
+
+/* The actual panel, positioned relative to .cm-poll-popover-anchor instead of the viewport --
+   `left` is set imperatively by cm-poll-popover.js's continuous repositioning. */
+.poll-popover--anchored {
+  position: absolute;
+  top: 0;
+  z-index: 1000; /* above in-editor layers (.cm-version-block-widget, .cm-fitb-run-btn @ 999) */
+}
+
+.poll-popover--anchored .poll-popover-arrow {
+  /* No consistent "side" once anchored -- it either sits directly beside the code or overlaps
+     it, and the existing cm-poll-highlight background already ties it to the code visually. */
+  display: none;
+}
+
+.poll-popover--offscreen {
+  visibility: hidden;
 }
 
 .poll-popover-arrow {
@@ -1681,6 +1717,9 @@ td {
 }
 
 .poll-popover-submit-btn {
+  display: block;
+  width: fit-content;
+  margin: 10px 0 0 auto;
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -1702,8 +1741,6 @@ td {
 
 /* Poll active popover (stage 2 -- awaiting responses) */
 .poll-popover--active {
-  /* border-left: 4px solid #e5484d; */
-  border: solid 2px red;
   padding-left: 12px;
 }
 
