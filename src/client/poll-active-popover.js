@@ -1,23 +1,7 @@
-import { EditorView, minimalSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
-import { python } from "@codemirror/lang-python";
 import { PollMcqBuilder } from "./activities-panel.js";
 import { positionPopover } from "./popover-position.js";
 
 // MARK: Shared building blocks
-
-function buildReadOnlyCodeBox(code) {
-  const el = document.createElement("div");
-  el.className = "poll-code-box";
-  const view = new EditorView({
-    state: EditorState.create({
-      doc: code,
-      extensions: [minimalSetup, python(), EditorView.lineWrapping, EditorView.editable.of(false)],
-    }),
-    parent: el,
-  });
-  return { el, view };
-}
 
 function buildLiveHeader() {
   const header = document.createElement("div");
@@ -48,7 +32,6 @@ export class InstructorActivePollPopover {
     this._manager = manager;
     this._rootEl = null;
     this._exerciseId = null;
-    this._codeView = null;
     this._responseCountEl = null;
     this._timerEl = null;
     this._timerInterval = null;
@@ -69,8 +52,6 @@ export class InstructorActivePollPopover {
 
   close() {
     this._stopTimer();
-    this._codeView?.destroy();
-    this._codeView = null;
     this._rootEl?.remove();
     this._rootEl = null;
     this._exerciseId = null;
@@ -96,13 +77,6 @@ export class InstructorActivePollPopover {
     this._timerEl.className = "poll-popover-timer";
     header.appendChild(this._timerEl);
     root.appendChild(header);
-
-    const code = exercise.instructor_code ?? "";
-    if (code) {
-      const { el, view } = buildReadOnlyCodeBox(code);
-      this._codeView = view;
-      root.appendChild(el);
-    }
 
     const instructionsEl = document.createElement("div");
     instructionsEl.className = "poll-instructions-display";
@@ -162,7 +136,6 @@ export class StudentActivePollPopover {
     this._student_id = student_id;
     this._rootEl = null;
     this._exerciseId = null;
-    this._codeView = null;
   }
 
   isOpenFor(id) {
@@ -178,8 +151,6 @@ export class StudentActivePollPopover {
   }
 
   close() {
-    this._codeView?.destroy();
-    this._codeView = null;
     this._rootEl?.remove();
     this._rootEl = null;
     this._exerciseId = null;
@@ -210,13 +181,6 @@ export class StudentActivePollPopover {
     root.appendChild(arrow);
 
     root.appendChild(buildLiveHeader());
-
-    const code = exercise.instructor_code ?? "";
-    if (code) {
-      const { el, view } = buildReadOnlyCodeBox(code);
-      this._codeView = view;
-      root.appendChild(el);
-    }
 
     const instructionsEl = document.createElement("div");
     instructionsEl.className = "poll-instructions-display";
