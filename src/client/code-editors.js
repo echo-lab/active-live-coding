@@ -138,6 +138,15 @@ export class StudentCodeEditor {
     return coordsForRange(this.view, from, to);
   }
 
+  // Scrolls a poll's anchored code into view -- used before positioning the active-poll popover
+  // so coordsForPollMarker() has real coordinates to measure (e.g. on page load, before the
+  // editor's viewport has ever been near the anchor). No-op if the poll has no code anchor.
+  scrollToPollMarker(id) {
+    const { from } = getPollMarkerPosition(this.view.state, id);
+    if (from == null) return;
+    this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+  }
+
   removeVersionBlock(versionBlockId) {
     const widget = this.getVersionBlock(versionBlockId);
     if (!widget) return;
@@ -391,6 +400,15 @@ export class InstructorCodeEditor {
     const { from, to } = getPollMarkerPosition(this.view.state, id);
     if (from == null) return null;
     return coordsForRange(this.view, from, to);
+  }
+
+  // Scrolls a poll's anchored code into view -- used before positioning the active-poll popover
+  // so coordsForPollMarker() has real coordinates to measure (e.g. on page load, before the
+  // editor's viewport has ever been near the anchor). No-op if the poll has no code anchor.
+  scrollToPollMarker(id) {
+    const { from } = getPollMarkerPosition(this.view.state, id);
+    if (from == null) return;
+    this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
   }
 
   // Highlights the draft's code range the same way hovering its gutter "?" icon does --

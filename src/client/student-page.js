@@ -156,6 +156,7 @@ async function initialize({
       const paneRect = instructorCodeContainer.getBoundingClientRect();
       return { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 };
     },
+    scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });
 }
 

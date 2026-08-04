@@ -219,5 +219,6 @@ function initialize({
       }
       return document.querySelector("#poll-button").getBoundingClientRect();
     },
+    scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });
 }
