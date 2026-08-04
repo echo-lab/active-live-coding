@@ -132,6 +132,7 @@ function initialize({
         pollCreatePopover.openStandalone({ anchorEl: document.querySelector("#poll-button") });
         return;
       }
+      pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
       codeEditor.startPollDraft({ from, to });
       const anchorRect = codeEditor.coordsForPollAnchor(from, to);
       pollCreatePopover.openForSelection({ code, anchorRect });
