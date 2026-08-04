@@ -21,6 +21,8 @@ import {
   pollMarkerExtensions,
   setPollPanelOpen,
   clearPollPanelOpen,
+  setPollHover,
+  clearPollHover,
 } from "./cm-poll-marker.js";
 import { GET_JSON_REQUEST, POST_JSON_REQUEST } from "./utils.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
@@ -366,6 +368,37 @@ export class InstructorCodeEditor {
     const { from, to } = getPollMarkerPosition(this.view.state, DRAFT_POLL_ID);
     if (from == null) return null;
     return { from, to, docVersion: this.getDocVersion() };
+  }
+
+  // Screen-space anchor for the poll-create popover: pinned just past the right edge of
+  // the widest line in [from, to] (not the editor pane's edge), so the popover lands right
+  // next to the selected code instead of far off to the side. Falls back to the editor
+  // pane's right edge if measurement fails for some reason (e.g., positions off-screen).
+  coordsForPollAnchor(from, to) {
+    const state = this.view.state;
+    const startLine = state.doc.lineAt(from);
+    const endLine = state.doc.lineAt(to);
+    let maxRight = -Infinity;
+    for (let lineNum = startLine.number; lineNum <= endLine.number; lineNum++) {
+      const coords = this.view.coordsAtPos(state.doc.line(lineNum).to);
+      if (coords) maxRight = Math.max(maxRight, coords.right);
+    }
+    const topCoords = this.view.coordsAtPos(from);
+    const bottomCoords = this.view.coordsAtPos(to) ?? topCoords;
+    if (!isFinite(maxRight) || !topCoords) {
+      maxRight = this.view.dom.getBoundingClientRect().right;
+    }
+    const top = topCoords?.top ?? 0;
+    const bottom = bottomCoords?.bottom ?? top + 20;
+    return { left: maxRight, right: maxRight, top, bottom, width: 0, height: bottom - top };
+  }
+
+  // Highlights the draft's code range the same way hovering its gutter "?" icon does --
+  // used while the poll-create popover is open for a code-anchored draft.
+  setPollDraftHighlighted(highlighted) {
+    this.view.dispatch({
+      effects: highlighted ? setPollHover.of(DRAFT_POLL_ID) : clearPollHover.of(null),
+    });
   }
 
   // Toggles the "lightly highlighted" state for the poll whose sidebar view is currently open.

@@ -15,6 +15,7 @@ import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
+import { PollCreatePopover } from "./poll-create-popover.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -128,16 +129,29 @@ function initialize({
         return;
       }
       if (from == null) {
-        activitiesPanel?.openPollCreate();
+        pollCreatePopover.openStandalone({ anchorEl: document.querySelector("#poll-button") });
         return;
       }
       codeEditor.startPollDraft({ from, to });
-      activitiesPanel?.openPollCreate({ from, to, code });
+      const anchorRect = codeEditor.coordsForPollAnchor(from, to);
+      pollCreatePopover.openForSelection({ code, anchorRect });
     },
     onOpenPollMarker: (exerciseId) => {
       const ex = activitiesManager.getExercise(exerciseId);
       if (ex) activitiesPanel?.openExercise(ex);
     },
+  });
+
+  const pollCreatePopover = new PollCreatePopover({
+    manager: activitiesManager,
+    getCurrentCode: () => codeEditor.currentCode(),
+    onAbandonDraft: () => codeEditor.abandonPollDraft(),
+    getPollDraftAnchor: () => codeEditor.getPollDraftAnchor(),
+    onHighlightChange: (highlighted) => codeEditor.setPollDraftHighlighted(highlighted),
+  });
+
+  document.querySelector("#poll-button").addEventListener("click", (e) => {
+    pollCreatePopover.openStandalone({ anchorEl: e.currentTarget });
   });
 
   let codeRunner = new PythonCodeRunner();
@@ -186,10 +200,6 @@ function initialize({
   activitiesPanel = new InstructorActivitiesPanel(activitiesManager, {
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
-    getSelectedCode: () => codeEditor.getSelectedCode(),
-    getCurrentCode: () => codeEditor.currentCode(),
-    onAbandonPollDraft: () => codeEditor.abandonPollDraft(),
-    getPollDraftAnchor: () => codeEditor.getPollDraftAnchor(),
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
   });
 }

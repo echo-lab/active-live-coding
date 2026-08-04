@@ -8,7 +8,6 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ReviewCodeEditor } from "./code-editors.js";
 import { stripTrailingWhitespace } from "./diff-utils.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
-import { DRAFT_POLL_ID } from "./cm-poll-marker.js";
 
 // MARK: Code/Poll HTML
 function trimAnswer(text) {
@@ -494,11 +493,13 @@ function renderResponsesEl(responsesEl, ex, groups) {
 }
 
 // MARK: PollMcqBuilder
-class PollMcqBuilder {
-  constructor(container, { onSuggest, onSubmit } = {}) {
+export class PollMcqBuilder {
+  constructor(container, { onSuggest, onSubmit, renderHeader = true, renderSubmitButton = true } = {}) {
     this._container = container;
     this._onSuggest = onSuggest;
     this._onSubmit = onSubmit;
+    this._renderHeader = renderHeader;
+    this._renderSubmitButton = renderSubmitButton;
     this._rows = [];
     this._rowsEl = null;
     this._addBtn = null;
@@ -508,33 +509,24 @@ class PollMcqBuilder {
     const section = document.createElement("div");
     section.className = "poll-mcq-section";
 
-    // Header row: title + suggest button
-    const header = document.createElement("div");
-    header.className = "poll-mcq-header";
+    if (this._renderHeader) {
+      // Header row: title + suggest button
+      const header = document.createElement("div");
+      header.className = "poll-mcq-header";
 
-    const title = document.createElement("span");
-    title.className = "poll-mcq-title";
-    title.textContent = "(Optional) Provide Choices";
+      const title = document.createElement("span");
+      title.className = "poll-mcq-title";
+      title.textContent = "(Optional) Provide Choices";
 
-    const suggestBtn = document.createElement("button");
-    suggestBtn.className = "poll-mcq-suggest-btn";
-    suggestBtn.textContent = "Suggest Choices";
-    suggestBtn.addEventListener("click", async () => {
-      if (!this._onSuggest) return;
-      suggestBtn.disabled = true;
-      suggestBtn.textContent = "Loading...";
-      try {
-        const choices = await this._onSuggest();
-        if (choices?.length) this.setSuggestedChoices(choices);
-      } finally {
-        suggestBtn.disabled = false;
-        suggestBtn.textContent = "Suggest Choices";
-      }
-    });
+      const suggestBtn = document.createElement("button");
+      suggestBtn.className = "poll-mcq-suggest-btn";
+      suggestBtn.textContent = "Suggest Choices";
+      suggestBtn.addEventListener("click", () => this.suggest(suggestBtn, "Suggest Choices"));
 
-    header.appendChild(title);
-    header.appendChild(suggestBtn);
-    section.appendChild(header);
+      header.appendChild(title);
+      header.appendChild(suggestBtn);
+      section.appendChild(header);
+    }
 
     // Rows container
     this._rowsEl = document.createElement("div");
@@ -568,19 +560,34 @@ class PollMcqBuilder {
     footer.appendChild(clearBtn);
     section.appendChild(footer);
 
-    const submitBtn = document.createElement("button");
-    submitBtn.className = "poll-mcq-submit-btn";
-    submitBtn.textContent = "Ask as Multiple Choice";
-    submitBtn.addEventListener("click", async () => {
-      if (!this._onSubmit) return;
-      const choices = this.getAnswers();
-      if (choices.length < 2) { alert("Please provide at least 2 choices."); return; }
-      submitBtn.disabled = true;
-      try { await this._onSubmit(choices); } finally { submitBtn.disabled = false; }
-    });
-    section.appendChild(submitBtn);
+    if (this._renderSubmitButton) {
+      const submitBtn = document.createElement("button");
+      submitBtn.className = "poll-mcq-submit-btn";
+      submitBtn.textContent = "Ask as Multiple Choice";
+      submitBtn.addEventListener("click", async () => {
+        if (!this._onSubmit) return;
+        const choices = this.getAnswers();
+        if (choices.length < 2) { alert("Please provide at least 2 choices."); return; }
+        submitBtn.disabled = true;
+        try { await this._onSubmit(choices); } finally { submitBtn.disabled = false; }
+      });
+      section.appendChild(submitBtn);
+    }
 
     this._container.appendChild(section);
+  }
+
+  // Runs the suggest-choices flow; optionally drives a button's disabled/loading label
+  // (used by both this builder's own header button and an external caller's button).
+  async suggest(buttonEl = null, restoreLabel = "Suggest Choices") {
+    if (!this._onSuggest) return;
+    if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = "Loading..."; }
+    try {
+      const choices = await this._onSuggest();
+      if (choices?.length) this.setSuggestedChoices(choices);
+    } finally {
+      if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = restoreLabel; }
+    }
   }
 
   _addRowInternal() {
@@ -711,14 +718,10 @@ class PollMcqBuilder {
 
 // MARK: PollExerciseWidget
 class PollExerciseWidget {
-  constructor({ manager, pollEl, onBack, getSelectedCode, getCurrentCode, onAbandonDraft, getPollDraftAnchor }) {
+  constructor({ manager, pollEl, onBack }) {
     this.pollEl = pollEl;
     this.timerInterval = null;
-    this.getSelectedCode = getSelectedCode;
-    this.getCurrentCode = getCurrentCode;
     this._onBack = onBack;
-    this._onAbandonDraft = onAbandonDraft;
-    this._getPollDraftAnchor = getPollDraftAnchor;
     this._manager = manager;
 
     this._timerEl = null;
@@ -756,17 +759,14 @@ class PollExerciseWidget {
     this.pollEl.innerHTML = "";
   }
 
-  _buildHeader({ isDraft = false } = {}) {
+  _buildHeader() {
     // Create a header w/ a back button and a timer element (which starts out empty)
     const header = document.createElement("div");
     header.className = "poll-activity-header";
     const backBtn = document.createElement("button");
     backBtn.className = "poll-back-btn";
     backBtn.textContent = "← Back to list";
-    backBtn.addEventListener("click", () => {
-      if (isDraft) this._onAbandonDraft?.();
-      this._onBack();
-    });
+    backBtn.addEventListener("click", () => this._onBack());
     this._timerEl = document.createElement("div");
     this._timerEl.className = "poll-timer";
     this._headerRightEl = document.createElement("div");
@@ -781,59 +781,6 @@ class PollExerciseWidget {
     this._setCode(code);
     this.codeEditorEl.hidden = !code;
     this.pollEl.appendChild(this.codeEditorEl);
-  }
-
-  showCreate({ code: presetCode } = {}) {
-    this._reset();
-    this._buildHeader({ isDraft: presetCode !== undefined });
-    const selectedCode = presetCode !== undefined ? presetCode : (this.getSelectedCode?.() ?? "");
-    this._buildCodeEditor(selectedCode);
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "poll-instructions-input";
-    textarea.placeholder = "Describe the activity...";
-    this._instructionsInput = textarea;
-    this.pollEl.appendChild(textarea);
-
-    const startBtn = document.createElement("button");
-    startBtn.textContent = "Ask as Free Response";
-    startBtn.className = "poll-submit-btn";
-    startBtn.addEventListener("click", async () => {
-      const instructions = this._instructionsInput.value.trim();
-      const code = this.codeView.state.doc.toString().trim();
-      const anchor = this._getPollDraftAnchor?.();
-      await this._manager.createPollExercise({
-        instructions,
-        ...(code ? { instructor_code: code } : {}),
-        full_instructor_code: this.getCurrentCode?.(),
-        ...(anchor ? { code_anchor_from: anchor.from, code_anchor_to: anchor.to, code_anchor_doc_version: anchor.docVersion } : {}),
-      });
-    });
-    this.pollEl.appendChild(startBtn);
-
-    new PollMcqBuilder(this.pollEl, {
-      onSuggest: async () => {
-        const instructions = this._instructionsInput.value.trim();
-        const code = this.codeView.state.doc.toString().trim();
-        return this._manager.suggestMcqChoices({
-          instructions,
-          instructor_code: code || null,
-          full_instructor_code: this.getCurrentCode?.(),
-        });
-      },
-      onSubmit: async (choices) => {
-        const instructions = this._instructionsInput.value.trim();
-        const code = this.codeView.state.doc.toString().trim();
-        const anchor = this._getPollDraftAnchor?.();
-        await this._manager.createPollMcqExercise({
-          instructions,
-          ...(code ? { instructor_code: code } : {}),
-          full_instructor_code: this.getCurrentCode?.(),
-          choices,
-          ...(anchor ? { code_anchor_from: anchor.from, code_anchor_to: anchor.to, code_anchor_doc_version: anchor.docVersion } : {}),
-        });
-      },
-    }).build();
   }
 
   showActive(ex) {
@@ -978,10 +925,6 @@ export class InstructorActivitiesPanel {
   constructor(manager, {
     activitiesPanelEl,
     openPanel,
-    getSelectedCode,
-    getCurrentCode,
-    onAbandonPollDraft,
-    getPollDraftAnchor,
     onPollPanelOpenChange,
   }) {
     /** @type {InstructorActivitiesManager} */
@@ -1004,18 +947,10 @@ export class InstructorActivitiesPanel {
       manager,
       pollEl: this.pollEl,
       onBack,
-      getSelectedCode,
-      getCurrentCode,
-      onAbandonDraft: onAbandonPollDraft,
-      getPollDraftAnchor,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,
       onBack,
-    });
-
-    this.pollButton.addEventListener("click", () => {
-      this.openPollCreate();
     });
 
     this.#subscribeToManager();
@@ -1063,13 +998,6 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
       this.pollWidget.updateResponseCount(responseCount);
     });
-  }
-
-  openPollCreate({ from, to, code } = {}) {
-    this.openPanel();
-    this.pollWidget.showCreate(from != null ? { code } : {});
-    this._currentPollId = from != null ? DRAFT_POLL_ID : null;
-    this._showView("poll");
   }
 
   openActivePoll(exercise) {
