@@ -376,7 +376,6 @@ pre {
 }
 
 /* Poll button */
-.poll-finish-button,
 #poll-button {
   padding: 6px 12px;
   border: 1px solid #ccc;
@@ -386,7 +385,6 @@ pre {
   font-size: 14px;
 }
 
-.poll-finish-button:hover,
 #poll-button:hover {
   background: #e8e8ff;
   border-color: #646cff;
@@ -874,29 +872,12 @@ td {
   margin-bottom: 14px;
 }
 
-.poll-header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: small;
-}
-
-.poll-header-right button {
-  border-color:darkgrey;
-}
-
 .poll-code-box {
   width: 95%;
   border: solid 1px grey;
   border-radius: 3px;
   margin-bottom: 15px;
   padding: 5px;
-}
-
-.poll-timer {
-  font-size: 22px;
-  font-weight: bold;
-  color: #444;
 }
 
 .poll-instructions-display,
@@ -1717,4 +1698,68 @@ td {
 .poll-popover-submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Poll active popover (stage 2 -- awaiting responses) */
+.poll-popover--active {
+  /* border-left: 4px solid #e5484d; */
+  border: solid 2px red;
+  padding-left: 12px;
+}
+
+.poll-popover-live-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: -14px -16px 10px -12px;
+  padding: 10px 16px 10px 12px;
+  background: #fdecec;
+  border-radius: 12px 12px 0 0;
+}
+
+.poll-popover-live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.poll-popover-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e5484d;
+}
+
+.poll-popover-live-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #c62828;
+}
+
+.poll-popover-timer {
+  font-size: 14px;
+  font-weight: 600;
+  color: #c62828;
+}
+
+.poll-popover--active .poll-instructions-display {
+  font-size: 15px;
+  padding: 10px 0;
+  margin-bottom: 10px;
+}
+
+.poll-popover-finish-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+}
+
+.poll-popover-finish-btn:hover {
+  background: #e8e8ff;
+  border-color: #646cff;
 }

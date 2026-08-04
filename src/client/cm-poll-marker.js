@@ -47,6 +47,29 @@ export function getPollMarkerPosition(state, id) {
   return { from, to };
 }
 
+// Screen-space rect for a document range [from, to): pinned just past the right edge of the
+// widest line it spans (not the editor pane's edge), so an anchored popover lands right next
+// to the code instead of far off to the side. Falls back to the editor pane's right edge if
+// measurement fails for some reason (e.g., positions off-screen).
+export function coordsForRange(view, from, to) {
+  const state = view.state;
+  const startLine = state.doc.lineAt(from);
+  const endLine = state.doc.lineAt(to);
+  let maxRight = -Infinity;
+  for (let lineNum = startLine.number; lineNum <= endLine.number; lineNum++) {
+    const coords = view.coordsAtPos(state.doc.line(lineNum).to);
+    if (coords) maxRight = Math.max(maxRight, coords.right);
+  }
+  const topCoords = view.coordsAtPos(from);
+  const bottomCoords = view.coordsAtPos(to) ?? topCoords;
+  if (!isFinite(maxRight) || !topCoords) {
+    maxRight = view.dom.getBoundingClientRect().right;
+  }
+  const top = topCoords?.top ?? 0;
+  const bottom = bottomCoords?.bottom ?? top + 20;
+  return { left: maxRight, right: maxRight, top, bottom, width: 0, height: bottom - top };
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // MARK: Hover + panel-open highlight
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////

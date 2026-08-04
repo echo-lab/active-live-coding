@@ -25,6 +25,7 @@ import {
 } from "../shared-constants.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
+import { StudentActivePollPopover } from "./poll-active-popover.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -138,10 +139,23 @@ async function initialize({
     sessionActive = false;
   });
 
+  const studentActivePollPopover = new StudentActivePollPopover({ manager: activitiesManager, student_id: userId });
+
   activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
     openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
+    activePopover: studentActivePollPopover,
+    getAnchorRect: (ex) => {
+      if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
+        const rect = codeEditor.coordsForPollMarker(ex.id);
+        if (rect) return rect;
+      }
+      // Standalone polls (no code anchor) have no dedicated element to anchor to on the
+      // student side -- pin the popover to the editor pane's top-right corner instead.
+      const paneRect = instructorCodeContainer.getBoundingClientRect();
+      return { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 };
+    },
   });
 }
 

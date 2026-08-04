@@ -16,6 +16,7 @@ import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
 import { PollCreatePopover } from "./poll-create-popover.js";
+import { InstructorActivePollPopover } from "./poll-active-popover.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -121,21 +122,7 @@ function initialize({
     versionBlocks,
     activitiesManager,
     onCreatePollRequested: ({ from, to, code }) => {
-      const activePoll = activitiesManager
-        .getActiveExercises()
-        .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
-      if (activePoll) {
-        activitiesPanel?.openActivePoll(activePoll);
-        return;
-      }
-      if (from == null) {
-        pollCreatePopover.openStandalone({ anchorEl: document.querySelector("#poll-button") });
-        return;
-      }
-      pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
-      codeEditor.startPollDraft({ from, to });
-      const anchorRect = codeEditor.coordsForPollAnchor(from, to);
-      pollCreatePopover.openForSelection({ code, anchorRect });
+      tryOpenCreatePopover({ anchorEl: document.querySelector("#poll-button"), from, to, code });
     },
     onOpenPollMarker: (exerciseId) => {
       const ex = activitiesManager.getExercise(exerciseId);
@@ -151,8 +138,30 @@ function initialize({
     onHighlightChange: (highlighted) => codeEditor.setPollDraftHighlighted(highlighted),
   });
 
+  const instructorActivePollPopover = new InstructorActivePollPopover({ manager: activitiesManager });
+
+  // Shared by both poll-creation entry points (toolbar button and right-click-on-selection) so
+  // the "only one active poll at a time" guard can't be bypassed by either one.
+  function tryOpenCreatePopover({ anchorEl, from = null, to = null, code = "" }) {
+    const activePoll = activitiesManager
+      .getActiveExercises()
+      .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
+    if (activePoll) {
+      activitiesPanel?.openActivePoll(activePoll);
+      return;
+    }
+    if (from == null) {
+      pollCreatePopover.openStandalone({ anchorEl });
+      return;
+    }
+    pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
+    codeEditor.startPollDraft({ from, to });
+    const anchorRect = codeEditor.coordsForPollAnchor(from, to);
+    pollCreatePopover.openForSelection({ code, anchorRect });
+  }
+
   document.querySelector("#poll-button").addEventListener("click", (e) => {
-    pollCreatePopover.openStandalone({ anchorEl: e.currentTarget });
+    tryOpenCreatePopover({ anchorEl: e.currentTarget });
   });
 
   let codeRunner = new PythonCodeRunner();
@@ -202,5 +211,13 @@ function initialize({
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
+    activePopover: instructorActivePollPopover,
+    getAnchorRect: (ex) => {
+      if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
+        const rect = codeEditor.coordsForPollMarker(ex.id);
+        if (rect) return rect;
+      }
+      return document.querySelector("#poll-button").getBoundingClientRect();
+    },
   });
 }

@@ -68,11 +68,13 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange }) {
+  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange, activePopover, getAnchorRect }) {
     this.manager = manager;
     this.student_id = student_id;
     this.openActivitiesPanel = openActivitiesPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
+    this._activePopover = activePopover;
+    this._getAnchorRect = getAnchorRect;
     this.currentExerciseId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
@@ -89,8 +91,7 @@ export class StudentActivitiesPanel {
       (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.end_ts == null
     );
     if (active) {
-      this.openActivitiesPanel();
-      this._showExercise(active);
+      this._openActivePopover(active);
     } else {
       this._showList();
     }
@@ -101,16 +102,13 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
-      this.openActivitiesPanel();
-      this._showExercise(exercise);
+      this._openActivePopover(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
-      if (this.currentExerciseId === exercise.id) {
-        this._showExercise(exercise);
-      }
+      this._activePopover.close();
     });
   }
 
@@ -121,12 +119,22 @@ export class StudentActivitiesPanel {
     this.onPollPanelOpenChange?.(null);
   }
 
-  // Opens the sidebar to a specific exercise (e.g. from clicking its code-editor gutter marker).
+  _openActivePopover(ex) {
+    this._activePopover.open({ exercise: ex, anchorRect: this._getAnchorRect(ex) });
+    this.onPollPanelOpenChange?.(ex.id);
+  }
+
+  // Opens the sidebar/popover to a specific exercise (e.g. from clicking its code-editor
+  // gutter marker) -- active exercises open in the popover, finished ones in the sidebar.
   showExerciseById(id) {
     const ex = this.manager.getExercise(id);
     if (!ex) return;
-    this.openActivitiesPanel();
-    this._showExercise(ex);
+    if (ex.end_ts == null) {
+      this._openActivePopover(ex);
+    } else {
+      this.openActivitiesPanel();
+      this._showExercise(ex);
+    }
   }
 
   _renderList() {
@@ -156,23 +164,30 @@ export class StudentActivitiesPanel {
         answerSnippet = " — no answer";
       }
       item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span><span class="activity-item-answer">${answerSnippet}</span>`;
-      item.addEventListener("click", () => this._showExercise(ex));
+      item.addEventListener("click", () => {
+        if (isActive) {
+          this._openActivePopover(ex);
+        } else {
+          this._showExercise(ex);
+        }
+      });
       this.listItemsEl.appendChild(item);
     });
   }
 
+  // Renders a FINISHED exercise's summary in the sidebar -- active exercises render in the
+  // popover instead (see _openActivePopover).
   _showExercise(ex) {
     this.currentExerciseId = ex.id;
     const latestEx = this.manager.getExercise(ex.id) ?? ex;
     this.exerciseEl.innerHTML = "";
     this.listEl.hidden = true;
     this.exerciseEl.hidden = false;
-    const isActive = latestEx.end_ts == null;
     const myResponse = latestEx.ExerciseResponses.find((r) => r.student_id === this.student_id);
     if (latestEx.type === "POLL") {
-      isActive ? this._showPollActive(latestEx, myResponse) : this._showPollComplete(latestEx, myResponse);
+      this._showPollComplete(latestEx, myResponse);
     } else if (latestEx.type === "POLL_MCQ") {
-      isActive ? this._showPollMcqActive(latestEx, myResponse) : this._showPollMcqComplete(latestEx, myResponse);
+      this._showPollMcqComplete(latestEx, myResponse);
     }
     this.onPollPanelOpenChange?.(latestEx.id);
   }
@@ -222,49 +237,6 @@ export class StudentActivitiesPanel {
     }
   }
 
-  // --- Screen 2: POLL active ---
-
-  _showPollActive(ex, myResponse) {
-    this._buildScreenHeader();
-    this._buildCodeEditorIfPresent(ex.instructor_code);
-    this._buildInstructions(ex.instructions);
-
-    if (myResponse) {
-      const submittedEl = document.createElement("div");
-      submittedEl.appendChild(
-        createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
-      );
-      this.exerciseEl.appendChild(submittedEl);
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "poll-instructions-input";
-    textarea.placeholder = "Your answer...";
-    textarea.maxLength = 500;
-    textarea.value = myResponse?.answer ?? "";
-    this.exerciseEl.appendChild(textarea);
-
-    const submitBtn = document.createElement("button");
-    submitBtn.className = "poll-submit-btn";
-    submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
-    submitBtn.addEventListener("click", async () => {
-      const answer = textarea.value.trim();
-      if (!answer) return;
-      submitBtn.disabled = true;
-      try {
-        await this.manager.submitResponse({ exerciseId: ex.id, answer });
-        this._updateLocalResponse(ex, answer);
-        this._renderList();
-        this._showExercise(ex);
-      } catch (e) {
-        alert(e.message);
-      } finally {
-        submitBtn.disabled = false;
-      }
-    });
-    this.exerciseEl.appendChild(submitBtn);
-  }
-
   // --- Screen 3: POLL complete ---
 
   _showPollComplete(ex, myResponse) {
@@ -284,79 +256,6 @@ export class StudentActivitiesPanel {
       noAnswerEl.textContent = "You didn't submit an answer.";
       this.exerciseEl.appendChild(noAnswerEl);
     }
-  }
-
-  // --- Screen 4: POLL_MCQ active ---
-
-  _showPollMcqActive(ex, myResponse) {
-    this._buildScreenHeader();
-    this._buildCodeEditorIfPresent(ex.instructor_code);
-    this._buildInstructions(ex.instructions);
-
-    const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
-    const selectedIndex = myResponse ? parseInt(myResponse.answer, 10) : null;
-
-    const choicesEl = document.createElement("div");
-    choicesEl.className = "poll-mcq-choices-display";
-
-    choices.forEach((choice, i) => {
-      const item = document.createElement("div");
-      item.className = "poll-mcq-choice-item";
-      item.style.cursor = "pointer";
-
-      const radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = `mcq-${ex.id}`;
-      radio.value = String(i);
-      radio.checked = selectedIndex === i;
-      radio.style.flexShrink = "0";
-      radio.style.marginRight = "6px";
-
-      const label = document.createElement("span");
-      label.className = "poll-mcq-choice-label";
-      label.textContent = String.fromCharCode(65 + i) + ".";
-
-      const text = document.createElement("span");
-      text.className = "poll-mcq-choice-text";
-      text.textContent = choice;
-
-      item.addEventListener("click", () => { radio.checked = true; });
-
-      item.appendChild(radio);
-      item.appendChild(label);
-      item.appendChild(text);
-      if (selectedIndex === i) {
-        const yourAnswerEl = document.createElement("span");
-        yourAnswerEl.className = "your-answer-label";
-        yourAnswerEl.textContent = "(your answer)";
-        yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
-        yourAnswerEl.style.marginLeft = "8px";
-        item.appendChild(yourAnswerEl);
-      }
-      choicesEl.appendChild(item);
-    });
-    this.exerciseEl.appendChild(choicesEl);
-
-    const submitBtn = document.createElement("button");
-    submitBtn.className = "poll-submit-btn";
-    submitBtn.textContent = myResponse ? "Change Answer" : "Submit";
-    submitBtn.addEventListener("click", async () => {
-      const checked = choicesEl.querySelector(`input[name="mcq-${ex.id}"]:checked`);
-      if (!checked) return;
-      const answer = checked.value;
-      submitBtn.disabled = true;
-      try {
-        await this.manager.submitResponse({ exerciseId: ex.id, answer });
-        this._updateLocalResponse(ex, answer);
-        this._renderList();
-        this._showExercise(ex);
-      } catch (e) {
-        alert(e.message);
-      } finally {
-        submitBtn.disabled = false;
-      }
-    });
-    this.exerciseEl.appendChild(submitBtn);
   }
 
   // --- Screen 5: POLL_MCQ complete ---
@@ -717,15 +616,15 @@ export class PollMcqBuilder {
 }
 
 // MARK: PollExerciseWidget
+//
+// Renders stage 3 (completed/summary) of a poll exercise in the sidebar. Stage 2 (active) lives
+// in InstructorActivePollPopover instead -- see poll-active-popover.js.
 class PollExerciseWidget {
   constructor({ manager, pollEl, onBack }) {
     this.pollEl = pollEl;
-    this.timerInterval = null;
     this._onBack = onBack;
     this._manager = manager;
 
-    this._timerEl = null;
-    this._responseCountEl = null;
     this._responsesEl = null;
     this._instructionsInput = null;
 
@@ -754,26 +653,19 @@ class PollExerciseWidget {
 
   // Empty the interface and start building the shared elements (e.g., the header)
   _reset() {
-    this._stopTimer();
     this.codeEditorEl.remove();
     this.pollEl.innerHTML = "";
   }
 
   _buildHeader() {
-    // Create a header w/ a back button and a timer element (which starts out empty)
+    // Create a header w/ a back button
     const header = document.createElement("div");
     header.className = "poll-activity-header";
     const backBtn = document.createElement("button");
     backBtn.className = "poll-back-btn";
     backBtn.textContent = "← Back to list";
     backBtn.addEventListener("click", () => this._onBack());
-    this._timerEl = document.createElement("div");
-    this._timerEl.className = "poll-timer";
-    this._headerRightEl = document.createElement("div");
-    this._headerRightEl.className = "poll-header-right";
-    this._headerRightEl.appendChild(this._timerEl);
     header.appendChild(backBtn);
-    header.appendChild(this._headerRightEl);
     this.pollEl.appendChild(header);
   }
 
@@ -781,36 +673,6 @@ class PollExerciseWidget {
     this._setCode(code);
     this.codeEditorEl.hidden = !code;
     this.pollEl.appendChild(this.codeEditorEl);
-  }
-
-  showActive(ex) {
-    this._reset();
-    this._buildHeader();
-    const code = ex.instructor_code ?? "";
-    this._buildCodeEditor(code);
-
-    const instructionsEl = document.createElement("div");
-    instructionsEl.className = "poll-instructions-display";
-    instructionsEl.textContent = ex.instructions ?? "";
-    this.pollEl.appendChild(instructionsEl);
-
-    if (ex.type === "POLL_MCQ" && ex.default_answer) {
-      PollMcqBuilder.buildActiveChoices(this.pollEl, JSON.parse(ex.default_answer));
-    }
-
-    let count = ex.ExerciseResponses.filter((r) => !r.isSimulated).length;
-    this._responseCountEl = document.createElement("div");
-    this._responseCountEl.className = "poll-response-count";
-    this._responseCountEl.textContent = `Responses so far: ${count}`;
-    this.pollEl.appendChild(this._responseCountEl);
-
-    const finishBtn = document.createElement("button");
-    finishBtn.textContent = "Finish";
-    finishBtn.className = "poll-finish-button";
-    finishBtn.addEventListener("click", () => this._manager.finishPollExercise());
-    this._headerRightEl.appendChild(finishBtn);
-
-    this._startTimer(ex.start_ts);
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
@@ -851,33 +713,6 @@ class PollExerciseWidget {
         renderResponsesEl(this._responsesEl, ex, groups);
       }
     }
-  }
-
-  stopTimer() {
-    this._stopTimer();
-  }
-
-  updateResponseCount(count) {
-    if (this._responseCountEl) {
-      this._responseCountEl.textContent = `Responses so far: ${count}`;
-    }
-  }
-
-  _startTimer(startTs) {
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    const update = () => {
-      let elapsed = Math.floor((Date.now() - startTs) / 1000);
-      let m = Math.floor(elapsed / 60);
-      let s = elapsed % 60;
-      if (this._timerEl) this._timerEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
-    };
-    update();
-    this.timerInterval = setInterval(update, 1000);
-  }
-
-  _stopTimer() {
-    clearInterval(this.timerInterval);
-    this.timerInterval = null;
   }
 }
 
@@ -926,12 +761,16 @@ export class InstructorActivitiesPanel {
     activitiesPanelEl,
     openPanel,
     onPollPanelOpenChange,
+    activePopover,
+    getAnchorRect,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
     this.activitiesPanelEl = activitiesPanelEl;
     this.openPanel = openPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
+    this._activePopover = activePopover;
+    this._getAnchorRect = getAnchorRect;
     this._currentPollId = null;
 
     // DOM refs owned by this panel
@@ -943,7 +782,7 @@ export class InstructorActivitiesPanel {
 
     const onBack = () => this._showView("list");
 
-    this.pollWidget = new PollExerciseWidget({
+    this.pollSummaryWidget = new PollExerciseWidget({
       manager,
       pollEl: this.pollEl,
       onBack,
@@ -957,8 +796,7 @@ export class InstructorActivitiesPanel {
 
     for (let ex of manager.getActiveExercises()) {
       if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
-        this.openPanel();
-        this._showActiveView(ex);
+        this._openActivePopover(ex);
         break;
       }
     }
@@ -968,13 +806,12 @@ export class InstructorActivitiesPanel {
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this.openPanel();
       this._renderList();
-      this._showActiveView(exercise);
+      this._openActivePopover(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") this.pollWidget.stopTimer();
+      if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") this._activePopover.close();
       this.openPanel();
       this._renderList();
       this._showSummaryView(exercise, { loading: exercise.type === "POLL" || exercise.type === "CODE_VARIANT" });
@@ -986,7 +823,7 @@ export class InstructorActivitiesPanel {
       if (ex.type === "CODE_VARIANT") {
         this.codeWidget.updateResponses(ex, groups);
       } else {
-        this.pollWidget.updateResponses(ex, groups);
+        this.pollSummaryWidget.updateResponses(ex, groups);
       }
     });
 
@@ -995,23 +832,22 @@ export class InstructorActivitiesPanel {
       this._showSummaryView(exercise);
     });
 
-    this.manager.addEventListener("responseReceived", ({ detail: { responseCount } }) => {
-      this.pollWidget.updateResponseCount(responseCount);
+    this.manager.addEventListener("responseReceived", ({ detail: { exercise, responseCount } }) => {
+      if (this._activePopover.isOpenFor(exercise.id)) this._activePopover.updateResponseCount(responseCount);
     });
   }
 
   openActivePoll(exercise) {
-    this.openPanel();
-    this._showActiveView(exercise);
+    this._openActivePopover(exercise);
   }
 
-  // Opens the sidebar to a specific exercise regardless of active/finished state --
+  // Opens the sidebar/popover to a specific exercise regardless of active/finished state --
   // e.g. from clicking its code-editor gutter marker.
   openExercise(ex) {
-    this.openPanel();
     if (ex.end_ts == null) {
-      this._showActiveView(ex);
+      this._openActivePopover(ex);
     } else {
+      this.openPanel();
       this._showSummaryView(ex);
     }
   }
@@ -1026,10 +862,10 @@ export class InstructorActivitiesPanel {
     this.onPollPanelOpenChange?.(name === "poll" ? this._currentPollId : null);
   }
 
-  _showActiveView(ex) {
+  _openActivePopover(ex) {
     this._currentPollId = ex.id;
-    this.pollWidget.showActive(ex);
-    this._showView("poll");
+    this._activePopover.open({ exercise: ex, anchorRect: this._getAnchorRect(ex) });
+    this.onPollPanelOpenChange?.(ex.id);
   }
 
   _showSummaryView(ex, options = {}) {
@@ -1040,7 +876,7 @@ export class InstructorActivitiesPanel {
       this._showView("code-exercise");
     } else {
       this._currentPollId = ex.id;
-      this.pollWidget.showSummary(ex, options);
+      this.pollSummaryWidget.showSummary(ex, options);
       this._showView("poll");
     }
   }
@@ -1058,8 +894,9 @@ export class InstructorActivitiesPanel {
       item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span>`;
       item.addEventListener("click", () => {
         if (isActive) {
-          this._showActiveView(ex);
+          this._openActivePopover(ex);
         } else {
+          this.openPanel();
           this._showSummaryView(ex);
         }
       });
@@ -1070,6 +907,6 @@ export class InstructorActivitiesPanel {
 
   _updatePollButton() {
     const activeExercises = this.manager.getActiveExercises();
-    this.pollButton.disabled = activeExercises.some(ex => ex.type === "POLL");
+    this.pollButton.disabled = activeExercises.some(ex => ex.type === "POLL" || ex.type === "POLL_MCQ");
   }
 }
