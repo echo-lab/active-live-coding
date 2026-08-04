@@ -110,6 +110,7 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
+      this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 
@@ -823,6 +824,7 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
+      this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 

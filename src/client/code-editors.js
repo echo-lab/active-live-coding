@@ -32,6 +32,9 @@ import { indentWithTab } from "@codemirror/commands";
 
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
+// Adjust below if we're not scrolling far down enoguh to an active poll.
+const SCROLL_Y_BUFFER = 200;
+
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
@@ -148,11 +151,18 @@ export class StudentCodeEditor {
 
   // Scrolls a poll's anchored code into view -- used before opening the active-poll popover so
   // the code is on-screen (e.g. on page load, before the editor's viewport has ever been near
-  // the anchor). No-op if the poll has no code anchor.
+  // the anchor). Animates smoothly (rather than jumping) since this can also fire while the
+  // viewer is already looking at the editor, when a poll is created live -- done by briefly
+  // enabling CSS smooth scrolling rather than computing the target ourselves, since CodeMirror's
+  // own height estimates for off-screen lines (e.g. past a Version Block widget) aren't accurate
+  // enough to land on the right line. No-op if the poll has no code anchor.
   scrollToPollMarker(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     if (from == null) return;
-    this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    const scroller = this.view.scrollDOM;
+    scroller.classList.add("cm-smooth-scroll");
+    this.view.dispatch({ effects: EditorView.scrollIntoView(from + SCROLL_Y_BUFFER, { y: "center" }) });
+    setTimeout(() => scroller.classList.remove("cm-smooth-scroll"), 600);
   }
 
   // Mounts a popover panel as a CodeMirror decoration anchored to doc position `at`, keyed by
@@ -436,11 +446,18 @@ export class InstructorCodeEditor {
 
   // Scrolls a poll's anchored code into view -- used before opening the active-poll popover so
   // the code is on-screen (e.g. on page load, before the editor's viewport has ever been near
-  // the anchor). No-op if the poll has no code anchor.
+  // the anchor). Animates smoothly (rather than jumping) since this can also fire while the
+  // viewer is already looking at the editor, when a poll is created live -- done by briefly
+  // enabling CSS smooth scrolling rather than computing the target ourselves, since CodeMirror's
+  // own height estimates for off-screen lines (e.g. past a Version Block widget) aren't accurate
+  // enough to land on the right line. No-op if the poll has no code anchor.
   scrollToPollMarker(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     if (from == null) return;
-    this.view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    const scroller = this.view.scrollDOM;
+    scroller.classList.add("cm-smooth-scroll");
+    this.view.dispatch({ effects: EditorView.scrollIntoView(from + SCROLL_Y_BUFFER, { y: "center" }) });
+    setTimeout(() => scroller.classList.remove("cm-smooth-scroll"), 600);
   }
 
   // Mounts a popover panel as a CodeMirror decoration anchored to doc position `at`, keyed by
