@@ -1606,10 +1606,14 @@ td {
   z-index: 1000; /* above in-editor layers (.cm-version-block-widget, .cm-fitb-run-btn @ 999) */
 }
 
+/* Anchored popovers always sit to the right of their code (positionAnchoredPopover in
+   cm-poll-popover.js), so the tip always points left. top:40px clears both the 12px corner
+   radius (so it meets the flat part of the left edge) and the active popovers' pink live-header
+   band (~34px), so it always touches a white section of the body. */
 .poll-popover--anchored .poll-popover-arrow {
-  /* No consistent "side" once anchored -- it either sits directly beside the code or overlaps
-     it, and the existing cm-poll-highlight background already ties it to the code visually. */
-  display: none;
+  right: 100%;
+  top: 40px;
+  border-right: 7px solid white;
 }
 
 .poll-popover--offscreen {
