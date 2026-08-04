@@ -110,8 +110,13 @@ function positionAnchoredPopover(panelEl, anchorEl, scrollerEl, view, getRange) 
   const anchorRect = anchorEl.getBoundingClientRect();
   const scrollerRect = scrollerEl.getBoundingClientRect();
 
+  // The anchor is a zero-size point at the top of the panel (see .cm-poll-popover-anchor); the
+  // panel itself extends downward from there by its own height. Offscreen-ness has to account
+  // for that height, or the panel disappears the instant its anchor line scrolls one pixel above
+  // the scroller's top -- even though most of the panel may still be visible below it.
+  const panelHeight = panelEl.offsetHeight;
   const offscreen =
-    anchorRect.bottom < scrollerRect.top ||
+    anchorRect.top + panelHeight < scrollerRect.top ||
     anchorRect.top > scrollerRect.bottom ||
     anchorRect.right < scrollerRect.left ||
     anchorRect.left > scrollerRect.right;
