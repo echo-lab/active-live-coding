@@ -132,7 +132,7 @@ export class StudentCodeEditor {
   }
 
   // Live doc position of an already-created poll's marker, looked up by id. Returns null if the
-  // poll has no marker (e.g. a standalone poll with no code anchor).
+  // poll has no marker (e.g. a poll whose anchored code was later entirely deleted).
   getPollAnchorPosition(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     return from;
@@ -352,32 +352,39 @@ export class InstructorCodeEditor {
     });
   }
 
-  // Checks for overlap w/ an existing version block (not supported yet -- silently no-op),
-  // then forwards to the caller-supplied handler w/ the snapped {from, to, code}.
+  // Snaps the selection (or, if none, the cursor's whole line) into a poll anchor, then forwards
+  // to the caller-supplied handler w/ the final {from, to, code}. Silently no-ops if the range
+  // overlaps an existing version block (not supported), or if there's truly nothing in the
+  // document to anchor to.
   requestCreatePoll({ from, to }) {
-    if (from == null) {
-      this.onCreatePollRequested?.({ from: null, to: null, code: "" });
-      return;
+    // Trim leading/trailing whitespace so the anchor tightly bounds real code -- this keeps
+    // boundary-adjacent edits from landing inside the range, and lets it fully collapse (rather
+    // than leaving a whitespace-only remainder) if the code is later deleted. If the selection is
+    // entirely whitespace (e.g. a blank line), skip trimming instead of collapsing to empty --
+    // an all-whitespace anchor is fine.
+    const doc = this.view.state.doc;
+    const raw = doc.sliceString(from, to);
+    const lead = raw.match(/^\s*/)[0].length;
+    const trail = raw.match(/\s*$/)[0].length;
+    const trimmedFrom = from + lead;
+    const trimmedTo = Math.max(trimmedFrom, to - trail);
+    if (trimmedFrom < trimmedTo) {
+      from = trimmedFrom;
+      to = trimmedTo;
+    }
+
+    // Mark decorations can't be zero-width -- widen a fully empty anchor (cursor on a blank
+    // line) by a character, preferring the following line break, then the preceding one.
+    if (from === to) {
+      if (to < doc.length) to += 1;
+      else if (from > 0) from -= 1;
+      else return; // Nothing in the document at all -- nowhere to anchor.
     }
 
     const decorations = this.view.state.field(versionBlocksField);
     let overlapsVersionBlock = false;
     decorations.between(from, to, () => { overlapsVersionBlock = true; return false; });
     if (overlapsVersionBlock) return;
-
-    // Trim leading/trailing whitespace so the anchor tightly bounds the selected code -- this
-    // keeps boundary-adjacent edits from landing inside the range, and lets it fully collapse
-    // (rather than leaving a whitespace-only remainder) if the code is later deleted.
-    const doc = this.view.state.doc;
-    const raw = doc.sliceString(from, to);
-    const lead = raw.match(/^\s*/)[0].length;
-    const trail = raw.match(/\s*$/)[0].length;
-    from = from + lead;
-    to = Math.max(from, to - trail);
-    if (from >= to) {
-      this.onCreatePollRequested?.({ from: null, to: null, code: "" });
-      return;
-    }
 
     const code = doc.sliceString(from, to);
     this.onCreatePollRequested?.({ from, to, code });
@@ -413,7 +420,7 @@ export class InstructorCodeEditor {
 
   // Live doc position of an already-created poll's marker, looked up by id (so it reflects any
   // edits made since the poll was created). Returns null if the poll has no marker (e.g. a
-  // standalone poll with no code anchor).
+  // poll whose anchored code was later entirely deleted).
   getPollAnchorPosition(id) {
     const { from } = getPollMarkerPosition(this.view.state, id);
     return from;

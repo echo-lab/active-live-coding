@@ -788,7 +788,6 @@ export class InstructorActivitiesPanel {
     this.listItemsEl = document.querySelector("#activities-list-items");
     this.pollEl = document.querySelector("#activities-poll");
     this.codeExerciseEl = document.querySelector("#activities-code-exercise");
-    this.pollButton = document.querySelector("#poll-button");
 
     const onBack = () => this._showView("list");
 
@@ -919,11 +918,5 @@ export class InstructorActivitiesPanel {
       });
       this.listItemsEl.appendChild(item);
     });
-    this._updatePollButton();
-  }
-
-  _updatePollButton() {
-    const activeExercises = this.manager.getActiveExercises();
-    this.pollButton.disabled = activeExercises.some(ex => ex.type === "POLL" || ex.type === "POLL_MCQ");
   }
 }

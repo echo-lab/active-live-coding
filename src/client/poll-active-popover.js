@@ -24,9 +24,10 @@ function buildLiveHeader() {
 // MARK: InstructorActivePollPopover
 //
 // Floating popover for stage 2 (active/awaiting responses) of a poll exercise, on the
-// instructor's side. Anchored either to the toolbar "Poll" button (standalone polls) or beside
-// the anchored code (code-linked polls) -- same anchor the create popover used. Stays open for
-// as long as the poll is active; only closes when the poll finishes or a new one replaces it.
+// instructor's side. Anchored beside the linked code for code-anchored polls; if the anchor was
+// later invalidated by the instructor deleting the anchored code, falls back to a fixed rect near
+// the code editor pane (see InstructorActivitiesPanel's getAnchor). Stays open for as long as the
+// poll is active; only closes when the poll finishes or a new one replaces it.
 export class InstructorActivePollPopover {
   constructor({ manager, showPollPopover, hidePollPopover }) {
     this._manager = manager;
@@ -46,7 +47,8 @@ export class InstructorActivePollPopover {
 
   // `anchor` is either `{kind: "code", at, getRange}` (a live doc position, plus a live
   // `() => {from, to}` getter for fitting the popover beside the widest anchored line) or
-  // `{kind: "standalone", anchorEl}` (e.g. the toolbar poll button).
+  // `{kind: "standalone", rect}` (the anchor was invalidated after the anchored code was
+  // deleted).
   open({ exercise, anchor }) {
     if (this.isOpenFor(exercise.id)) return;
     this.close();
@@ -62,7 +64,7 @@ export class InstructorActivePollPopover {
       });
     } else {
       this._build(exercise);
-      positionPopover(this._rootEl, anchor?.anchorEl?.getBoundingClientRect());
+      positionPopover(this._rootEl, anchor?.rect);
     }
     this._startTimer(exercise.start_ts);
   }

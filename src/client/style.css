@@ -375,21 +375,6 @@ pre {
   color: grey;
 }
 
-/* Poll button */
-#poll-button {
-  padding: 6px 12px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  background: white;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-#poll-button:hover {
-  background: #e8e8ff;
-  border-color: #646cff;
-}
-
 .topbar-left {
   display: grid;
   grid-area: left-section;

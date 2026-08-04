@@ -1,11 +1,10 @@
 import { PollMcqBuilder } from "./activities-panel.js";
-import { positionPopover } from "./popover-position.js";
 
 // MARK: PollCreatePopover
 //
-// Floating popover for stage 1 (creating) of a poll exercise. Anchored either to the
-// toolbar "Poll" button (a standalone poll) or to a code selection (a code-anchored
-// draft poll, via right-click "Create Poll" in the editor). Once submitted, the manager's
+// Floating popover for stage 1 (creating) of a poll exercise, anchored to a code selection (a
+// code-anchored draft poll, created via right-click "Create Poll" in the editor -- which always
+// snaps to at least one full, possibly blank, line). Once submitted, the manager's
 // "exerciseCreated" event takes over and the sidebar opens into the active view --
 // this popover only needs to know how to close itself. Only the close ("x") button
 // dismisses it -- it stays open through clicks elsewhere on the page so it doesn't
@@ -27,15 +26,6 @@ export class PollCreatePopover {
     this._code = "";
     this._mcqBuilder = null;
     this._promptEl = null;
-  }
-
-  openStandalone({ anchorEl }) {
-    this.close();
-    this._isDraft = false;
-    this._code = "";
-    this._build();
-    this._position(anchorEl.getBoundingClientRect());
-    this._promptEl.focus();
   }
 
   openForSelection({ code, at }) {
@@ -122,7 +112,7 @@ export class PollCreatePopover {
         const instructions = this._promptEl.value.trim();
         return this._manager.suggestMcqChoices({
           instructions,
-          instructor_code: this._code || null,
+          instructor_code: this._code,
           full_instructor_code: this._getCurrentCode?.(),
         });
       },
@@ -161,13 +151,22 @@ export class PollCreatePopover {
   }
 
   async _submit(submitBtn) {
+    const anchor = this._getPollDraftAnchor?.();
+    if (!anchor) {
+      // The draft's anchored code was edited away to nothing while the popover was open.
+      alert("This poll's anchored code was edited away -- please recreate the poll.");
+      this.close();
+      return;
+    }
+
     const instructions = this._promptEl.value.trim();
     const choices = this._mcqBuilder.getAnswers();
-    const anchor = this._getPollDraftAnchor?.();
     const codeFields = {
-      ...(this._code ? { instructor_code: this._code } : {}),
+      instructor_code: this._code,
       full_instructor_code: this._getCurrentCode?.(),
-      ...(anchor ? { code_anchor_from: anchor.from, code_anchor_to: anchor.to, code_anchor_doc_version: anchor.docVersion } : {}),
+      code_anchor_from: anchor.from,
+      code_anchor_to: anchor.to,
+      code_anchor_doc_version: anchor.docVersion,
     };
 
     submitBtn.disabled = true;
@@ -182,11 +181,5 @@ export class PollCreatePopover {
     } finally {
       submitBtn.disabled = false;
     }
-  }
-
-  // MARK: Positioning
-
-  _position(anchorRect) {
-    positionPopover(this._rootEl, anchorRect);
   }
 }

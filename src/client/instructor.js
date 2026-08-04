@@ -122,7 +122,7 @@ function initialize({
     versionBlocks,
     activitiesManager,
     onCreatePollRequested: ({ from, to, code }) => {
-      tryOpenCreatePopover({ anchorEl: document.querySelector("#poll-button"), from, to, code });
+      tryOpenCreatePopover({ from, to, code });
     },
     onOpenPollMarker: (exerciseId) => {
       const ex = activitiesManager.getExercise(exerciseId);
@@ -146,9 +146,9 @@ function initialize({
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
   });
 
-  // Shared by both poll-creation entry points (toolbar button and right-click-on-selection) so
-  // the "only one active poll at a time" guard can't be bypassed by either one.
-  function tryOpenCreatePopover({ anchorEl, from = null, to = null, code = "" }) {
+  // The only poll-creation entry point (right-click "Create Poll" in the editor); guards against
+  // opening a second create/active poll while one is already active.
+  function tryOpenCreatePopover({ from, to, code = "" }) {
     const activePoll = activitiesManager
       .getActiveExercises()
       .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
@@ -156,19 +156,11 @@ function initialize({
       activitiesPanel?.openActivePoll(activePoll);
       return;
     }
-    if (from == null) {
-      pollCreatePopover.openStandalone({ anchorEl });
-      return;
-    }
     pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
     codeEditor.startPollDraft({ from, to });
     const at = codeEditor.getPollDraftAnchor()?.from;
     pollCreatePopover.openForSelection({ code, at });
   }
-
-  document.querySelector("#poll-button").addEventListener("click", (e) => {
-    tryOpenCreatePopover({ anchorEl: e.currentTarget });
-  });
 
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(outputCodeContainer);
@@ -223,7 +215,14 @@ function initialize({
         const at = codeEditor.getPollAnchorPosition(ex.id);
         if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
       }
-      return { kind: "standalone", anchorEl: document.querySelector("#poll-button") };
+      // A poll's code anchor can still be nulled out post-creation if the anchored code is later
+      // entirely deleted (see LectureSession._resolvePollAnchors) -- pin the popover to a fixed
+      // point near the code editor pane in that case, same pattern as the student side.
+      const paneRect = codeContainer.getBoundingClientRect();
+      return {
+        kind: "standalone",
+        rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
+      };
     },
     scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });

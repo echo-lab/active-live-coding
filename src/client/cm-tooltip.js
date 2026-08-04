@@ -55,10 +55,6 @@ function createVersionWidgetTooltipDOM(view) {
     let state = view.state;
     let callback = state.facet(handleCreatePoll);
     let { from, to } = state.selection.main;
-    if (from === to) {
-      callback && callback({ from: null, to: null });
-      return;
-    }
     let startLine = state.doc.lineAt(from);
     let endLine = state.doc.lineAt(to);
     let lineStart = startLine.number;
