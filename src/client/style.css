@@ -608,6 +608,13 @@ td {
   border-color: #646cff;
 }
 
+.activity-list-item.selected {
+  border-color: #646cff;
+  border-width: 2px;
+  padding: 7px 9px;
+  box-shadow: 0 0 0 1px #646cff33;
+}
+
 .activity-item-preview {
   flex: 1;
   font-size: 13px;
@@ -635,13 +642,8 @@ td {
 }
 
 .badge-active {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.badge-done {
-  background: #f5f5f5;
-  color: #777;
+  background: #fdecec;
+  color: #c62828;
 }
 
 /* Activity panel header rows (back button + optional timer) */

@@ -69,6 +69,16 @@ function mostRecentlyCreated(exercises) {
     : null;
 }
 
+// Single-line preview text for an activity-list row: polls preview their instructions,
+// code exercises (which have no instructions) preview their starter code instead.
+function activityPreviewText(ex) {
+  if (ex.type === "CODE_VARIANT") {
+    const code = (ex.default_answer ?? "").replace(/\s+/g, " ").trim();
+    return code ? code.slice(0, 60) : "(empty code exercise)";
+  }
+  return ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
+}
+
 // MARK: Student Panel
 export class StudentActivitiesPanel {
   constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise }) {
@@ -79,6 +89,7 @@ export class StudentActivitiesPanel {
     this._completePopover = completePopover;
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
+    this._selectedActivityId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
     this.listItemsEl = document.querySelector("#student-activities-list-items");
@@ -111,32 +122,32 @@ export class StudentActivitiesPanel {
 
   _subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._openFinished(exercise);
     });
   }
 
   _showList() {
     this.listEl.hidden = false;
-    this.onPollPanelOpenChange?.(null);
+    this._notifyPollHighlight(null);
   }
 
   _openActivePopover(ex) {
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
-    this.onPollPanelOpenChange?.(ex.id);
+    this._notifyPollHighlight(ex.id);
   }
 
   _openCompletePopover(ex) {
     this._completePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
-    this.onPollPanelOpenChange?.(ex.id);
+    this._notifyPollHighlight(ex.id);
   }
 
   // Scrolls the anchored code into view, then opens the stage-3 review popover.
@@ -147,12 +158,26 @@ export class StudentActivitiesPanel {
 
   // Called by the complete popover when it closes itself (e.g. via its own "x").
   notifyCompletePopoverClosed() {
-    this.onPollPanelOpenChange?.(null);
+    this._notifyPollHighlight(null);
   }
 
   // Called by the active popover when it closes itself (e.g. via its own "x").
   notifyActivePopoverClosed() {
-    this.onPollPanelOpenChange?.(null);
+    this._notifyPollHighlight(null);
+  }
+
+  // Single choke point for "which activity is currently selected" -- keeps the sidebar row
+  // highlight in lockstep with whatever id drives the gutter marker's glow.
+  _notifyPollHighlight(id) {
+    this._selectedActivityId = id;
+    this._updateSelectedHighlight();
+    this.onPollPanelOpenChange?.(id);
+  }
+
+  _updateSelectedHighlight() {
+    this.listItemsEl.querySelectorAll(".activity-list-item[data-exercise-id]").forEach((el) => {
+      el.classList.toggle("selected", Number(el.dataset.exerciseId) === this._selectedActivityId);
+    });
   }
 
   // Opens the popover for a specific exercise (e.g. from clicking its code-editor gutter
@@ -169,38 +194,46 @@ export class StudentActivitiesPanel {
 
   _renderList() {
     this.listItemsEl.innerHTML = "";
-    const pollExercises = this.manager.exercises.filter(
-      (ex) => ex.type === "POLL" || ex.type === "POLL_MCQ"
+    const relevantExercises = this.manager.exercises.filter(
+      (ex) => ex.type === "POLL" || ex.type === "POLL_MCQ" || ex.type === "CODE_VARIANT"
     );
-    this.placeholderEl.hidden = pollExercises.length > 0;
-    [...pollExercises].reverse().forEach((ex) => {
-      const myResponse = ex.ExerciseResponses.find((r) => r.student_id === this.student_id);
+    this.placeholderEl.hidden = relevantExercises.length > 0;
+    [...relevantExercises].reverse().forEach((ex) => {
+      const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
       const isActive = ex.end_ts == null;
       const item = document.createElement("div");
       item.className = "activity-list-item";
-      const badge = isActive ? "Active" : "Done";
-      const preview = ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
-      let answerSnippet;
-      if (myResponse) {
-        if (ex.type === "POLL_MCQ" && ex.default_answer) {
-          const choices = JSON.parse(ex.default_answer);
-          const idx = parseInt(myResponse.answer, 10);
-          const letter = !isNaN(idx) && choices[idx] ? String.fromCharCode(65 + idx) : "?";
-          answerSnippet = ` — Choice ${letter}`;
+      const preview = activityPreviewText(ex);
+      const badge = isActive ? `<span class="activity-item-badge badge-active">Active</span>` : "";
+
+      if (isPoll) {
+        const myResponse = ex.ExerciseResponses.find((r) => r.student_id === this.student_id);
+        let answerSnippet;
+        if (myResponse) {
+          if (ex.type === "POLL_MCQ" && ex.default_answer) {
+            const choices = JSON.parse(ex.default_answer);
+            const idx = parseInt(myResponse.answer, 10);
+            const letter = !isNaN(idx) && choices[idx] ? String.fromCharCode(65 + idx) : "?";
+            answerSnippet = ` — Choice ${letter}`;
+          } else {
+            answerSnippet = ` — "${myResponse.answer.slice(0, 30)}"`;
+          }
         } else {
-          answerSnippet = ` — "${myResponse.answer.slice(0, 30)}"`;
+          answerSnippet = " — no answer";
         }
+        item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}<span class="activity-item-answer">${answerSnippet}</span>`;
+        item.dataset.exerciseId = ex.id;
+        item.classList.toggle("selected", ex.id === this._selectedActivityId);
+        item.addEventListener("click", () => {
+          if (isActive) {
+            this._openActivePopover(ex);
+          } else {
+            this._openFinished(ex);
+          }
+        });
       } else {
-        answerSnippet = " — no answer";
+        item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}`;
       }
-      item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span><span class="activity-item-answer">${answerSnippet}</span>`;
-      item.addEventListener("click", () => {
-        if (isActive) {
-          this._openActivePopover(ex);
-        } else {
-          this._openFinished(ex);
-        }
-      });
       this.listItemsEl.appendChild(item);
     });
   }
@@ -681,6 +714,7 @@ export class InstructorActivitiesPanel {
     this._currentPollId = null;
     this._activePopoverId = null;
     this._completePopoverId = null;
+    this._selectedActivityId = null;
 
     // DOM refs owned by this panel
     this.listEl = document.querySelector("#activities-list");
@@ -737,8 +771,8 @@ export class InstructorActivitiesPanel {
 
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
@@ -804,7 +838,7 @@ export class InstructorActivitiesPanel {
   _openActivePopover(ex) {
     this._activePopoverId = ex.id;
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
-    this.onPollPanelOpenChange?.(ex.id);
+    this._notifyPollHighlight(ex.id);
   }
 
   _openCompletePopover(ex) {
@@ -840,11 +874,28 @@ export class InstructorActivitiesPanel {
     this._syncPollHighlight();
   }
 
-  // The editor's code-highlight for a poll should stay on as long as EITHER the complete
-  // popover or the (free-response-only) sidebar summary is showing it.
+  // The editor's code-highlight for a poll should stay on as long as ANY of the active popover,
+  // the complete popover, or the (free-response-only) sidebar summary is showing it -- e.g.
+  // switching the sidebar to the list view while an active popover is still open elsewhere must
+  // not clear its highlight.
   _syncPollHighlight() {
     const sidebarId = !this.pollEl.hidden ? this._currentPollId : null;
-    this.onPollPanelOpenChange?.(this._completePopoverId ?? sidebarId ?? null);
+    this._notifyPollHighlight(this._activePopoverId ?? this._completePopoverId ?? sidebarId ?? null);
+  }
+
+  // Single choke point for "which activity is currently selected" -- keeps the sidebar row
+  // highlight (which has no other way to know about popover/gutter-driven selection changes)
+  // in lockstep with whatever id drives the gutter marker's glow.
+  _notifyPollHighlight(id) {
+    this._selectedActivityId = id;
+    this._updateSelectedHighlight();
+    this.onPollPanelOpenChange?.(id);
+  }
+
+  _updateSelectedHighlight() {
+    this.listItemsEl.querySelectorAll(".activity-list-item[data-exercise-id]").forEach((el) => {
+      el.classList.toggle("selected", Number(el.dataset.exerciseId) === this._selectedActivityId);
+    });
   }
 
   _showSummaryView(ex, options = {}) {
@@ -863,21 +914,27 @@ export class InstructorActivitiesPanel {
   _renderList() {
     this.listItemsEl.innerHTML = "";
     [...this.manager.getExercises()].reverse().forEach((ex) => {
-      if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
+      const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
+      if (!isPoll && ex.type !== "CODE_VARIANT") return;
 
       let item = document.createElement("div");
       item.className = "activity-list-item";
       let isActive = ex.end_ts == null;
-      let badge = isActive ? "Active" : "Done";
-      let preview = ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
-      item.innerHTML = `<span class="activity-item-preview">${preview}</span><span class="activity-item-badge ${isActive ? "badge-active" : "badge-done"}">${badge}</span>`;
-      item.addEventListener("click", () => {
-        if (isActive) {
-          this._openActivePopover(ex);
-        } else {
-          this._openFinished(ex);
-        }
-      });
+      let preview = activityPreviewText(ex);
+      let badge = isActive ? `<span class="activity-item-badge badge-active">Active</span>` : "";
+      item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}`;
+
+      if (isPoll) {
+        item.dataset.exerciseId = ex.id;
+        item.classList.toggle("selected", ex.id === this._selectedActivityId);
+        item.addEventListener("click", () => {
+          if (isActive) {
+            this._openActivePopover(ex);
+          } else {
+            this._openFinished(ex);
+          }
+        });
+      }
       this.listItemsEl.appendChild(item);
     });
   }
