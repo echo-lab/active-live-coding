@@ -99,13 +99,6 @@ export class StudentActivitiesPanel {
     this._init();
   }
 
-  // On page load, an already-active poll's code marker may not yet be scrolled into view --
-  // scroll it into view before opening the popover so its code is on-screen right away.
-  _openActivePopoverOnLoad(ex) {
-    this._scrollToExercise?.(ex);
-    this._openActivePopover(ex);
-  }
-
   _init() {
     const mostRecentActive = mostRecentlyCreated(
       this.manager.exercises.filter(
@@ -113,7 +106,7 @@ export class StudentActivitiesPanel {
       )
     );
     if (mostRecentActive) {
-      this._openActivePopoverOnLoad(mostRecentActive);
+      this._openActivePopover(mostRecentActive);
     } else {
       this._showList();
     }
@@ -124,7 +117,6 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       this._renderList();
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 
@@ -140,7 +132,10 @@ export class StudentActivitiesPanel {
     this._notifyPollHighlight(null);
   }
 
+  // Scrolls the anchored code into view before opening -- the poll's marker may not
+  // already be on-screen (e.g. page load, or the user scrolled away since it opened).
   _openActivePopover(ex) {
+    this._scrollToExercise?.(ex);
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this._notifyPollHighlight(ex.id);
   }
@@ -758,22 +753,14 @@ export class InstructorActivitiesPanel {
     const mostRecentActive = mostRecentlyCreated(
       manager.getActiveExercises().filter((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ")
     );
-    if (mostRecentActive) this._openActivePopoverOnLoad(mostRecentActive);
+    if (mostRecentActive) this._openActivePopover(mostRecentActive);
     this._renderList();
-  }
-
-  // On page load, an already-active poll's code marker may not yet be scrolled into view --
-  // scroll it into view before opening the popover so its code is on-screen right away.
-  _openActivePopoverOnLoad(ex) {
-    this._scrollToExercise?.(ex);
-    this._openActivePopover(ex);
   }
 
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       this._renderList();
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 
@@ -835,7 +822,10 @@ export class InstructorActivitiesPanel {
     this._syncPollHighlight();
   }
 
+  // Scrolls the anchored code into view before opening -- the poll's marker may not
+  // already be on-screen (e.g. page load, or the user scrolled away since it opened).
   _openActivePopover(ex) {
+    this._scrollToExercise?.(ex);
     this._activePopoverId = ex.id;
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this._notifyPollHighlight(ex.id);
