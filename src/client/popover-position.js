@@ -33,6 +33,7 @@ export function positionPopover(rootEl, anchorRect, { margin = 12 } = {}) {
     arrowEl.classList.add(side === "right" ? "poll-popover-arrow--left" : "poll-popover-arrow--right");
     const anchorCenterY = anchorRect.top + anchorRect.height / 2;
     const arrowTop = Math.min(Math.max(anchorCenterY - top - 7, 12), rect.height - 26);
+    // const arrowTop = Math.min(Math.max(anchorCenterY - top - 7, 12), rect.height - 40);
     arrowEl.style.top = `${arrowTop}px`;
 
     rootEl.style.visibility = "visible";

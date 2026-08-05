@@ -92,7 +92,11 @@ export class InstructorActivePollPopover {
 
   _build(exercise, { container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover poll-popover--active" + (anchored ? " poll-popover--anchored" : "");
+    const isSingleLine = !(exercise.instructor_code ?? "").includes("\n");
+    root.className =
+      "poll-popover poll-popover--active" +
+      (anchored ? " poll-popover--anchored" : "") +
+      (anchored && isSingleLine ? " single-line" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");
@@ -222,7 +226,11 @@ export class StudentActivePollPopover {
 
   _build(exercise, { container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover poll-popover--active" + (anchored ? " poll-popover--anchored" : "");
+    const isSingleLine = !(exercise.instructor_code ?? "").includes("\n");
+    root.className =
+      "poll-popover poll-popover--active" +
+      (anchored ? " poll-popover--anchored" : "") +
+      (anchored && isSingleLine ? " single-line" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");

@@ -70,7 +70,11 @@ export class PollCreatePopover {
 
   _build({ container = document.body, anchored = false } = {}) {
     const root = document.createElement("div");
-    root.className = "poll-popover" + (anchored ? " poll-popover--anchored" : "");
+    const isSingleLine = !this._code.includes("\n");
+    root.className =
+      "poll-popover" +
+      (anchored ? " poll-popover--anchored" : "") +
+      (anchored && isSingleLine ? " single-line" : "");
     root.setAttribute("role", "dialog");
 
     const arrow = document.createElement("div");
