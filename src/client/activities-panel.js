@@ -1,6 +1,3 @@
-import { EditorView, minimalSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
-import { python } from "@codemirror/lang-python";
 import { indentUnit } from "@codemirror/language";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
@@ -20,7 +17,7 @@ function trimAnswer(text) {
   return lines.slice(start, end + 1).join("\n");
 }
 
-function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
+export function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
   const trimmed = trimAnswer(answer);
 
   const wrapper = document.createElement("div");
@@ -68,20 +65,18 @@ function createAnswerDisplay(answer, exerciseType, { label = "Your submission:",
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, openActivitiesPanel, onPollPanelOpenChange, activePopover, getAnchor, scrollToExercise }) {
+  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise }) {
     this.manager = manager;
     this.student_id = student_id;
-    this.openActivitiesPanel = openActivitiesPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
+    this._completePopover = completePopover;
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
-    this.currentExerciseId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
     this.listItemsEl = document.querySelector("#student-activities-list-items");
     this.placeholderEl = document.querySelector("#student-activities-placeholder");
-    this.exerciseEl = document.querySelector("#student-activity");
 
     this._subscribeToManager();
     this._init();
@@ -109,6 +104,7 @@ export class StudentActivitiesPanel {
   _subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
+      this._completePopover.close();
       this._renderList();
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
@@ -118,12 +114,11 @@ export class StudentActivitiesPanel {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
       this._activePopover.close();
+      this._openFinished(exercise);
     });
   }
 
   _showList() {
-    this.currentExerciseId = null;
-    this.exerciseEl.hidden = true;
     this.listEl.hidden = false;
     this.onPollPanelOpenChange?.(null);
   }
@@ -133,16 +128,31 @@ export class StudentActivitiesPanel {
     this.onPollPanelOpenChange?.(ex.id);
   }
 
-  // Opens the sidebar/popover to a specific exercise (e.g. from clicking its code-editor
-  // gutter marker) -- active exercises open in the popover, finished ones in the sidebar.
+  _openCompletePopover(ex) {
+    this._completePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
+    this.onPollPanelOpenChange?.(ex.id);
+  }
+
+  // Scrolls the anchored code into view, then opens the stage-3 review popover.
+  _openFinished(ex) {
+    this._scrollToExercise?.(ex);
+    this._openCompletePopover(ex);
+  }
+
+  // Called by the complete popover when it closes itself (e.g. via its own "x").
+  notifyCompletePopoverClosed() {
+    this.onPollPanelOpenChange?.(null);
+  }
+
+  // Opens the popover for a specific exercise (e.g. from clicking its code-editor gutter
+  // marker) -- active exercises open the active popover, finished ones the complete popover.
   showExerciseById(id) {
     const ex = this.manager.getExercise(id);
     if (!ex) return;
     if (ex.end_ts == null) {
       this._openActivePopover(ex);
     } else {
-      this.openActivitiesPanel();
-      this._showExercise(ex);
+      this._openFinished(ex);
     }
   }
 
@@ -177,145 +187,11 @@ export class StudentActivitiesPanel {
         if (isActive) {
           this._openActivePopover(ex);
         } else {
-          this._showExercise(ex);
+          this._openFinished(ex);
         }
       });
       this.listItemsEl.appendChild(item);
     });
-  }
-
-  // Renders a FINISHED exercise's summary in the sidebar -- active exercises render in the
-  // popover instead (see _openActivePopover).
-  _showExercise(ex) {
-    this.currentExerciseId = ex.id;
-    const latestEx = this.manager.getExercise(ex.id) ?? ex;
-    this.exerciseEl.innerHTML = "";
-    this.listEl.hidden = true;
-    this.exerciseEl.hidden = false;
-    const myResponse = latestEx.ExerciseResponses.find((r) => r.student_id === this.student_id);
-    if (latestEx.type === "POLL") {
-      this._showPollComplete(latestEx, myResponse);
-    } else if (latestEx.type === "POLL_MCQ") {
-      this._showPollMcqComplete(latestEx, myResponse);
-    }
-    this.onPollPanelOpenChange?.(latestEx.id);
-  }
-
-  // --- Shared helpers ---
-
-  _buildScreenHeader() {
-    const header = document.createElement("div");
-    header.className = "poll-activity-header";
-    const backBtn = document.createElement("button");
-    backBtn.className = "poll-back-btn";
-    backBtn.textContent = "← Back to list";
-    backBtn.addEventListener("click", () => this._showList());
-    header.appendChild(backBtn);
-    this.exerciseEl.appendChild(header);
-  }
-
-  _buildCodeEditorIfPresent(code) {
-    if (!code) return;
-    const codeBoxEl = document.createElement("div");
-    codeBoxEl.className = "poll-code-box";
-    new EditorView({
-      state: EditorState.create({
-        doc: code,
-        extensions: [minimalSetup, python(), EditorView.lineWrapping, EditorView.editable.of(false)],
-      }),
-      parent: codeBoxEl,
-    });
-    this.exerciseEl.appendChild(codeBoxEl);
-  }
-
-  _buildInstructions(text) {
-    const el = document.createElement("div");
-    el.className = "poll-instructions-display";
-    el.textContent = text ?? "";
-    this.exerciseEl.appendChild(el);
-  }
-
-  _updateLocalResponse(ex, answer) {
-    const managerEx = this.manager.getExercise(ex.id);
-    if (!managerEx) return;
-    const idx = managerEx.ExerciseResponses.findIndex((r) => r.student_id === this.student_id);
-    if (idx >= 0) {
-      managerEx.ExerciseResponses[idx].answer = answer;
-    } else {
-      managerEx.ExerciseResponses.push({ student_id: this.student_id, answer });
-    }
-  }
-
-  // --- Screen 3: POLL complete ---
-
-  _showPollComplete(ex, myResponse) {
-    this._buildScreenHeader();
-    this._buildCodeEditorIfPresent(ex.instructor_code);
-    this._buildInstructions(ex.instructions);
-
-    if (myResponse) {
-      const submittedEl = document.createElement("div");
-      submittedEl.appendChild(
-        createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true })
-      );
-      this.exerciseEl.appendChild(submittedEl);
-    } else {
-      const noAnswerEl = document.createElement("div");
-      noAnswerEl.className = "no-answer-message";
-      noAnswerEl.textContent = "You didn't submit an answer.";
-      this.exerciseEl.appendChild(noAnswerEl);
-    }
-  }
-
-  // --- Screen 5: POLL_MCQ complete ---
-
-  _showPollMcqComplete(ex, myResponse) {
-    this._buildScreenHeader();
-    this._buildCodeEditorIfPresent(ex.instructor_code);
-    this._buildInstructions(ex.instructions);
-
-    const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
-
-    if (myResponse) {
-      const selectedIdx = parseInt(myResponse.answer, 10);
-      const choicesEl = document.createElement("div");
-      choicesEl.className = "poll-mcq-choices-display";
-
-      choices.forEach((choice, i) => {
-        const item = document.createElement("div");
-        item.className = "poll-mcq-choice-item";
-        const isSelected = i === selectedIdx;
-        if (isSelected) {
-          item.style.fontWeight = "600";
-        }
-
-        const label = document.createElement("span");
-        label.className = "poll-mcq-choice-label";
-        label.textContent = String.fromCharCode(65 + i) + ".";
-
-        const text = document.createElement("span");
-        text.className = "poll-mcq-choice-text";
-        text.textContent = choice;
-
-        item.appendChild(label);
-        item.appendChild(text);
-        if (isSelected) {
-          const yourAnswerEl = document.createElement("span");
-          yourAnswerEl.className = "your-answer-label";
-          yourAnswerEl.textContent = "(your answer)";
-          yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
-          yourAnswerEl.style.marginLeft = "8px";
-          item.appendChild(yourAnswerEl);
-        }
-        choicesEl.appendChild(item);
-      });
-      this.exerciseEl.appendChild(choicesEl);
-    } else {
-      const noAnswerEl = document.createElement("div");
-      noAnswerEl.className = "no-answer-message";
-      noAnswerEl.textContent = "You didn't submit an answer.";
-      this.exerciseEl.appendChild(noAnswerEl);
-    }
   }
 }
 
@@ -622,52 +498,65 @@ export class PollMcqBuilder {
     });
     container.appendChild(list);
   }
+
+  // Renders the full choice list read-only, bolding the respondent's own choice (no counts --
+  // used for a single student's own review, as opposed to buildSummaryResults' aggregate view).
+  static buildCompleteChoices(container, choices, selectedIndex) {
+    const list = document.createElement("div");
+    list.className = "poll-mcq-choices-display";
+    choices.forEach((choice, i) => {
+      const item = document.createElement("div");
+      item.className = "poll-mcq-choice-item";
+      const isSelected = i === selectedIndex;
+      if (isSelected) {
+        item.style.fontWeight = "600";
+      }
+
+      const label = document.createElement("span");
+      label.className = "poll-mcq-choice-label";
+      label.textContent = String.fromCharCode(65 + i) + ".";
+
+      const text = document.createElement("span");
+      text.className = "poll-mcq-choice-text";
+      text.textContent = choice;
+
+      item.appendChild(label);
+      item.appendChild(text);
+      if (isSelected) {
+        const yourAnswerEl = document.createElement("span");
+        yourAnswerEl.className = "your-answer-label";
+        yourAnswerEl.textContent = "(your answer)";
+        yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
+        yourAnswerEl.style.marginLeft = "8px";
+        item.appendChild(yourAnswerEl);
+      }
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
 }
 
 // MARK: PollExerciseWidget
 //
-// Renders stage 3 (completed/summary) of a poll exercise in the sidebar. Stage 2 (active) lives
-// in InstructorActivePollPopover instead -- see poll-active-popover.js.
+// Renders stage 3 (completed/summary) of a FREE-RESPONSE poll's aggregated responses in the
+// sidebar -- the question and (for POLL_MCQ) results now live in InstructorPollCompletePopover
+// instead (see poll-complete-popover.js); this widget is only ever shown for type "POLL".
 class PollExerciseWidget {
-  constructor({ manager, pollEl, onBack }) {
+  constructor({ pollEl, onBack }) {
     this.pollEl = pollEl;
     this._onBack = onBack;
-    this._manager = manager;
-
     this._responsesEl = null;
-    this._instructionsInput = null;
-
-    const readOnlyExtensions = [
-      minimalSetup,
-      python(),
-      EditorView.lineWrapping,
-      EditorView.editable.of(false),
-    ];
-
-    this.codeEditorEl = document.createElement("div");
-    this.codeEditorEl.classList.add("poll-code-box");
-    this.codeView = new EditorView({
-      state: EditorState.create({ doc: "", extensions: readOnlyExtensions }),
-      parent: this.codeEditorEl,
-    });
-  }
-
-  _setCode(code) {
-    this.codeView.dispatch({
-      changes: { from: 0, to: this.codeView.state.doc.length, insert: code },
-    });
   }
 
   // MARK: Helpers for building :)
 
   // Empty the interface and start building the shared elements (e.g., the header)
   _reset() {
-    this.codeEditorEl.remove();
     this.pollEl.innerHTML = "";
   }
 
   _buildHeader() {
-    // Create a header w/ a back button
+    // Create a header w/ a back link and a close ("x") button -- both return to the list.
     const header = document.createElement("div");
     header.className = "poll-activity-header";
     const backBtn = document.createElement("button");
@@ -675,33 +564,25 @@ class PollExerciseWidget {
     backBtn.textContent = "← Back to list";
     backBtn.addEventListener("click", () => this._onBack());
     header.appendChild(backBtn);
-    this.pollEl.appendChild(header);
-  }
 
-  _buildCodeEditor(code) {
-    this._setCode(code);
-    this.codeEditorEl.hidden = !code;
-    this.pollEl.appendChild(this.codeEditorEl);
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "poll-popover-close";
+    closeBtn.textContent = "×";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.addEventListener("click", () => this._onBack());
+    header.appendChild(closeBtn);
+
+    this.pollEl.appendChild(header);
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
     this._reset();
     this._buildHeader();
-    const code = ex.instructor_code ?? "";
-    this._buildCodeEditor(code);
-
-    const instructionsEl = document.createElement("div");
-    instructionsEl.className = "poll-instructions-display";
-    instructionsEl.textContent = ex.instructions ?? "";
-    this.pollEl.appendChild(instructionsEl);
 
     this._responsesEl = document.createElement("div");
     this.pollEl.appendChild(this._responsesEl);
 
-    if (ex.type === "POLL_MCQ") {
-      const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
-      PollMcqBuilder.buildSummaryResults(this._responsesEl, choices, ex.ExerciseResponses ?? []);
-    } else if (loading) {
+    if (loading) {
       const loadingEl = document.createElement("div");
       loadingEl.className = "summary-loading";
       loadingEl.textContent = "Generating summary…";
@@ -715,12 +596,7 @@ class PollExerciseWidget {
   updateResponses(ex, groups) {
     if (this._responsesEl) {
       this._responsesEl.innerHTML = "";
-      if (ex.type === "POLL_MCQ") {
-        const choices = ex.default_answer ? JSON.parse(ex.default_answer) : [];
-        PollMcqBuilder.buildSummaryResults(this._responsesEl, choices, ex.ExerciseResponses ?? []);
-      } else {
-        renderResponsesEl(this._responsesEl, ex, groups);
-      }
+      renderResponsesEl(this._responsesEl, ex, groups);
     }
   }
 }
@@ -771,6 +647,7 @@ export class InstructorActivitiesPanel {
     openPanel,
     onPollPanelOpenChange,
     activePopover,
+    completePopover,
     getAnchor,
     scrollToExercise,
   }) {
@@ -780,9 +657,11 @@ export class InstructorActivitiesPanel {
     this.openPanel = openPanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
+    this._completePopover = completePopover;
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this._currentPollId = null;
+    this._completePopoverId = null;
 
     // DOM refs owned by this panel
     this.listEl = document.querySelector("#activities-list");
@@ -793,7 +672,6 @@ export class InstructorActivitiesPanel {
     const onBack = () => this._showView("list");
 
     this.pollSummaryWidget = new PollExerciseWidget({
-      manager,
       pollEl: this.pollEl,
       onBack,
     });
@@ -823,16 +701,21 @@ export class InstructorActivitiesPanel {
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
+      this._completePopover.close();
       this._renderList();
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
     });
 
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") this._activePopover.close();
-      this.openPanel();
       this._renderList();
-      this._showSummaryView(exercise, { loading: exercise.type === "POLL" || exercise.type === "CODE_VARIANT" });
+      if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") {
+        this._activePopover.close();
+        this._openFinished(exercise, { loading: exercise.type === "POLL" });
+      } else {
+        this.openPanel();
+        this._showSummaryView(exercise, { loading: exercise.type === "CODE_VARIANT" });
+      }
     });
 
     this.manager.addEventListener("summaryReady", ({ detail: { exerciseId, groups } }) => {
@@ -859,14 +742,13 @@ export class InstructorActivitiesPanel {
     this._openActivePopover(exercise);
   }
 
-  // Opens the sidebar/popover to a specific exercise regardless of active/finished state --
+  // Opens the popover/sidebar to a specific exercise regardless of active/finished state --
   // e.g. from clicking its code-editor gutter marker.
   openExercise(ex) {
     if (ex.end_ts == null) {
       this._openActivePopover(ex);
     } else {
-      this.openPanel();
-      this._showSummaryView(ex);
+      this._openFinished(ex);
     }
   }
 
@@ -877,13 +759,44 @@ export class InstructorActivitiesPanel {
     this.pollEl.hidden = name !== "poll";
     this.codeExerciseEl.hidden = name !== "code-exercise";
     this.activitiesPanelEl.classList.toggle("has-content", true);
-    this.onPollPanelOpenChange?.(name === "poll" ? this._currentPollId : null);
+    this._syncPollHighlight();
   }
 
   _openActivePopover(ex) {
     this._currentPollId = ex.id;
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this.onPollPanelOpenChange?.(ex.id);
+  }
+
+  _openCompletePopover(ex) {
+    this._completePopoverId = ex.id;
+    this._completePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
+    this._syncPollHighlight();
+  }
+
+  // Scrolls the anchored code into view, then opens the stage-3 review popover. For
+  // free-response POLLs, also opens the (now results-only) sidebar summary; MCQ results live
+  // entirely in the popover, so the sidebar panel is left untouched for those.
+  _openFinished(ex, options = {}) {
+    this._scrollToExercise?.(ex);
+    this._openCompletePopover(ex);
+    if (ex.type === "POLL") {
+      this.openPanel();
+      this._showSummaryView(ex, options);
+    }
+  }
+
+  // Called by the complete popover when it closes itself (e.g. via its own "x").
+  notifyCompletePopoverClosed() {
+    this._completePopoverId = null;
+    this._syncPollHighlight();
+  }
+
+  // The editor's code-highlight for a poll should stay on as long as EITHER the complete
+  // popover or the (free-response-only) sidebar summary is showing it.
+  _syncPollHighlight() {
+    const sidebarId = !this.pollEl.hidden ? this._currentPollId : null;
+    this.onPollPanelOpenChange?.(this._completePopoverId ?? sidebarId ?? null);
   }
 
   _showSummaryView(ex, options = {}) {
@@ -914,8 +827,7 @@ export class InstructorActivitiesPanel {
         if (isActive) {
           this._openActivePopover(ex);
         } else {
-          this.openPanel();
-          this._showSummaryView(ex);
+          this._openFinished(ex);
         }
       });
       this.listItemsEl.appendChild(item);

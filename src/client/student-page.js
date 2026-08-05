@@ -26,6 +26,7 @@ import {
 import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
 import { StudentActivePollPopover } from "./poll-active-popover.js";
+import { StudentPollCompletePopover } from "./poll-complete-popover.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -41,7 +42,7 @@ let instructorTabActive = true;
 const activitiesResizer = document.querySelector("#resize-activities");
 const activitiesContainer = document.querySelector("#activities-container");
 const toggleActivitiesBtn = document.querySelector("#toggle-activities-panel");
-const { openPanel: openActivitiesPanel } = makeActivitiesPanelResizable(
+makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
   activitiesResizer,
   activitiesContainer,
@@ -146,11 +147,18 @@ async function initialize({
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
   });
 
+  const studentCompletePollPopover = new StudentPollCompletePopover({
+    student_id: userId,
+    showPollPopover: (args) => codeEditor.showPollPopover(args),
+    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
+  });
+
   activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
-    openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
     activePopover: studentActivePollPopover,
+    completePopover: studentCompletePollPopover,
     getAnchor: (ex) => {
       if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
         const at = codeEditor.getPollAnchorPosition(ex.id);

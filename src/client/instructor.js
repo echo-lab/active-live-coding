@@ -17,6 +17,7 @@ import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
 import { PollCreatePopover } from "./poll-create-popover.js";
 import { InstructorActivePollPopover } from "./poll-active-popover.js";
+import { InstructorPollCompletePopover } from "./poll-complete-popover.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -146,6 +147,12 @@ function initialize({
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
   });
 
+  const instructorCompletePollPopover = new InstructorPollCompletePopover({
+    showPollPopover: (args) => codeEditor.showPollPopover(args),
+    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
+  });
+
   // The only poll-creation entry point (right-click "Create Poll" in the editor); guards against
   // opening a second create/active poll while one is already active.
   function tryOpenCreatePopover({ from, to, code = "" }) {
@@ -210,6 +217,7 @@ function initialize({
     openPanel: openActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
     activePopover: instructorActivePollPopover,
+    completePopover: instructorCompletePollPopover,
     getAnchor: (ex) => {
       if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
         const at = codeEditor.getPollAnchorPosition(ex.id);

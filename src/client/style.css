@@ -871,7 +871,7 @@ td {
 
 .poll-instructions-display,
 #student-activity-instructions {
-  font-size: 20px;
+  font-size: 15px;
   color: #333;
   white-space: pre-wrap;
   padding: 12px 0;
@@ -1800,4 +1800,17 @@ td {
 .poll-popover-finish-btn:hover {
   background: #e8e8ff;
   border-color: #646cff;
+}
+
+/* Poll complete popover (stage 3 -- read-only review). Deliberately calm/neutral -- unlike the
+   base .poll-popover's blue border (create) or .poll-popover--active's red (live), this is just
+   for review, not something that needs to grab attention. */
+.poll-popover--complete {
+  border: solid 1px #d5d5d5;
+}
+
+/* Align the sidebar's new close ("x") button, which sits alongside the "Back to list" link, to
+   the same top edge rather than the header row's default vertical centering. */
+.poll-activity-header .poll-popover-close {
+  align-self: flex-start;
 }
