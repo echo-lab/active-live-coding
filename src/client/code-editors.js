@@ -67,6 +67,9 @@ export class StudentCodeEditor {
       activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
         this._maybeAddPollMarker(exercise);
       });
+      activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+        this._maybeAddPollMarker(exercise);
+      });
     }
 
     socket.on(
@@ -123,7 +126,13 @@ export class StudentCodeEditor {
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
     if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
-      effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
+      effects: addPollMarkerEffect.of({
+        id: ex.id,
+        from: ex.code_anchor_from,
+        to: ex.code_anchor_to,
+        isDraft: false,
+        isOpen: ex.end_ts == null,
+      }),
     });
   }
 
@@ -351,6 +360,11 @@ export class InstructorCodeEditor {
     for (const ex of activitiesManager.getExercises()) {
       this._maybeAddPollMarker(ex);
     }
+    // Refresh the marker (e.g. drop the "live" flash) once a poll is finished, whether by this
+    // instructor or reflected in from another client.
+    activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      this._maybeAddPollMarker(exercise);
+    });
   }
 
   _maybeAddPollMarker(ex) {
@@ -358,7 +372,13 @@ export class InstructorCodeEditor {
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
     if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
-      effects: addPollMarkerEffect.of({ id: ex.id, from: ex.code_anchor_from, to: ex.code_anchor_to, isDraft: false }),
+      effects: addPollMarkerEffect.of({
+        id: ex.id,
+        from: ex.code_anchor_from,
+        to: ex.code_anchor_to,
+        isDraft: false,
+        isOpen: ex.end_ts == null,
+      }),
     });
   }
 
@@ -417,7 +437,7 @@ export class InstructorCodeEditor {
     const { from, to } = getPollMarkerPosition(this.view.state, DRAFT_POLL_ID);
     if (from == null) return; // No draft was pending (e.g., poll created w/o a code selection).
     this.view.dispatch({ effects: removePollMarkerEffect.of({ id: DRAFT_POLL_ID }) });
-    this.view.dispatch({ effects: addPollMarkerEffect.of({ id: exerciseId, from, to, isDraft: false }) });
+    this.view.dispatch({ effects: addPollMarkerEffect.of({ id: exerciseId, from, to, isDraft: false, isOpen: true }) });
   }
 
   // Reads the draft's CURRENT anchor at submit time, reflecting any edits made while the

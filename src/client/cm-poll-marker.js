@@ -7,7 +7,7 @@ import { EditorView, Decoration, GutterMarker, gutter } from "@codemirror/view";
 
 export const DRAFT_POLL_ID = "__poll_draft__";
 
-// value: {id, from, to, isDraft}
+// value: {id, from, to, isDraft, isOpen}
 export const addPollMarkerEffect = StateEffect.define();
 // value: {id}
 export const removePollMarkerEffect = StateEffect.define();
@@ -20,10 +20,10 @@ export const pollMarkersField = StateField.define({
     markers = markers.map(tr.changes);
     for (const e of tr.effects) {
       if (e.is(addPollMarkerEffect)) {
-        const { id, from, to, isDraft } = e.value;
+        const { id, from, to, isDraft, isOpen } = e.value;
         markers = markers.update({
           filter: (_f, _t, deco) => deco.spec.pollId !== id,
-          add: [Decoration.mark({ pollId: id, isDraft: !!isDraft }).range(from, to)],
+          add: [Decoration.mark({ pollId: id, isDraft: !!isDraft, isOpen: !!isOpen }).range(from, to)],
           sort: true,
         });
       } else if (e.is(removePollMarkerEffect)) {
@@ -111,21 +111,27 @@ export const handleOpenPollMarker = Facet.define({
 });
 
 class PollGutterMarker extends GutterMarker {
-  constructor(pollId, isDraft) {
+  constructor(pollId, isDraft, isOpen) {
     super();
     this.pollId = pollId;
     this.isDraft = isDraft;
+    this.isOpen = isOpen;
   }
 
   eq(other) {
-    return this.pollId === other.pollId && this.isDraft === other.isDraft;
+    return this.pollId === other.pollId && this.isDraft === other.isDraft && this.isOpen === other.isOpen;
   }
 
   toDOM(view) {
     const el = document.createElement("div");
-    el.className = "cm-poll-marker-icon" + (this.isDraft ? " cm-poll-marker-draft" : "");
+    const isLive = !this.isDraft && this.isOpen;
+    el.className = "cm-poll-marker-icon" + (this.isDraft ? " cm-poll-marker-draft" : "") + (isLive ? " cm-poll-marker-open" : "");
     el.textContent = "?";
-    el.title = this.isDraft ? "Poll draft (not yet asked)" : "Poll linked to this code — click to view";
+    el.title = this.isDraft
+      ? "Poll draft (not yet asked)"
+      : isLive
+        ? "Poll is live — click to view"
+        : "Poll linked to this code — click to view";
 
     el.addEventListener("mouseenter", () => {
       view.dispatch({ effects: setPollHover.of(this.pollId) });
@@ -160,7 +166,7 @@ const pollMarkerGutterColumn = gutter({
       const lineStart = doc.lineAt(from).from;
       let entries = byLine.get(lineStart);
       if (!entries) byLine.set(lineStart, (entries = []));
-      entries.push({ pollId: deco.spec.pollId, isDraft: deco.spec.isDraft });
+      entries.push({ pollId: deco.spec.pollId, isDraft: deco.spec.isDraft, isOpen: deco.spec.isOpen });
     });
 
     const builder = new RangeSetBuilder();
@@ -168,8 +174,8 @@ const pollMarkerGutterColumn = gutter({
       // Deterministic order (poll ids are auto-incrementing, so this is creation order)
       // rather than whatever order the underlying RangeSet happened to yield.
       entries.sort((a, b) => (a.pollId > b.pollId ? 1 : a.pollId < b.pollId ? -1 : 0));
-      for (const { pollId, isDraft } of entries) {
-        builder.add(lineStart, lineStart, new PollGutterMarker(pollId, isDraft));
+      for (const { pollId, isDraft, isOpen } of entries) {
+        builder.add(lineStart, lineStart, new PollGutterMarker(pollId, isDraft, isOpen));
       }
     }
     return builder.finish();
@@ -204,6 +210,15 @@ const pollMarkerTheme = EditorView.baseTheme({
   ".cm-poll-marker-draft": {
     backgroundColor: "#9298ff",
     cursor: "default",
+  },
+  ".cm-poll-marker-open": {
+    backgroundColor: "#e5484d",
+    boxShadow: "0 0 0 rgba(229, 72, 77, 0.6)",
+    animation: "cm-poll-marker-pulse 1.8s ease-in-out infinite",
+  },
+  "@keyframes cm-poll-marker-pulse": {
+    "0%, 100%": { backgroundColor: "#e5484d", boxShadow: "0 0 0 0 rgba(229, 72, 77, 0.6)" },
+    "50%": { backgroundColor: "#ff8a80", boxShadow: "0 0 3px 2px rgba(229, 72, 77, 0.35)" },
   },
   ".cm-poll-highlight": {
     backgroundColor: "rgba(88, 97, 255, 0.12)",
