@@ -81,7 +81,7 @@ export class PollCreatePopover {
     header.className = "poll-popover-header";
     const title = document.createElement("span");
     title.className = "poll-popover-title";
-    title.textContent = "✦ Create poll";
+    title.textContent = "Create poll";
     const closeBtn = document.createElement("button");
     closeBtn.className = "poll-popover-close";
     closeBtn.textContent = "×";

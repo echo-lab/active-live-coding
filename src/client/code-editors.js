@@ -33,7 +33,7 @@ import { indentWithTab } from "@codemirror/commands";
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
 // Adjust below if we're not scrolling far down enoguh to an active poll.
-const SCROLL_Y_BUFFER = 200;
+const SCROLL_Y_BUFFER = 150;
 
 // MARK: Student Editor
 export class StudentCodeEditor {
