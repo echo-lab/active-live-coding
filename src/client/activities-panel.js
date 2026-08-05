@@ -670,10 +670,17 @@ export class InstructorActivitiesPanel {
     this.codeExerciseEl = document.querySelector("#activities-code-exercise");
 
     const onBack = () => this._showView("list");
+    // The poll summary's back/close also needs to close the linked complete popover -- hide
+    // the sidebar first so the popover's own onClose (notifyCompletePopoverClosed) sees the
+    // sidebar already hidden and doesn't redundantly re-trigger _showView.
+    const onPollBack = () => {
+      this._showView("list");
+      this._completePopover.close();
+    };
 
     this.pollSummaryWidget = new PollExerciseWidget({
       pollEl: this.pollEl,
-      onBack,
+      onBack: onPollBack,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,
@@ -786,9 +793,12 @@ export class InstructorActivitiesPanel {
     }
   }
 
-  // Called by the complete popover when it closes itself (e.g. via its own "x").
+  // Called by the complete popover when it closes itself (e.g. via its own "x"). If the
+  // free-response poll summary is the sidebar's current view, close it too so the two stay
+  // in sync.
   notifyCompletePopoverClosed() {
     this._completePopoverId = null;
+    if (!this.pollEl.hidden) this._showView("list");
     this._syncPollHighlight();
   }
 
