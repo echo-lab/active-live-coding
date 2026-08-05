@@ -31,11 +31,11 @@ const codeOutputsContainer = document.querySelector("#output-container");
 setupSimulateResponsesCheckbox("#simulate-responses-checkbox");
 
 makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
-const { openPanel: openActivitiesPanel } = makeActivitiesPanelResizable(
+const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
   document.querySelector("#resize-activities"),
   document.querySelector("#activities-container"),
-  document.querySelector("#toggle-activities-panel"),
+  document.querySelector("#open-activities-panel"),
   /*gutterWidth=*/ 12,
   /*minCodeWidth=*/ 400,
   /*minActivitiesWidth=*/ 300,
@@ -214,6 +214,7 @@ function initialize({
   activitiesPanel = new InstructorActivitiesPanel(activitiesManager, {
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
+    closePanel: closeActivitiesPanel,
     onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
     activePopover: instructorActivePollPopover,
     completePopover: instructorCompletePollPopover,
@@ -233,4 +234,6 @@ function initialize({
     },
     scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
   });
+
+  document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());
 }

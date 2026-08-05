@@ -139,7 +139,9 @@ span.sep {
 #code-tabs {
   font-family: "Courier New", monospace;
   font-size: 1rem;
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   grid-area: code-tabs;
   width: 100%;
   height: 100%;
@@ -149,10 +151,25 @@ span.sep {
 }
 
 #code-tabs-inner {
-  width: 100%;
   height: 100%;
   display: flex;
   align-content: flex-start;
+}
+
+#open-activities-panel {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-right: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #646cff;
+  cursor: pointer;
+}
+
+#open-activities-panel:hover {
+  color: #4a50cc;
+  text-decoration: underline;
 }
 
 .code-tab {
@@ -523,29 +540,6 @@ td {
 
 #resize-activities.is-dragging {
   background-color: rgb(192, 189, 206);
-}
-
-#toggle-activities-panel {
-  padding: 2px 0px;
-  font-size: 9px;
-  min-width: 0;
-  width: 10px;
-  height: 60px;
-  border: solid 1px lightgrey;
-  border-radius: 3px;
-  background: white;
-  cursor: pointer;
-  line-height: 1;
-  color: #555;
-}
-
-#toggle-activities-panel:hover {
-  background-color: #e8e8ff;
-  border-color: #646cff;
-}
-
-#toggle-activities-panel:focus:not(:focus-visible) {
-  outline: none;
 }
 
 /* Activities panel */

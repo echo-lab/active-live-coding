@@ -42,17 +42,19 @@ let instructorTabActive = true;
 
 const activitiesResizer = document.querySelector("#resize-activities");
 const activitiesContainer = document.querySelector("#activities-container");
-const toggleActivitiesBtn = document.querySelector("#toggle-activities-panel");
-makeActivitiesPanelResizable(
+const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
   activitiesResizer,
   activitiesContainer,
-  toggleActivitiesBtn,
+  document.querySelector("#open-activities-panel"),
   /*gutterWidth=*/ 12,
   /*minCodeWidth=*/ 400,
   /*minActivitiesWidth=*/ 300,
   /*initiallyCollapsed*/true
 );
+
+document.querySelector("#open-activities-panel").addEventListener("click", openActivitiesPanel);
+document.querySelector("#student-activities-list-close").addEventListener("click", closeActivitiesPanel);
 
 // Handle the email stuff.
 const email = getEmail();

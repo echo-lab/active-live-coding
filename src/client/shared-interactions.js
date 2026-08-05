@@ -206,12 +206,16 @@ export function setupJoinLectureModalV2({ url, buildBody, onSuccess }) {
 }
 
 /**
- * Makes a side panel horizontally resizable and togglable via a gutter element.
+ * Makes a side panel horizontally resizable, with open/close controlled by external callers
+ * (e.g. an "activities list" button and an "x" close button) via the returned handle. The
+ * "activities list" button (if given) is hidden while the panel is open and shown while closed,
+ * since it's the panel's only opener and is redundant once the panel is already visible.
  *
  * @param {HTMLElement} parentContainer - The grid container whose column widths are adjusted.
  * @param {HTMLElement} resizer - The gutter element used as the drag handle.
- * @param {HTMLElement} activitiesPanel - The panel to show/hide on toggle.
- * @param {HTMLElement} toggleBtn - The button inside the gutter that collapses/expands the panel.
+ * @param {HTMLElement} activitiesPanel - The panel to show/hide.
+ * @param {HTMLElement | null} openButton - The external "open" button whose visibility tracks
+ *   collapsed state, or null if there isn't one to manage.
  * @param {number} gutterWidth - Width of the gutter column in pixels.
  * @param {boolean} initiallyCollapsed - Whether the panel starts collapsed.
  */
@@ -219,7 +223,7 @@ export function makeActivitiesPanelResizable(
   parentContainer,
   resizer,
   activitiesPanel,
-  toggleBtn,
+  openButton,
   gutterWidth = 12,
   minCodeWidth = 150,
   minActivitiesWidth = 150,
@@ -229,17 +233,38 @@ export function makeActivitiesPanelResizable(
   let collapsed = false;
   let savedActivitiesWidth = null;
 
-  if (initiallyCollapsed) {
+  function collapse() {
+    if (collapsed) return;
+    collapsed = true;
+    let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
+    savedActivitiesWidth = cols[2] || null;
     activitiesPanel.style.display = "none";
     parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
-    toggleBtn.textContent = "◀";
     resizer.style.cursor = "default";
+    if (openButton) openButton.hidden = false;
+  }
+
+  function expand() {
+    if (!collapsed) return;
+    collapsed = false;
+    activitiesPanel.style.display = "";
+    let restoreWidth = savedActivitiesWidth || `calc(31% - ${gutterWidth}px)`;
+    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
+    resizer.style.cursor = "col-resize";
+    if (openButton) openButton.hidden = true;
+  }
+
+  if (initiallyCollapsed) {
     collapsed = true;
+    activitiesPanel.style.display = "none";
+    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
+    resizer.style.cursor = "default";
+  } else if (openButton) {
+    openButton.hidden = true;
   }
 
   resizer.addEventListener("mousedown", (e) => {
     if (collapsed) return;
-    if (e.target === toggleBtn) return;
     isDragging = true;
     resizer.classList.add("is-dragging");
     e.preventDefault();
@@ -262,32 +287,8 @@ export function makeActivitiesPanelResizable(
     resizer.classList.remove("is-dragging");
   });
 
-  function expand() {
-    collapsed = false;
-    activitiesPanel.style.display = "";
-    let restoreWidth = savedActivitiesWidth || `calc(31% - ${gutterWidth}px)`;
-    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
-    toggleBtn.textContent = "▶";
-    resizer.style.cursor = "col-resize";
-  }
-
-  toggleBtn.addEventListener("click", () => {
-    collapsed = !collapsed;
-    if (collapsed) {
-      let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
-      savedActivitiesWidth = cols[2] || null;
-      activitiesPanel.style.display = "none";
-      parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
-      toggleBtn.textContent = "◀";
-      resizer.style.cursor = "default";
-    } else {
-      expand();
-    }
-  });
-
   return {
-    openPanel() {
-      if (collapsed) expand();
-    },
+    openPanel: expand,
+    closePanel: collapse,
   };
 }

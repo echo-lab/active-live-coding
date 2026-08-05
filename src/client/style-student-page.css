@@ -58,29 +58,6 @@
   background-color: rgb(192, 189, 206);
 }
 
-#toggle-activities-panel {
-  padding: 2px 0px;
-  font-size: 9px;
-  min-width: 0;
-  width: 10px;
-  height: 40px;
-  border: solid 1px lightgrey;
-  border-radius: 3px;
-  background: white;
-  cursor: pointer;
-  line-height: 1;
-  color: #555;
-}
-
-#toggle-activities-panel:hover {
-  background-color: #e8e8ff;
-  border-color: #646cff;
-}
-
-#toggle-activities-panel:focus:not(:focus-visible) {
-  outline: none;
-}
-
 #activities-container {
   grid-area: activities-display;
   border: solid 1px lightgrey;

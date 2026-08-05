@@ -547,15 +547,39 @@ export class PollMcqBuilder {
   }
 }
 
+// Builds a `.poll-activity-header` with a "back to list" link (left) and a "x" close button
+// (right) -- shared between the poll and code-exercise summary views, which both need identical
+// markup but different back/close behavior (the poll view also closes its linked popover).
+function buildActivityHeader({ onBack, onClose }) {
+  const header = document.createElement("div");
+  header.className = "poll-activity-header";
+
+  const backBtn = document.createElement("button");
+  backBtn.className = "poll-back-btn";
+  backBtn.textContent = "← Back to list";
+  backBtn.addEventListener("click", () => onBack());
+  header.appendChild(backBtn);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "poll-popover-close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.addEventListener("click", () => onClose());
+  header.appendChild(closeBtn);
+
+  return header;
+}
+
 // MARK: PollExerciseWidget
 //
 // Renders stage 3 (completed/summary) of a FREE-RESPONSE poll's aggregated responses in the
 // sidebar -- the question and (for POLL_MCQ) results now live in InstructorPollCompletePopover
 // instead (see poll-complete-popover.js); this widget is only ever shown for type "POLL".
 class PollExerciseWidget {
-  constructor({ pollEl, onBack }) {
+  constructor({ pollEl, onBack, onClose }) {
     this.pollEl = pollEl;
     this._onBack = onBack;
+    this._onClose = onClose;
     this._responsesEl = null;
   }
 
@@ -567,23 +591,7 @@ class PollExerciseWidget {
   }
 
   _buildHeader() {
-    // Create a header w/ a back link and a close ("x") button -- both return to the list.
-    const header = document.createElement("div");
-    header.className = "poll-activity-header";
-    const backBtn = document.createElement("button");
-    backBtn.className = "poll-back-btn";
-    backBtn.textContent = "← Back to list";
-    backBtn.addEventListener("click", () => this._onBack());
-    header.appendChild(backBtn);
-
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "poll-popover-close";
-    closeBtn.textContent = "×";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.addEventListener("click", () => this._onBack());
-    header.appendChild(closeBtn);
-
-    this.pollEl.appendChild(header);
+    this.pollEl.appendChild(buildActivityHeader({ onBack: this._onBack, onClose: this._onClose }));
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
@@ -614,20 +622,17 @@ class PollExerciseWidget {
 
 // MARK: CodeExerciseSummaryWidget
 class CodeExerciseSummaryWidget {
-  constructor({ codeExerciseEl, onBack }) {
+  constructor({ codeExerciseEl, onBack, onClose }) {
     this.codeExerciseEl = codeExerciseEl;
     this._onBack = onBack;
+    this._onClose = onClose;
     this._responsesEl = null;
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
     this.codeExerciseEl.innerHTML = "";
 
-    const backBtn = document.createElement("button");
-    backBtn.className = "poll-back-btn";
-    backBtn.textContent = "← Back to list";
-    backBtn.addEventListener("click", this._onBack);
-    this.codeExerciseEl.appendChild(backBtn);
+    this.codeExerciseEl.appendChild(buildActivityHeader({ onBack: this._onBack, onClose: this._onClose }));
 
     this._responsesEl = document.createElement("div");
     this.codeExerciseEl.appendChild(this._responsesEl);
@@ -656,6 +661,7 @@ export class InstructorActivitiesPanel {
   constructor(manager, {
     activitiesPanelEl,
     openPanel,
+    closePanel,
     onPollPanelOpenChange,
     activePopover,
     completePopover,
@@ -666,6 +672,7 @@ export class InstructorActivitiesPanel {
     this.manager = manager;
     this.activitiesPanelEl = activitiesPanelEl;
     this.openPanel = openPanel;
+    this.closePanel = closePanel;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
     this._completePopover = completePopover;
@@ -682,21 +689,34 @@ export class InstructorActivitiesPanel {
     this.codeExerciseEl = document.querySelector("#activities-code-exercise");
 
     const onBack = () => this._showView("list");
-    // The poll summary's back/close also needs to close the linked complete popover -- hide
-    // the sidebar first so the popover's own onClose (notifyCompletePopoverClosed) sees the
-    // sidebar already hidden and doesn't redundantly re-trigger _showView.
+    // The poll summary's back also needs to close the linked complete popover -- hide the
+    // sidebar first so the popover's own onClose (notifyCompletePopoverClosed) sees the sidebar
+    // already hidden and doesn't redundantly re-trigger _showView.
     const onPollBack = () => {
       this._showView("list");
       this._completePopover.close();
     };
+    // The "x" close button (present in all 3 views) fully closes the sidebar -- same ordering
+    // as onPollBack (reset view before closing the popover) so notifyCompletePopoverClosed's own
+    // guard short-circuits instead of double-firing _showView.
+    const onClose = () => {
+      const wasPoll = !this.pollEl.hidden;
+      this._showView("list");
+      if (wasPoll) this._completePopover.close();
+      this.closePanel();
+    };
+
+    document.querySelector("#activities-list-close").addEventListener("click", onClose);
 
     this.pollSummaryWidget = new PollExerciseWidget({
       pollEl: this.pollEl,
       onBack: onPollBack,
+      onClose,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,
       onBack,
+      onClose,
     });
 
     this.#subscribeToManager();
@@ -751,6 +771,14 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("responseReceived", ({ detail: { exercise, responseCount } }) => {
       if (this._activePopover.isOpenFor(exercise.id)) this._activePopover.updateResponseCount(responseCount);
     });
+  }
+
+  // Opens the sidebar directly to the activities list -- e.g. from the topbar's "activities
+  // list" button. Deliberately doesn't touch any popover; list navigation and popover lifecycle
+  // stay decoupled, same as everywhere else in this class.
+  openToList() {
+    this.openPanel();
+    this._showView("list");
   }
 
   // Opens the popover/sidebar to a specific exercise regardless of active/finished state --

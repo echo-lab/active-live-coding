@@ -32,6 +32,7 @@
               <div class="code-tab-text">instructor.py</div>
             </div>
           </div>
+          <button id="open-activities-panel">activities list</button>
         </div>
         <div id="instructor-code-container" class="code-container uneditable">
           <!-- <button class="try-it-out" id="try-instructor-code">
@@ -51,12 +52,13 @@
             Code output will appear here...
           </div>
         </div>
-        <div id="resize-activities">
-          <button id="toggle-activities-panel" title="Toggle Activities Panel">▶</button>
-        </div>
+        <div id="resize-activities"></div>
         <div id="activities-container">
           <div id="student-activities-list">
-            <div id="student-activities-list-header">Activities</div>
+            <div id="student-activities-list-header" class="poll-activity-header">
+              <span>Activities</span>
+              <button id="student-activities-list-close" class="poll-popover-close" aria-label="Close">×</button>
+            </div>
             <div id="student-activities-list-items"></div>
             <div id="student-activities-placeholder">No activities yet</div>
           </div>

@@ -36,6 +36,7 @@
               <div class="code-tab-text">instructor.py</div>
             </div>
           </div>
+          <button id="open-activities-panel">activities list</button>
         </div>
         <div id="code-container" class="code-container"></div>
         <div id="resize-console"><div class="resize-symbol"></div></div>
@@ -44,12 +45,13 @@
             Code output will appear here...
           </div>
         </div>
-        <div id="resize-activities">
-          <button id="toggle-activities-panel" title="Toggle Activities Panel">▶</button>
-        </div>
+        <div id="resize-activities"></div>
         <div id="activities-container">
           <div id="activities-list">
-            <div id="activities-list-header">Activities</div>
+            <div id="activities-list-header" class="poll-activity-header">
+              <span>Activities</span>
+              <button id="activities-list-close" class="poll-popover-close" aria-label="Close">×</button>
+            </div>
             <div id="activities-list-items"></div>
           </div>
           <div id="activities-poll" hidden></div>
