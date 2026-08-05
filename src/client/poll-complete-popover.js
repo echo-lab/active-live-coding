@@ -36,9 +36,10 @@ function noAnswerEl() {
 // no longer appear in the sidebar at all); for free-response POLL it shows only the question --
 // the sidebar (PollExerciseWidget in activities-panel.js) shows the aggregated responses instead.
 export class InstructorPollCompletePopover {
-  constructor({ showPollPopover, hidePollPopover, onClose }) {
+  constructor({ showPollPopover, hidePollPopover, coordinator, onClose }) {
     this._showPollPopover = showPollPopover;
     this._hidePollPopover = hidePollPopover;
+    this._coordinator = coordinator;
     this._onClose = onClose;
     this._rootEl = null;
     this._anchorKey = null;
@@ -52,6 +53,7 @@ export class InstructorPollCompletePopover {
   open({ exercise, anchor }) {
     if (this.isOpenFor(exercise.id)) return;
     this.close();
+    this._coordinator?.notifyOpening(this);
     this._exerciseId = exercise.id;
     if (anchor?.kind === "code") {
       this._anchorKey = `complete:${exercise.id}`;
@@ -69,6 +71,7 @@ export class InstructorPollCompletePopover {
   }
 
   close() {
+    this._coordinator?.notifyClosed(this);
     if (!this._rootEl) return;
     const anchorKey = this._anchorKey;
     const rootEl = this._rootEl;
@@ -115,10 +118,11 @@ export class InstructorPollCompletePopover {
 // Floating popover for stage 3 (complete/review) of a poll exercise, on the student's side.
 // Shows the question and the student's own answer/choice, read-only.
 export class StudentPollCompletePopover {
-  constructor({ student_id, showPollPopover, hidePollPopover, onClose }) {
+  constructor({ student_id, showPollPopover, hidePollPopover, coordinator, onClose }) {
     this._student_id = student_id;
     this._showPollPopover = showPollPopover;
     this._hidePollPopover = hidePollPopover;
+    this._coordinator = coordinator;
     this._onClose = onClose;
     this._rootEl = null;
     this._anchorKey = null;
@@ -132,6 +136,7 @@ export class StudentPollCompletePopover {
   open({ exercise, anchor }) {
     if (this.isOpenFor(exercise.id)) return;
     this.close();
+    this._coordinator?.notifyOpening(this);
     this._exerciseId = exercise.id;
     if (anchor?.kind === "code") {
       this._anchorKey = `complete:${exercise.id}`;
@@ -149,6 +154,7 @@ export class StudentPollCompletePopover {
   }
 
   close() {
+    this._coordinator?.notifyClosed(this);
     if (!this._rootEl) return;
     const anchorKey = this._anchorKey;
     const rootEl = this._rootEl;

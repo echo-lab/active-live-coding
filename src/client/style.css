@@ -1761,6 +1761,12 @@ td {
   gap: 6px;
 }
 
+.poll-popover-live-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .poll-popover-live-dot {
   width: 7px;
   height: 7px;

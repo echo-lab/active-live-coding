@@ -222,15 +222,6 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("codeSummaryDisplayed", { detail: { exerciseId } }));
   }
 
-  async finishPollExercise() {
-    for (let ex of this.getActiveExercises()) {
-      if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
-        this.finishExercise(ex.id);
-        break;
-      }
-    }
-  }
-
   async finishExercise(id) {
     console.log("finishing exercise: ", id);
     const ex = this.exercises.find((e) => e.id === id);

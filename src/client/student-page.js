@@ -27,6 +27,7 @@ import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
 import { StudentActivePollPopover } from "./poll-active-popover.js";
 import { StudentPollCompletePopover } from "./poll-complete-popover.js";
+import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -140,17 +141,22 @@ async function initialize({
     sessionActive = false;
   });
 
+  const pollPopoverCoordinator = new PollPopoverCoordinator();
+
   const studentActivePollPopover = new StudentActivePollPopover({
     manager: activitiesManager,
     student_id: userId,
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    coordinator: pollPopoverCoordinator,
+    onClose: () => activitiesPanel?.notifyActivePopoverClosed(),
   });
 
   const studentCompletePollPopover = new StudentPollCompletePopover({
     student_id: userId,
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
   });
 

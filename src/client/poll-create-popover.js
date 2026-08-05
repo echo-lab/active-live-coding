@@ -10,7 +10,7 @@ import { PollMcqBuilder } from "./activities-panel.js";
 // dismisses it -- it stays open through clicks elsewhere on the page so it doesn't
 // disappear mid-edit.
 export class PollCreatePopover {
-  constructor({ manager, getCurrentCode, onAbandonDraft, getPollDraftAnchor, onHighlightChange, showPollPopover, hidePollPopover }) {
+  constructor({ manager, getCurrentCode, onAbandonDraft, getPollDraftAnchor, onHighlightChange, showPollPopover, hidePollPopover, coordinator }) {
     this._manager = manager;
     this._getCurrentCode = getCurrentCode;
     this._onAbandonDraft = onAbandonDraft;
@@ -18,6 +18,7 @@ export class PollCreatePopover {
     this._onHighlightChange = onHighlightChange;
     this._showPollPopover = showPollPopover;
     this._hidePollPopover = hidePollPopover;
+    this._coordinator = coordinator;
 
     this._rootEl = null;
     this._anchorKey = null;
@@ -30,6 +31,7 @@ export class PollCreatePopover {
 
   openForSelection({ code, at }) {
     this.close();
+    this._coordinator?.notifyOpening(this);
     this._isDraft = true;
     this._code = code ?? "";
     this._anchorKey = "create";
@@ -52,6 +54,7 @@ export class PollCreatePopover {
   }
 
   close() {
+    this._coordinator?.notifyClosed(this);
     if (!this._rootEl) return;
     const anchorKey = this._anchorKey;
     const rootEl = this._rootEl;

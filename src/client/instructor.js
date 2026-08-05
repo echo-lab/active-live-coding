@@ -18,6 +18,7 @@ import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
 import { PollCreatePopover } from "./poll-create-popover.js";
 import { InstructorActivePollPopover } from "./poll-active-popover.js";
 import { InstructorPollCompletePopover } from "./poll-complete-popover.js";
+import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 
 const codeContainer = document.querySelector("#code-container");
 const startButton = document.querySelector("#start-session-butt");
@@ -131,6 +132,8 @@ function initialize({
     },
   });
 
+  const pollPopoverCoordinator = new PollPopoverCoordinator();
+
   const pollCreatePopover = new PollCreatePopover({
     manager: activitiesManager,
     getCurrentCode: () => codeEditor.currentCode(),
@@ -139,30 +142,26 @@ function initialize({
     onHighlightChange: (highlighted) => codeEditor.setPollDraftHighlighted(highlighted),
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    coordinator: pollPopoverCoordinator,
   });
 
   const instructorActivePollPopover = new InstructorActivePollPopover({
     manager: activitiesManager,
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    coordinator: pollPopoverCoordinator,
+    onClose: () => activitiesPanel?.notifyActivePopoverClosed(),
   });
 
   const instructorCompletePollPopover = new InstructorPollCompletePopover({
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
   });
 
-  // The only poll-creation entry point (right-click "Create Poll" in the editor); guards against
-  // opening a second create/active poll while one is already active.
+  // The only poll-creation entry point (right-click "Create Poll" in the editor).
   function tryOpenCreatePopover({ from, to, code = "" }) {
-    const activePoll = activitiesManager
-      .getActiveExercises()
-      .find((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ");
-    if (activePoll) {
-      activitiesPanel?.openActivePoll(activePoll);
-      return;
-    }
     pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
     codeEditor.startPollDraft({ from, to });
     const at = codeEditor.getPollDraftAnchor()?.from;

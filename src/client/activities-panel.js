@@ -63,6 +63,12 @@ export function createAnswerDisplay(answer, exerciseType, { label = "Your submis
   return wrapper;
 }
 
+function mostRecentlyCreated(exercises) {
+  return exercises.length
+    ? exercises.reduce((a, b) => (b.start_ts > a.start_ts ? b : a))
+    : null;
+}
+
 // MARK: Student Panel
 export class StudentActivitiesPanel {
   constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise }) {
@@ -90,11 +96,13 @@ export class StudentActivitiesPanel {
   }
 
   _init() {
-    const active = this.manager.exercises.find(
-      (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.end_ts == null
+    const mostRecentActive = mostRecentlyCreated(
+      this.manager.exercises.filter(
+        (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.end_ts == null
+      )
     );
-    if (active) {
-      this._openActivePopoverOnLoad(active);
+    if (mostRecentActive) {
+      this._openActivePopoverOnLoad(mostRecentActive);
     } else {
       this._showList();
     }
@@ -104,7 +112,6 @@ export class StudentActivitiesPanel {
   _subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this._completePopover.close();
       this._renderList();
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
@@ -113,7 +120,6 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._renderList();
-      this._activePopover.close();
       this._openFinished(exercise);
     });
   }
@@ -141,6 +147,11 @@ export class StudentActivitiesPanel {
 
   // Called by the complete popover when it closes itself (e.g. via its own "x").
   notifyCompletePopoverClosed() {
+    this.onPollPanelOpenChange?.(null);
+  }
+
+  // Called by the active popover when it closes itself (e.g. via its own "x").
+  notifyActivePopoverClosed() {
     this.onPollPanelOpenChange?.(null);
   }
 
@@ -661,6 +672,7 @@ export class InstructorActivitiesPanel {
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this._currentPollId = null;
+    this._activePopoverId = null;
     this._completePopoverId = null;
 
     // DOM refs owned by this panel
@@ -689,12 +701,10 @@ export class InstructorActivitiesPanel {
 
     this.#subscribeToManager();
 
-    for (let ex of manager.getActiveExercises()) {
-      if (ex.type === "POLL" || ex.type === "POLL_MCQ") {
-        this._openActivePopoverOnLoad(ex);
-        break;
-      }
-    }
+    const mostRecentActive = mostRecentlyCreated(
+      manager.getActiveExercises().filter((ex) => ex.type === "POLL" || ex.type === "POLL_MCQ")
+    );
+    if (mostRecentActive) this._openActivePopoverOnLoad(mostRecentActive);
     this._renderList();
   }
 
@@ -708,7 +718,6 @@ export class InstructorActivitiesPanel {
   #subscribeToManager() {
     this.manager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this._completePopover.close();
       this._renderList();
       this._scrollToExercise?.(exercise);
       this._openActivePopover(exercise);
@@ -717,7 +726,6 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       this._renderList();
       if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") {
-        this._activePopover.close();
         this._openFinished(exercise, { loading: exercise.type === "POLL" });
       } else {
         this.openPanel();
@@ -745,10 +753,6 @@ export class InstructorActivitiesPanel {
     });
   }
 
-  openActivePoll(exercise) {
-    this._openActivePopover(exercise);
-  }
-
   // Opens the popover/sidebar to a specific exercise regardless of active/finished state --
   // e.g. from clicking its code-editor gutter marker.
   openExercise(ex) {
@@ -770,7 +774,7 @@ export class InstructorActivitiesPanel {
   }
 
   _openActivePopover(ex) {
-    this._currentPollId = ex.id;
+    this._activePopoverId = ex.id;
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this.onPollPanelOpenChange?.(ex.id);
   }
@@ -799,6 +803,12 @@ export class InstructorActivitiesPanel {
   notifyCompletePopoverClosed() {
     this._completePopoverId = null;
     if (!this.pollEl.hidden) this._showView("list");
+    this._syncPollHighlight();
+  }
+
+  // Called by the active popover when it closes itself (e.g. via its own "x").
+  notifyActivePopoverClosed() {
+    this._activePopoverId = null;
     this._syncPollHighlight();
   }
 
