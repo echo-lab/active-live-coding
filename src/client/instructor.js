@@ -232,7 +232,13 @@ function initialize({
         rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
       };
     },
-    scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
+    scrollToExercise: (ex) => {
+      if (ex.type === "CODE_VARIANT") {
+        codeEditor.scrollToVersionBlock(ex.VersionBlockId);
+      } else {
+        codeEditor.scrollToPollMarker(ex.id);
+      }
+    },
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());

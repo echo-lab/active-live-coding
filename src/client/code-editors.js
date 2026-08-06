@@ -32,25 +32,30 @@ import { indentWithTab } from "@codemirror/commands";
 
 const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 
-// Scrolls a poll's anchored code into view, centered in the viewport. Dispatches twice: once
+// Scrolls a document position into view, centered in the viewport. Dispatches twice: once
 // immediately, to pull the target (possibly still off-screen, e.g. past a Version Block widget)
 // into CodeMirror's rendered viewport, and once more on the next animation frame -- only by then
 // has CodeMirror actually measured that content's height, so the second dispatch is what lands
 // accurately. A single dispatch can under/overshoot since CodeMirror's height estimate for
-// content it hasn't rendered yet is often wrong. No-op if the poll has no code anchor.
-function scrollPollMarkerIntoView(view, id) {
-  const { from } = getPollMarkerPosition(view.state, id);
+// content it hasn't rendered yet is often wrong. `getFrom` is re-invoked before each dispatch so
+// the target tracks a live position; no-op if it returns null.
+function scrollIntoViewAccurate(view, getFrom) {
+  const from = getFrom();
   if (from == null) return;
   const scroller = view.scrollDOM;
   scroller.classList.add("cm-smooth-scroll");
   view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
   requestAnimationFrame(() => {
-    const { from: liveFrom } = getPollMarkerPosition(view.state, id);
+    const liveFrom = getFrom();
     if (liveFrom != null) {
       view.dispatch({ effects: EditorView.scrollIntoView(liveFrom, { y: "center" }) });
     }
   });
   setTimeout(() => scroller.classList.remove("cm-smooth-scroll"), 600);
+}
+
+function scrollPollMarkerIntoView(view, id) {
+  scrollIntoViewAccurate(view, () => getPollMarkerPosition(view.state, id).from);
 }
 
 // MARK: Student Editor
@@ -511,6 +516,14 @@ export class InstructorCodeEditor {
 
   getVersionBlock(id) {
     return this.versionBlocks[id];
+  }
+
+  // Scrolls a version block's anchored code into view -- used when it's selected from the
+  // activities sidebar, mirroring scrollToPollMarker for polls.
+  scrollToVersionBlock(versionBlockId) {
+    const widget = this.versionBlocks[versionBlockId];
+    if (!widget) return;
+    scrollIntoViewAccurate(this.view, () => widget.getPosition(this.view.state).from);
   }
 
   getDocVersion() {

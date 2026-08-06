@@ -924,6 +924,12 @@ export class InstructorActivitiesPanel {
             this._openFinished(ex);
           }
         });
+      } else {
+        item.addEventListener("click", () => {
+          this._scrollToExercise?.(ex);
+          this.openPanel();
+          this._showSummaryView(ex);
+        });
       }
       this.listItemsEl.appendChild(item);
     });
