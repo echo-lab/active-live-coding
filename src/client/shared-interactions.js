@@ -1,5 +1,10 @@
 import { CLIENT_TYPE, USER_ACTIONS } from "../shared-constants";
-import { clearEmail, POST_JSON_REQUEST } from "./utils";
+import {
+  clearEmail,
+  getConsentChoice,
+  setConsentChoice,
+  POST_JSON_REQUEST,
+} from "./utils";
 
 const MAX_OUTPUT_LENGTH = 50;
 
@@ -160,6 +165,59 @@ export class Console {
     this.el.appendChild(container);
     this.el.scrollTo(0, 1e6);
   }
+}
+
+export function setUpConsentModal({ userId }) {
+  const modal = document.querySelector("#consent-modal-background");
+  const submitButton = document.querySelector("#consent-submit");
+  const closeButton = document.querySelector("#consent-close");
+  const errorMessage = document.querySelector("#consent-error");
+  const reviewLink = document.querySelector("#review-consent");
+  const radios = document.querySelectorAll('input[name="consent-choice"]');
+
+  // The X is only offered when reopening the form after already answering it
+  // once -- on the very first, mandatory showing there's nothing to dismiss to.
+  function show({ closable }) {
+    const existing = getConsentChoice();
+    if (existing !== null) {
+      radios.forEach((r) => (r.checked = r.value === (existing ? "yes" : "no")));
+    }
+    closeButton.hidden = !closable;
+    errorMessage.textContent = "";
+    modal.style.display = "flex";
+  }
+
+  function close() {
+    modal.style.display = "none";
+  }
+
+  async function submit() {
+    const checked = document.querySelector('input[name="consent-choice"]:checked');
+    if (!checked) {
+      errorMessage.textContent = "Please select one of the options above.";
+      return;
+    }
+    const consented = checked.value === "yes";
+    setConsentChoice(consented);
+    close();
+    try {
+      await fetch("/api/consent", {
+        body: JSON.stringify({ student_id: userId, consented }),
+        ...POST_JSON_REQUEST,
+      });
+    } catch (e) {
+      console.error("Failed to record consent:", e);
+    }
+  }
+
+  submitButton.addEventListener("click", submit);
+  closeButton.addEventListener("click", close);
+  reviewLink.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    show({ closable: true });
+  });
+
+  if (getConsentChoice() === null) show({ closable: false });
 }
 
 export function setUpChangeEmail(el) {

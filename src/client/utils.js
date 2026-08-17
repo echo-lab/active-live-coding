@@ -30,6 +30,19 @@ export function getUserID() {
   return userId;
 }
 
+// Returns true/false once the student has answered the consent form, or null
+// if they haven't been asked yet (or their answer hasn't been recorded).
+export function getConsentChoice() {
+  let val = localStorage.getItem("consent_choice");
+  if (val === "true") return true;
+  if (val === "false") return false;
+  return null;
+}
+
+export function setConsentChoice(consented) {
+  localStorage.setItem("consent_choice", String(consented));
+}
+
 export function shouldSimulateResponses() {
   return localStorage.getItem("should_simulate_responses") !== "false";
 }

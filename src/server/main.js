@@ -10,6 +10,7 @@ import {
   ExerciseResponse,
   SimulatedExerciseResponse,
   StudentSession,
+  StudentConsent,
   VersionBlock,
   Variant,
   VariantChange,
@@ -316,6 +317,26 @@ app.post("/record-playground-changes", async (req, res) => {
   return res.json({ error: "no longer supported" });
 });
 
+// MARK: record consent
+// Records (or updates) whether a student has consented to share study data.
+// Keyed by student_id, not by lecture, since consent applies to the whole study.
+app.post("/api/consent", async (req, res) => {
+  let { student_id, consented } = req.body;
+  if (!student_id || typeof consented !== "boolean") {
+    return res.json({ error: "student_id and consented are required" });
+  }
+  try {
+    await StudentConsent.upsert({
+      student_id,
+      consented,
+      consented_ts: new Date(),
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
 // MARK: record action
 app.post("/record-user-action", async (req, res) => {
   let {
@@ -562,6 +583,11 @@ app.post("/exercise/response", async (req, res) => {
 // ViteExpress.listen(app, 3000, () =>
 //   console.log("Server is listening on port 3000..."),
 // );
+
+// Non-destructive: only creates tables that don't already exist yet (e.g. new
+// models), never drops/alters existing ones. See DANGER_sync_db.js for the
+// destructive force-sync used when resetting the whole dev DB.
+await db.sync();
 
 const server = http.createServer(app).listen(3000, () => {
   console.log("Server is listening!");

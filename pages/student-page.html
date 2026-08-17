@@ -22,6 +22,7 @@
           <span>
             <span id="student-email"></span>
             <a href="#" id="change-email" hidden>(change)</a>
+            <a href="#" id="review-consent">Consent form</a>
           </span>
         </div>
       </div>
@@ -75,6 +76,47 @@
           <button id="fetch-session">Okay</button>
         </div>
         <div id="load-session-error"></div>
+      </div>
+    </div>
+    <div class="consent-modal-background" id="consent-modal-background">
+      <div class="consent-modal">
+        <div class="consent-modal-header">
+          <h3>Consent Form</h3>
+          <button id="consent-close" class="consent-close-button" hidden aria-label="Close">×</button>
+        </div>
+        <div class="consent-modal-body">
+          This website does not collect any personal information from you and
+          you will remain completely anonymous. You have the option to share
+          with a research team the following data:
+          <ul>
+            <li>
+              your anonymous answers to the in-class exercises, along with the
+              timestamp of submission
+            </li>
+            <li>an audio-only recording of the lecture</li>
+            <li>your responses to a short (&lt;5 minute) survey</li>
+          </ul>
+          For more detailed information, you can read this
+          <!-- TODO: replace href with the real information sheet URL -->
+          <a href="#" target="_blank">information sheet</a>.
+        </div>
+        <div class="consent-modal-option">
+          <label>
+            <input type="radio" name="consent-choice" value="yes" />
+            I consent, the researchers can use the above data.
+          </label>
+        </div>
+        <div class="consent-modal-option">
+          <label>
+            <input type="radio" name="consent-choice" value="no" />
+            I do not consent. Note in this case, you can still use this
+            website just the same.
+          </label>
+        </div>
+        <div class="consent-modal-submit-row">
+          <button id="consent-submit">Submit</button>
+        </div>
+        <div id="consent-error"></div>
       </div>
     </div>
     <script type="module" src="/src/client/student-page.js"></script>

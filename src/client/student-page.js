@@ -17,6 +17,7 @@ import {
   makeConsoleResizable,
   RunInteractions,
   setUpChangeEmail,
+  setUpConsentModal,
   setupJoinLectureModalV2,
 } from "./shared-interactions.js";
 import {
@@ -65,6 +66,8 @@ if (email) {
   studentDetailsContainer.textContent = email;
   setUpChangeEmail(changeEmailLink);
 }
+
+setUpConsentModal({ userId });
 
 const socket = io();
 

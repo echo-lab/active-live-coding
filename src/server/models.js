@@ -265,6 +265,34 @@ StudentSession.init(
 LectureSession.hasMany(StudentSession, { foreignKey: "LectureSessionId" });
 StudentSession.belongsTo(LectureSession);
 
+// MARK: StudentConsent
+// One row per student_id (not scoped to a lecture), recording whether the
+// student consented to share data with the research team for the study.
+export class StudentConsent extends Model {}
+StudentConsent.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    student_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    consented: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+    },
+    consented_ts: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
+  },
+  { sequelize },
+);
+
 export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
   POLL_MCQ: "POLL_MCQ",
