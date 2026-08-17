@@ -256,7 +256,7 @@ StudentSession.init(
     },
     student_identifier: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
     },
   },
   { sequelize },

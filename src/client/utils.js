@@ -1,3 +1,5 @@
+import { ANONYMOUS_STUDENT_MODE } from "../shared-constants.js";
+
 export const JSON_HEADERS = { "Content-Type": "application/json" };
 export const GET_JSON_REQUEST = { method: "GET", headers: JSON_HEADERS };
 export const POST_JSON_REQUEST = { method: "POST", headers: JSON_HEADERS };
@@ -8,6 +10,7 @@ export function makeID() {
 }
 
 export function getEmail() {
+  if (ANONYMOUS_STUDENT_MODE) return null;
   let email = localStorage.getItem("user_email");
   if (email && email !== "null") return email;
   email = prompt("Please enter your email");

@@ -268,10 +268,8 @@ app.put("/variant/:id/code", async (req, res) => {
 //   4) the session number and student session id
 app.post("/current-session-student", async (req, res) => {
   let { student_id, student_identifier, sessionName } = req.body;
-  if (!student_id || !student_identifier) {
-    return res.json({
-      error: "student_id and student_identifier are required",
-    });
+  if (!student_id) {
+    return res.json({ error: "student_id is required" });
   }
 
   await flushInstructorChanges();

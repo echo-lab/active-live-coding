@@ -8,6 +8,8 @@ export const USER_ACTIONS = Object.freeze({
   VISIBILITY_CHANGE: "VISIBILITY_CHANGE", // For reviewing notes only.
 });
 
+export const ANONYMOUS_STUDENT_MODE = true;
+
 export const CLIENT_TYPE = Object.freeze({
   INSTRUCTOR: "INSTRUCTOR",
   STUDENT: "STUDENT",

@@ -61,8 +61,10 @@ const email = getEmail();
 const userId = getUserID();
 const studentDetailsContainer = document.querySelector("#student-email");
 const changeEmailLink = document.querySelector("#change-email");
-studentDetailsContainer.textContent = email;
-setUpChangeEmail(changeEmailLink);
+if (email) {
+  studentDetailsContainer.textContent = email;
+  setUpChangeEmail(changeEmailLink);
+}
 
 const socket = io();
 

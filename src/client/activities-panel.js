@@ -236,10 +236,23 @@ export class StudentActivitiesPanel {
 
 // MARK: Helpers for constructing UI for the instructor
 
+// Assigns "Anonymous student N" labels to responses with no email on file, numbered in
+// the order they appear so instructors can refer to a specific one during discussion.
+function computeAnonLabels(responses) {
+  let labels = new Map();
+  let n = 0;
+  responses.forEach((r) => {
+    let identifier = r.StudentSession?.student_identifier || r.student_identifier;
+    if (!identifier) labels.set(r, `Anonymous student ${++n}`);
+  });
+  return labels;
+}
+
 // Renders a single student response element.
-function renderResponseEl(response, ex) {
-  let { student_id, student_identifier, StudentSession, answer } = response;
-  let displayName = StudentSession?.student_identifier ?? student_identifier ?? student_id;
+function renderResponseEl(response, ex, anonLabels) {
+  let { student_identifier, StudentSession, answer } = response;
+  let displayName =
+    StudentSession?.student_identifier || student_identifier || anonLabels.get(response);
   let div = document.createElement("div");
   div.className = "summary-response";
   div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
@@ -252,9 +265,10 @@ function renderResponsesEl(responsesEl, ex, groups) {
     responsesEl.textContent = "No responses.";
     return;
   }
+  let anonLabels = computeAnonLabels(ex.ExerciseResponses);
   if (!groups) {
     ex.ExerciseResponses.forEach((response) => {
-      responsesEl.appendChild(renderResponseEl(response, ex));
+      responsesEl.appendChild(renderResponseEl(response, ex, anonLabels));
     });
     return;
   }
@@ -286,14 +300,14 @@ function renderResponsesEl(responsesEl, ex, groups) {
     headerEl.appendChild(countEl);
     groupEl.appendChild(headerEl);
 
-    groupEl.appendChild(renderResponseEl(responses[0], ex));
+    groupEl.appendChild(renderResponseEl(responses[0], ex, anonLabels));
 
     if (responses.length > 1) {
       let extraEl = document.createElement("div");
       extraEl.className = "group-extra-responses";
       extraEl.hidden = true;
       responses.slice(1).forEach((r) => {
-        extraEl.appendChild(renderResponseEl(r, ex));
+        extraEl.appendChild(renderResponseEl(r, ex, anonLabels));
       });
 
       let toggleBtn = document.createElement("button");

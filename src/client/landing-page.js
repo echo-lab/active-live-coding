@@ -7,6 +7,8 @@ setTimeout(() => {
   const email = getEmail();
   const studentDetailsContainer = document.querySelector("#student-email");
   const changeEmailLink = document.querySelector("#change-email");
-  studentDetailsContainer.textContent = `Your email: ${email}`;
-  setUpChangeEmail(changeEmailLink);
+  if (email) {
+    studentDetailsContainer.textContent = `Your email: ${email}`;
+    setUpChangeEmail(changeEmailLink);
+  }
 }, 200);
