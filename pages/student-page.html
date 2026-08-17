@@ -22,7 +22,8 @@
           <span>
             <span id="student-email"></span>
             <a href="#" id="change-email" hidden>(change)</a>
-            <a href="#" id="review-consent">Consent form</a>
+            <a href="#" id="review-consent">Consent form</a> <span class="vert-sep">|</span>
+            <a href="#" id="review-survey">Survey</a>
           </span>
         </div>
       </div>
@@ -117,6 +118,81 @@
           <button id="consent-submit">Submit</button>
         </div>
         <div id="consent-error"></div>
+      </div>
+    </div>
+    <div class="consent-modal-background" id="survey-modal-background">
+      <div class="consent-modal survey-modal">
+        <div class="consent-modal-header">
+          <h3>Survey</h3>
+          <button id="survey-close" class="consent-close-button" aria-label="Close">×</button>
+        </div>
+        <div class="consent-modal-body">
+          <div class="survey-question">
+            <div class="survey-question-text">
+              In this lecture, I participated more than I normally would.
+            </div>
+            <div class="survey-likert">
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Strongly Disagree</span>
+                <input type="radio" name="survey-participation" value="strongly_disagree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Disagree</span>
+                <input type="radio" name="survey-participation" value="disagree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Neutral</span>
+                <input type="radio" name="survey-participation" value="neutral" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Agree</span>
+                <input type="radio" name="survey-participation" value="agree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Strongly Agree</span>
+                <input type="radio" name="survey-participation" value="strongly_agree" />
+              </label>
+            </div>
+          </div>
+          <div class="survey-question">
+            <div class="survey-question-text">
+              I felt the system was easy to learn and use.
+            </div>
+            <div class="survey-likert">
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Strongly Disagree</span>
+                <input type="radio" name="survey-ease" value="strongly_disagree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Disagree</span>
+                <input type="radio" name="survey-ease" value="disagree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Neutral</span>
+                <input type="radio" name="survey-ease" value="neutral" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Agree</span>
+                <input type="radio" name="survey-ease" value="agree" />
+              </label>
+              <label class="survey-likert-option">
+                <span class="survey-likert-text">Strongly Agree</span>
+                <input type="radio" name="survey-ease" value="strongly_agree" />
+              </label>
+            </div>
+          </div>
+          <div class="survey-question">
+            <div class="survey-question-text">
+              Is there anything you particularly liked or disliked about the
+              system? Is there anything you think we should change?
+            </div>
+            <textarea id="survey-open-response" rows="4"></textarea>
+          </div>
+        </div>
+        <div class="consent-modal-submit-row">
+          <button id="survey-submit">Submit</button>
+        </div>
+        <div id="survey-error"></div>
       </div>
     </div>
     <script type="module" src="/src/client/student-page.js"></script>

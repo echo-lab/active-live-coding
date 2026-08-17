@@ -293,6 +293,45 @@ StudentConsent.init(
   { sequelize },
 );
 
+// MARK: SurveyResponse
+// One row per submission of the end-of-lecture survey. Resubmitting never
+// updates a prior row -- each submit creates a new one, so the full history
+// (with timestamps) is preserved.
+export class SurveyResponse extends Model {}
+SurveyResponse.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    student_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    participation_rating: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    ease_rating: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    open_response: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    submitted_ts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+  },
+  { sequelize },
+);
+
+LectureSession.hasMany(SurveyResponse, { foreignKey: "LectureSessionId" });
+SurveyResponse.belongsTo(LectureSession);
+
 export const EXERCISE_TYPE = Object.freeze({
   POLL: "POLL",
   POLL_MCQ: "POLL_MCQ",

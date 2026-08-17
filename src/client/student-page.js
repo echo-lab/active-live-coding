@@ -18,6 +18,7 @@ import {
   RunInteractions,
   setUpChangeEmail,
   setUpConsentModal,
+  setUpSurveyModal,
   setupJoinLectureModalV2,
 } from "./shared-interactions.js";
 import {
@@ -69,6 +70,9 @@ if (email) {
 
 setUpConsentModal({ userId });
 
+let currentSessionNumber = null;
+setUpSurveyModal({ userId, getSessionNumber: () => currentSessionNumber });
+
 const socket = io();
 
 
@@ -85,6 +89,7 @@ async function initialize({
   studentSessionId,
   versionBlocks = [],
 }) {
+  currentSessionNumber = sessionNumber;
 
   let sessionActive = true;
 

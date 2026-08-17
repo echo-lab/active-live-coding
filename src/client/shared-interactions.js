@@ -3,6 +3,8 @@ import {
   clearEmail,
   getConsentChoice,
   setConsentChoice,
+  getSurveyResponse,
+  setSurveyResponse,
   POST_JSON_REQUEST,
 } from "./utils";
 
@@ -218,6 +220,75 @@ export function setUpConsentModal({ userId }) {
   });
 
   if (getConsentChoice() === null) show({ closable: false });
+}
+
+export function setUpSurveyModal({ userId, getSessionNumber }) {
+  const modal = document.querySelector("#survey-modal-background");
+  const submitButton = document.querySelector("#survey-submit");
+  const closeButton = document.querySelector("#survey-close");
+  const errorMessage = document.querySelector("#survey-error");
+  const reviewLink = document.querySelector("#review-survey");
+  const openResponseField = document.querySelector("#survey-open-response");
+  const participationRadios = document.querySelectorAll(
+    'input[name="survey-participation"]'
+  );
+  const easeRadios = document.querySelectorAll('input[name="survey-ease"]');
+
+  function show() {
+    const existing = getSurveyResponse();
+    participationRadios.forEach(
+      (r) => (r.checked = existing != null && r.value === existing.participation)
+    );
+    easeRadios.forEach(
+      (r) => (r.checked = existing != null && r.value === existing.ease)
+    );
+    openResponseField.value = existing?.open_response ?? "";
+    errorMessage.textContent = "";
+    modal.style.display = "flex";
+  }
+
+  function close() {
+    modal.style.display = "none";
+  }
+
+  async function submit() {
+    const participation = document.querySelector(
+      'input[name="survey-participation"]:checked'
+    );
+    const ease = document.querySelector('input[name="survey-ease"]:checked');
+    if (!participation || !ease) {
+      errorMessage.textContent = "Please answer each question above.";
+      return;
+    }
+    const answers = {
+      participation: participation.value,
+      ease: ease.value,
+      open_response: openResponseField.value,
+    };
+    setSurveyResponse(answers);
+    close();
+    try {
+      await fetch("/api/survey-response", {
+        body: JSON.stringify({
+          student_id: userId,
+          lectureId: getSessionNumber(),
+          participation_rating: answers.participation,
+          ease_rating: answers.ease,
+          open_response: answers.open_response,
+        }),
+        ...POST_JSON_REQUEST,
+      });
+    } catch (e) {
+      console.error("Failed to record survey response:", e);
+    }
+  }
+
+  submitButton.addEventListener("click", submit);
+  closeButton.addEventListener("click", close);
+  reviewLink.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    show();
+  });
 }
 
 export function setUpChangeEmail(el) {

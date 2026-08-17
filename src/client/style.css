@@ -404,7 +404,7 @@ pre {
 .topbar-right {
   display: grid;
   grid-area: email;
-  font-size: medium;
+  font-size: small;
   /* margin-bottom: 6px; */
   justify-self: end;
   align-self: center;
@@ -449,7 +449,8 @@ pre {
 }
 
 .consent-modal {
-  width: 500px;
+  /* width: 500px; */
+  width: 650px;
   padding: 40px;
   text-align: left;
   align-items: stretch;
@@ -492,7 +493,8 @@ pre {
 }
 
 #load-session-error,
-#consent-error {
+#consent-error,
+#survey-error {
   color: red;
 }
 
@@ -500,6 +502,46 @@ pre {
 .consent-modal button {
   margin-top: 10px;
   border: solid 1px black;
+}
+
+.survey-question-text {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.survey-likert {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  padding: 12px 8px;
+  margin: 0 0 20px;
+}
+
+.survey-likert-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+  margin: 0;
+}
+
+.survey-likert-option input[type="radio"] {
+  margin: 0;
+}
+
+#survey-open-response {
+  width: 100%;
+  font-family: inherit;
+  font-size: small;
+  padding: 8px;
+  box-sizing: border-box;
+  resize: vertical;
 }
 
 table {
@@ -1862,4 +1904,9 @@ td {
    the same top edge rather than the header row's default vertical centering. */
 .poll-activity-header .poll-popover-close {
   align-self: flex-start;
+}
+
+.vert-sep {
+  padding-left: 2px;
+  padding-right: 2px;
 }

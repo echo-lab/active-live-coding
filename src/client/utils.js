@@ -43,6 +43,17 @@ export function setConsentChoice(consented) {
   localStorage.setItem("consent_choice", String(consented));
 }
 
+// Returns the student's last-submitted survey answers, or null if they
+// haven't submitted the survey yet.
+export function getSurveyResponse() {
+  let val = localStorage.getItem("survey_response");
+  return val ? JSON.parse(val) : null;
+}
+
+export function setSurveyResponse(answers) {
+  localStorage.setItem("survey_response", JSON.stringify(answers));
+}
+
 export function shouldSimulateResponses() {
   return localStorage.getItem("should_simulate_responses") !== "false";
 }
