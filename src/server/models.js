@@ -202,6 +202,78 @@ export class LectureSession extends Model {
     });
   }
 
+  // Reconstructs the main doc + the ONE given exercise's anchor exactly as they looked at the
+  // moment that exercise's anchor was captured -- for a poll, when it was asked
+  // (code_anchor_doc_version); for a code exercise, when its Version Block was dissolved
+  // (deleted_change_number). Used to render a read-only "historical view" once an activity's
+  // live anchor is gone. Same bounded ChangeSet-replay technique as getVersionBlocksWithPositions
+  // above, just stopping at a fixed past point instead of walking forward to "now".
+  async getHistoricalContextForExercise(exerciseId, transaction) {
+    const exercise = await ClassExercise.findByPk(exerciseId, {
+      include: [{ model: VersionBlock, required: false, include: [{ model: Variant, include: [VariantChange] }] }],
+      transaction,
+    });
+    if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+
+    const isPoll = exercise.type === "POLL" || exercise.type === "POLL_MCQ";
+    let targetChangeNumber, timestamp;
+    if (isPoll) {
+      if (exercise.code_anchor_doc_version == null) return { error: "Exercise has no code anchor" };
+      targetChangeNumber = exercise.code_anchor_doc_version;
+      timestamp = exercise.start_ts;
+    } else if (exercise.type === "CODE_VARIANT") {
+      const block = exercise.VersionBlock;
+      if (!block || block.deleted_change_number == null) return { error: "Version block is not dissolved" };
+      targetChangeNumber = block.deleted_change_number;
+      timestamp = block.updatedAt.getTime();
+    } else {
+      return { error: `Unsupported exercise type: ${exercise.type}` };
+    }
+
+    const priorChanges = await this.getInstructorChanges(
+      {
+        attributes: ["change_number", "change"],
+        where: { change_number: { [Op.lt]: targetChangeNumber } },
+        order: ["change_number"],
+      },
+      { transaction },
+    );
+    const { doc } = reconstructCMDoc(priorChanges);
+
+    if (isPoll) {
+      return {
+        type: exercise.type,
+        doc: doc.toJSON(),
+        timestamp,
+        anchor: { from: exercise.code_anchor_from, to: exercise.code_anchor_to },
+      };
+    }
+
+    // CODE_VARIANT: map the block's creation-time anchor forward, but only up through the
+    // moment of deletion (not all the way to "now", unlike getVersionBlocksWithPositions).
+    const block = exercise.VersionBlock;
+    let from = block.anchor_pos;
+    for (const { change_number, change } of priorChanges) {
+      if (change_number >= block.anchor_change_number) {
+        from = ChangeSet.fromJSON(JSON.parse(change)).mapPos(from);
+      }
+    }
+
+    const sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return {
+      type: "CODE_VARIANT",
+      doc: doc.toJSON(),
+      timestamp,
+      versionBlock: {
+        from,
+        variants: sortedVariants.map((v) => {
+          const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
+          return { id: v.id, name: v.name, code: reconstructCMDoc(vChanges).doc.toString() };
+        }),
+      },
+    };
+  }
+
   // Returns all exercises for this lecture with only the given student's response (if any).
   async getExercisesForStudent(studentId, transaction) {
     const exercises = await this.getClassExercises(
@@ -595,6 +667,10 @@ VersionBlock.init(
     anchor_pos: { type: DataTypes.INTEGER, allowNull: false },
     anchor_change_number: { type: DataTypes.INTEGER, allowNull: false },
     deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    // InstructorChange.change_number the lecture was at right when this block was dissolved --
+    // i.e. reconstructing the main doc from changes strictly before this value shows the widget
+    // still present (not yet flattened into literal text). Null until dissolved.
+    deleted_change_number: { type: DataTypes.INTEGER, allowNull: true },
   },
   { sequelize },
 );

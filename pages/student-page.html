@@ -33,6 +33,10 @@
             <div class="code-tab selected blink-tab" id="instructor-code-tab">
               <div class="code-tab-text">instructor.py</div>
             </div>
+            <div class="code-tab historical-code-tab" id="historical-code-tab" hidden>
+              <div class="code-tab-text" id="historical-code-tab-text"></div>
+              <button class="historical-code-tab-close" aria-label="Close">×</button>
+            </div>
           </div>
           <button id="open-activities-panel">activities list</button>
         </div>
@@ -40,6 +44,13 @@
           <!-- <button class="try-it-out" id="try-instructor-code">
             Open in Playground
           </button> -->
+        </div>
+        <div id="historical-code-container" class="code-container historical-code-container" hidden>
+          <div class="historical-banner">
+            <span>Viewing a past version — read only</span>
+            <button id="return-to-live-btn">Return to live</button>
+          </div>
+          <div class="historical-editor-mount"></div>
         </div>
         <div
           id="playground-code-container"

@@ -39,7 +39,7 @@ const FLUSH_CHANGES_FREQ = /*seconds=*/ 5 * 1000;
 // accurately. A single dispatch can under/overshoot since CodeMirror's height estimate for
 // content it hasn't rendered yet is often wrong. `getFrom` is re-invoked before each dispatch so
 // the target tracks a live position; no-op if it returns null.
-function scrollIntoViewAccurate(view, getFrom) {
+export function scrollIntoViewAccurate(view, getFrom) {
   const from = getFrom();
   if (from == null) return;
   const scroller = view.scrollDOM;
@@ -187,6 +187,14 @@ export class StudentCodeEditor {
   // the anchor, or when a poll is created live while the viewer is already looking elsewhere).
   scrollToPollMarker(id) {
     scrollPollMarkerIntoView(this.view, id);
+  }
+
+  // Scrolls a version block's anchored code into view -- used when it's selected from the
+  // activities sidebar, mirroring InstructorCodeEditor.scrollToVersionBlock.
+  scrollToVersionBlock(versionBlockId) {
+    const widget = this.getVersionBlock(versionBlockId);
+    if (!widget) return;
+    scrollIntoViewAccurate(this.view, () => widget.getPosition(this.view.state));
   }
 
   // Mounts a popover panel as a CodeMirror decoration anchored to doc position `at`, keyed by

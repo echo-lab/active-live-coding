@@ -15,6 +15,7 @@ import {
   VersionBlock,
   Variant,
   VariantChange,
+  InstructorChange,
   reconstructCMDoc,
 } from "./models.js";
 import { ChangeSet } from "@codemirror/state";
@@ -166,11 +167,21 @@ app.post("/version-block", async (req, res) => {
 // MARK: VersionBlock delete
 
 app.delete("/version-block/:id", async (req, res) => {
+  await flushInstructorChanges();
+
   try {
     const result = await db.transaction(async (t) => {
       const block = await VersionBlock.findByPk(req.params.id, { transaction: t });
       if (!block) return res.status(404).json({ error: "Not found" });
-      await block.update({ deleted: true }, { transaction: t });
+
+      // Record how many InstructorChanges existed right now, before this dissolve's own
+      // flatten-insert edit lands -- lets a later "historical view" reconstruct the doc with
+      // this block's widget still present, exactly as it looked right before deletion.
+      const deleted_change_number = await InstructorChange.count({
+        where: { LectureSessionId: block.LectureSessionId },
+        transaction: t,
+      });
+      await block.update({ deleted: true, deleted_change_number }, { transaction: t });
 
       // Dissolving a still-active exercise should behave like finishing it (minus the
       // summary step) so it doesn't linger as "Active" in the activities panel.
@@ -520,6 +531,30 @@ app.post("/suggest-mcq-choices", async (req, res) => {
     res.json({ choices });
   } catch (error) {
     console.error("Failed to suggest MCQ choices:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Historical context
+// Reconstructs the editor + the given exercise's anchor as they looked at the moment that
+// exercise's anchor was captured -- used to render a read-only "historical view" once an
+// activity's live anchor is gone (poll's code fully deleted, or its Version Block dissolved).
+app.get("/exercise/:id/historical-context", async (req, res) => {
+  const exerciseId = req.params.id;
+
+  await flushInstructorChanges();
+
+  try {
+    const response = await db.transaction(async (t) => {
+      const exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      const lecture = await LectureSession.findByPk(exercise.LectureSessionId, { transaction: t });
+      if (!lecture) return { error: `Session #${exercise.LectureSessionId} not found` };
+      return lecture.getHistoricalContextForExercise(exerciseId, t);
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to get historical context:", error);
     res.json({ error: error.message });
   }
 });

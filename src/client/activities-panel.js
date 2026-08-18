@@ -99,7 +99,7 @@ function isAnchorDeleted(ex) {
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise }) {
+  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView }) {
     this.manager = manager;
     this.student_id = student_id;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
@@ -107,6 +107,7 @@ export class StudentActivitiesPanel {
     this._completePopover = completePopover;
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
+    this._openHistoricalView = openHistoricalView;
     this._selectedActivityId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
@@ -245,7 +246,9 @@ export class StudentActivitiesPanel {
         item.dataset.exerciseId = ex.id;
         item.classList.toggle("selected", ex.id === this._selectedActivityId);
         item.addEventListener("click", () => {
-          if (isActive) {
+          if (isAnchorDeleted(ex)) {
+            this._openHistoricalView?.(ex);
+          } else if (isActive) {
             this._openActivePopover(ex);
           } else {
             this._openFinished(ex);
@@ -253,6 +256,13 @@ export class StudentActivitiesPanel {
         });
       } else {
         item.innerHTML = `${icon}<span class="${previewClass}">${preview}</span>${badge}`;
+        item.addEventListener("click", () => {
+          if (isAnchorDeleted(ex)) {
+            this._openHistoricalView?.(ex);
+          } else {
+            this._scrollToExercise?.(ex);
+          }
+        });
       }
       this.listItemsEl.appendChild(item);
     });
@@ -734,6 +744,7 @@ export class InstructorActivitiesPanel {
     completePopover,
     getAnchor,
     scrollToExercise,
+    openHistoricalView,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -745,6 +756,7 @@ export class InstructorActivitiesPanel {
     this._completePopover = completePopover;
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
+    this._openHistoricalView = openHistoricalView;
     this._currentPollId = null;
     this._activePopoverId = null;
     this._completePopoverId = null;
@@ -964,7 +976,9 @@ export class InstructorActivitiesPanel {
         item.dataset.exerciseId = ex.id;
         item.classList.toggle("selected", ex.id === this._selectedActivityId);
         item.addEventListener("click", () => {
-          if (isActive) {
+          if (isAnchorDeleted(ex)) {
+            this._openHistoricalView?.(ex);
+          } else if (isActive) {
             this._openActivePopover(ex);
           } else {
             this._openFinished(ex);
@@ -972,6 +986,10 @@ export class InstructorActivitiesPanel {
         });
       } else {
         item.addEventListener("click", () => {
+          if (isAnchorDeleted(ex)) {
+            this._openHistoricalView?.(ex);
+            return;
+          }
           this._scrollToExercise?.(ex);
           this.openPanel();
           this._showSummaryView(ex);

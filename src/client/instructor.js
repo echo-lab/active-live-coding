@@ -19,8 +19,20 @@ import { PollCreatePopover } from "./poll-create-popover.js";
 import { InstructorActivePollPopover } from "./poll-active-popover.js";
 import { InstructorPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
+import { createHistoricalViewController } from "./historical-view-controller.js";
 
 const codeContainer = document.querySelector("#code-container");
+const historicalController = createHistoricalViewController({
+  liveTabEl: document.querySelector("#instructor-code-tab"),
+  historicalTabEl: document.querySelector("#historical-code-tab"),
+  historicalTabTextEl: document.querySelector("#historical-code-tab-text"),
+  historicalTabCloseBtn: document.querySelector("#historical-code-tab .historical-code-tab-close"),
+  liveContainerEl: document.querySelector("#code-container"),
+  historicalContainerEl: document.querySelector("#historical-code-container"),
+  historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
+  returnToLiveBtn: document.querySelector("#return-to-live-btn"),
+  createCompletePopover: (args) => new InstructorPollCompletePopover(args),
+});
 const startButton = document.querySelector("#start-session-butt");
 const endButton = document.querySelector("#end-session-butt");
 const sessionDetails = document.querySelector("#session-details");
@@ -235,12 +247,14 @@ function initialize({
       };
     },
     scrollToExercise: (ex) => {
+      historicalController.returnToLive();
       if (ex.type === "CODE_VARIANT") {
         codeEditor.scrollToVersionBlock(ex.VersionBlockId);
       } else {
         codeEditor.scrollToPollMarker(ex.id);
       }
     },
+    openHistoricalView: (ex) => historicalController.open(ex),
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());

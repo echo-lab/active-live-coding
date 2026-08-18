@@ -30,6 +30,7 @@ import { StudentActivitiesManager } from "./activities-manager.js";
 import { StudentActivePollPopover } from "./poll-active-popover.js";
 import { StudentPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
+import { createHistoricalViewController } from "./historical-view-controller.js";
 
 const instructorCodeContainer = document.querySelector(
   "#instructor-code-container"
@@ -72,6 +73,18 @@ setUpConsentModal({ userId });
 
 let currentSessionNumber = null;
 setUpSurveyModal({ userId, getSessionNumber: () => currentSessionNumber });
+
+const historicalController = createHistoricalViewController({
+  liveTabEl: instructorCodeTab,
+  historicalTabEl: document.querySelector("#historical-code-tab"),
+  historicalTabTextEl: document.querySelector("#historical-code-tab-text"),
+  historicalTabCloseBtn: document.querySelector("#historical-code-tab .historical-code-tab-close"),
+  liveContainerEl: instructorCodeContainer,
+  historicalContainerEl: document.querySelector("#historical-code-container"),
+  historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
+  returnToLiveBtn: document.querySelector("#return-to-live-btn"),
+  createCompletePopover: (args) => new StudentPollCompletePopover({ ...args, student_id: userId }),
+});
 
 const socket = io();
 
@@ -189,7 +202,15 @@ async function initialize({
         rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
       };
     },
-    scrollToExercise: (ex) => codeEditor.scrollToPollMarker(ex.id),
+    scrollToExercise: (ex) => {
+      historicalController.returnToLive();
+      if (ex.type === "CODE_VARIANT") {
+        codeEditor.scrollToVersionBlock(ex.VersionBlockId);
+      } else {
+        codeEditor.scrollToPollMarker(ex.id);
+      }
+    },
+    openHistoricalView: (ex) => historicalController.open(ex),
   });
 }
 

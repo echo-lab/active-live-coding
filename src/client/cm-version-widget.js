@@ -4,7 +4,7 @@ import { minimalSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
 import { indentUnit } from "@codemirror/language";
-import { VariantCodeEditor, VariantCodeFollowingEditor } from "./code-editors.js";
+import { VariantCodeEditor, VariantCodeFollowingEditor, ReviewCodeEditor } from "./code-editors.js";
 import { followInstructorExtensions, setInstructorSelection } from "./cm-extensions.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, PATCH_JSON_REQUEST } from "./utils.js";
@@ -407,7 +407,7 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket, sessionNumber, activitiesManager, getInstructorCode, view, onDissolve }) {
+  constructor({ versionBlockId, variants, socket = null, sessionNumber = null, activitiesManager = null, getInstructorCode, view, onDissolve, readOnly = false }) {
     super();
     this.versionBlockId = versionBlockId;
     this.socket = socket;
@@ -416,6 +416,7 @@ export class VersionBlockWidget extends WidgetType {
     this.getInstructorCodeForExercise = getInstructorCode;  // Substitutes this variant's code w/ string {{ANSWER}}
     this._outerView = view;
     this._onDissolve = onDissolve ?? null;
+    this.readOnly = readOnly;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
     this.isMinimized = START_MINIMIZED;
@@ -430,24 +431,29 @@ export class VersionBlockWidget extends WidgetType {
     this.exerciseBtnContainer = null;
     this._timerInterval = null;
     this._responseListener = null;
+    this._summaryDisplayListener = null;
 
     // shape: {id, code, name, el, editor}
     this.variants = variants.map((v) => ({
         ...v,
-        ...this._makeVariantCodeEditor(v),
+        ...(this.readOnly ? this._makeVariantViewer(v) : this._makeVariantCodeEditor(v)),
     }));
 
-    activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-      if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
-    });
-    activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
-    });
-    this._summaryDisplayListener = ({ detail: { exerciseId } }) => {
-      const ex = this.activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
-      this.container?.classList.toggle("code-summary-active", !!ex && ex.id === exerciseId);
-    };
-    activitiesManager.addEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
+    // A read-only widget shows a frozen historical snapshot -- it has no exercise workflow (no
+    // "ask students"/"finish"/dissolve buttons) to keep in sync, so none of these are needed.
+    if (!this.readOnly && this.activitiesManager) {
+      activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
+        if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
+      });
+      activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+        if (exercise.VersionBlockId === this.versionBlockId) this._updateExerciseBtn();
+      });
+      this._summaryDisplayListener = ({ detail: { exerciseId } }) => {
+        const ex = this.activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
+        this.container?.classList.toggle("code-summary-active", !!ex && ex.id === exerciseId);
+      };
+      activitiesManager.addEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
+    }
   }
 
   eq(other) {
@@ -460,7 +466,7 @@ export class VersionBlockWidget extends WidgetType {
 
   toDOM() {
     const container = document.createElement("div");
-    container.className = "cm-version-block-widget";
+    container.className = "cm-version-block-widget" + (this.readOnly ? " read-only" : "");
 
     this.container = container;
 
@@ -483,24 +489,29 @@ export class VersionBlockWidget extends WidgetType {
     this.tabsContainer = tabsContainer;
     leftGroup.appendChild(tabsContainer);
 
-    const addBtn = document.createElement("button");
-    addBtn.className = "cm-version-block-btn cm-version-block-add";
-    addBtn.textContent = "+";
-    addBtn.title = "Add variant";
-    addBtn.addEventListener("mousedown", async (e) => {
-      e.preventDefault();
-      await this._createVariant();
-    });
-    this.addBtn = addBtn;
+    let addBtn = null;
+    if (!this.readOnly) {
+      addBtn = document.createElement("button");
+      addBtn.className = "cm-version-block-btn cm-version-block-add";
+      addBtn.textContent = "+";
+      addBtn.title = "Add variant";
+      addBtn.addEventListener("mousedown", async (e) => {
+        e.preventDefault();
+        await this._createVariant();
+      });
+      this.addBtn = addBtn;
+    }
 
-    // Right group: ask students + X
+    // Right group: ask students + minimize + dissolve (the first and last only when editable)
     const rightGroup = document.createElement("div");
     rightGroup.className = "cm-version-block-right";
 
-    this.exerciseBtnContainer = document.createElement("div");
-    this.exerciseBtnContainer.style.fontSize = "10px";  // else it's too tall!
-    rightGroup.appendChild(this.exerciseBtnContainer);
-    this._updateExerciseBtn();
+    if (!this.readOnly) {
+      this.exerciseBtnContainer = document.createElement("div");
+      this.exerciseBtnContainer.style.fontSize = "10px";  // else it's too tall!
+      rightGroup.appendChild(this.exerciseBtnContainer);
+      this._updateExerciseBtn();
+    }
 
     const minimizeBtn = document.createElement("button");
     minimizeBtn.className = "cm-version-block-btn cm-version-block-minimize";
@@ -511,17 +522,19 @@ export class VersionBlockWidget extends WidgetType {
     this.minimizeBtn = minimizeBtn;
     rightGroup.appendChild(minimizeBtn);
 
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "cm-version-block-btn cm-version-block-close";
-    closeBtn.textContent = "✕";
-    closeBtn.title = "Dissolve version block";
-    closeBtn.addEventListener("mousedown", async (e) => {
-      e.preventDefault();
-      if (window.confirm("Are you sure you want to dissolve this version block?")) {
-        await this.dissolve();
-      }
-    });
-    rightGroup.appendChild(closeBtn);
+    if (!this.readOnly) {
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "cm-version-block-btn cm-version-block-close";
+      closeBtn.textContent = "✕";
+      closeBtn.title = "Dissolve version block";
+      closeBtn.addEventListener("mousedown", async (e) => {
+        e.preventDefault();
+        if (window.confirm("Are you sure you want to dissolve this version block?")) {
+          await this.dissolve();
+        }
+      });
+      rightGroup.appendChild(closeBtn);
+    }
 
     const toolbarInner = document.createElement("div");
     toolbarInner.className = "cm-version-block-toolbar-inner";
@@ -542,7 +555,7 @@ export class VersionBlockWidget extends WidgetType {
     for (let i = 0; i < this.variants.length; i++) {
       tabsContainer.appendChild(this._makeTabEl(i));
     }
-    tabsContainer.appendChild(addBtn);
+    if (addBtn) tabsContainer.appendChild(addBtn);
     this._updateDeleteBtnVisibility();
     this._setMinimized(this.isMinimized);
 
@@ -683,6 +696,17 @@ export class VersionBlockWidget extends WidgetType {
     return {el, editor};
   }
 
+  // Read-only counterpart to _makeVariantCodeEditor -- used when this widget is displaying a
+  // frozen historical snapshot. ReviewCodeEditor needs no socket/versionBlockId coupling (unlike
+  // VariantCodeEditor, which is built to receive a live edit stream this snapshot will never get).
+  _makeVariantViewer(v) {
+    const el = document.createElement("div");
+    el.className = "cm-version-block-editor";
+    el.hidden = true;
+    const editor = new ReviewCodeEditor({ node: el, doc: (v.code ?? "").split("\n"), isEditable: false });
+    return { el, editor };
+  }
+
   _makeTabEl(index) {
     const variant = this.variants[index];
     const tab = document.createElement("div");
@@ -692,27 +716,32 @@ export class VersionBlockWidget extends WidgetType {
     const label = document.createElement("span");
     label.className = "cm-version-block-tab-label";
     label.textContent = variant.name;
-    label.addEventListener("dblclick", (e) => {
-      e.preventDefault();
-      const currentIndex = this.variants.findIndex((v) => v.id === variant.id);
-      if (currentIndex >= 0) this._startRename(currentIndex, label, tab);
-    });
-
-    // TODO: change the UI of this...
-    const delBtn = document.createElement("button");
-    delBtn.className = "cm-version-block-tab-delete";
-    delBtn.textContent = "×";
-    delBtn.title = "Delete variant";
-    delBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (window.confirm("Are you sure you want to delete this?")) {
-        this._deleteVariant(variant.id);
-      }
-    });
-
+    if (!this.readOnly) {
+      label.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        const currentIndex = this.variants.findIndex((v) => v.id === variant.id);
+        if (currentIndex >= 0) this._startRename(currentIndex, label, tab);
+      });
+    }
     tab.appendChild(label);
-    tab.appendChild(delBtn);
+
+    let delBtn = null;
+    if (!this.readOnly) {
+      // TODO: change the UI of this...
+      delBtn = document.createElement("button");
+      delBtn.className = "cm-version-block-tab-delete";
+      delBtn.textContent = "×";
+      delBtn.title = "Delete variant";
+      delBtn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.confirm("Are you sure you want to delete this?")) {
+          this._deleteVariant(variant.id);
+        }
+      });
+      tab.appendChild(delBtn);
+    }
+
     tab.addEventListener("mousedown", (e) => {
       if (e.target === delBtn) return;
       e.preventDefault();

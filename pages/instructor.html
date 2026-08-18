@@ -35,10 +35,21 @@
             <div class="code-tab selected" id="instructor-code-tab">
               <div class="code-tab-text">instructor.py</div>
             </div>
+            <div class="code-tab historical-code-tab" id="historical-code-tab" hidden>
+              <div class="code-tab-text" id="historical-code-tab-text"></div>
+              <button class="historical-code-tab-close" aria-label="Close">×</button>
+            </div>
           </div>
           <button id="open-activities-panel">activities list</button>
         </div>
         <div id="code-container" class="code-container"></div>
+        <div id="historical-code-container" class="code-container historical-code-container" hidden>
+          <div class="historical-banner">
+            <span>Viewing a past version — read only</span>
+            <button id="return-to-live-btn">Return to live</button>
+          </div>
+          <div class="historical-editor-mount"></div>
+        </div>
         <div id="resize-console"><div class="resize-symbol"></div></div>
         <div id="output-container">
           <div id="all-code-outputs" class="empty">

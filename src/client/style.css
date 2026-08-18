@@ -214,6 +214,73 @@ span.sep {
   position: relative;
 }
 
+/* .code-container sets `display: grid` in this (author) stylesheet, which otherwise overrides
+   the browser's own low-priority `[hidden] { display: none }` rule -- without this, toggling
+   the `hidden` attribute alone wouldn't actually hide a .code-container element. */
+.code-container[hidden] {
+  display: none;
+}
+
+.code-tab.historical-code-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.code-tab.historical-code-tab.selected {
+  border-top-color: #d97706;
+}
+
+.historical-code-tab-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: #888;
+  padding: 0;
+}
+
+.historical-code-tab-close:hover {
+  color: #333;
+}
+
+/* Overrides .code-container's `display: grid` -- the banner + editor mount below just stack in
+   normal block flow, and `position: sticky` on the banner needs a normal-flow scroll container
+   (this element itself, via the inherited overflow-y: auto) to stick against. */
+.historical-code-container {
+  display: block;
+}
+
+.historical-banner {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background-color: #fef3c7;
+  border-bottom: 1px solid #d97706;
+  font-size: 0.85rem;
+  color: #78350f;
+}
+
+.historical-banner button {
+  background-color: #d97706;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.historical-banner button:hover {
+  background-color: #b45309;
+}
+
 #output-container {
   display: grid;
   grid-area: code-output;
