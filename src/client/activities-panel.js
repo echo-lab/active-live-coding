@@ -70,13 +70,31 @@ function mostRecentlyCreated(exercises) {
 }
 
 // Single-line preview text for an activity-list row: polls preview their instructions,
-// code exercises (which have no instructions) preview their starter code instead.
+// code exercises (which have no instructions) preview their first non-blank line of code instead.
 function activityPreviewText(ex) {
   if (ex.type === "CODE_VARIANT") {
-    const code = (ex.default_answer ?? "").replace(/\s+/g, " ").trim();
-    return code ? code.slice(0, 60) : "(empty code exercise)";
+    const code = ex.default_answer ?? "";
+    const firstLine = code.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+    return firstLine ? firstLine.slice(0, 60) : "(empty code exercise)";
   }
   return ex.instructions ? ex.instructions.slice(0, 60) : "(no instructions)";
+}
+
+// Icon shown to the left of an activity-list row's preview text, indicating its type.
+function activityIconHtml(ex) {
+  const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
+  return isPoll
+    ? `<span class="activity-item-icon activity-item-icon-poll">?</span>`
+    : `<span class="activity-item-icon activity-item-icon-code">&lt;/&gt;</span>`;
+}
+
+// True when the code an activity was anchored to has since been deleted -- a poll's anchor is
+// always set at creation (poll-create-popover.js) and gets nulled out server-side once the
+// anchored code is entirely deleted (see LectureSession._resolvePollAnchors); a code exercise's
+// anchor is its Version Block, which is soft-deleted (not removed) when dissolved.
+function isAnchorDeleted(ex) {
+  const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
+  return isPoll ? ex.code_anchor_from == null : ex.VersionBlock?.deleted === true;
 }
 
 // MARK: Student Panel
@@ -124,6 +142,10 @@ export class StudentActivitiesPanel {
       this._renderList();
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
       this._openFinished(exercise);
+    });
+
+    this.manager.addEventListener("exerciseUpdated", () => {
+      this._renderList();
     });
   }
 
@@ -198,7 +220,10 @@ export class StudentActivitiesPanel {
       const isActive = ex.end_ts == null;
       const item = document.createElement("div");
       item.className = "activity-list-item";
+      item.classList.toggle("anchor-deleted", isAnchorDeleted(ex));
+      const icon = activityIconHtml(ex);
       const preview = activityPreviewText(ex);
+      const previewClass = ex.type === "CODE_VARIANT" ? "activity-item-preview is-code" : "activity-item-preview";
       const badge = isActive ? `<span class="activity-item-badge badge-active">Active</span>` : "";
 
       if (isPoll) {
@@ -216,7 +241,7 @@ export class StudentActivitiesPanel {
         } else {
           answerSnippet = " — no answer";
         }
-        item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}<span class="activity-item-answer">${answerSnippet}</span>`;
+        item.innerHTML = `${icon}<span class="${previewClass}">${preview}</span>${badge}<span class="activity-item-answer">${answerSnippet}</span>`;
         item.dataset.exerciseId = ex.id;
         item.classList.toggle("selected", ex.id === this._selectedActivityId);
         item.addEventListener("click", () => {
@@ -227,7 +252,7 @@ export class StudentActivitiesPanel {
           }
         });
       } else {
-        item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}`;
+        item.innerHTML = `${icon}<span class="${previewClass}">${preview}</span>${badge}`;
       }
       this.listItemsEl.appendChild(item);
     });
@@ -806,6 +831,10 @@ export class InstructorActivitiesPanel {
     this.manager.addEventListener("responseReceived", ({ detail: { exercise, responseCount } }) => {
       if (this._activePopover.isOpenFor(exercise.id)) this._activePopover.updateResponseCount(responseCount);
     });
+
+    this.manager.addEventListener("exerciseUpdated", () => {
+      this._renderList();
+    });
   }
 
   // Opens the sidebar directly to the activities list -- e.g. from the topbar's "activities
@@ -923,10 +952,13 @@ export class InstructorActivitiesPanel {
 
       let item = document.createElement("div");
       item.className = "activity-list-item";
+      item.classList.toggle("anchor-deleted", isAnchorDeleted(ex));
       let isActive = ex.end_ts == null;
+      let icon = activityIconHtml(ex);
       let preview = activityPreviewText(ex);
+      let previewClass = ex.type === "CODE_VARIANT" ? "activity-item-preview is-code" : "activity-item-preview";
       let badge = isActive ? `<span class="activity-item-badge badge-active">Active</span>` : "";
-      item.innerHTML = `<span class="activity-item-preview">${preview}</span>${badge}`;
+      item.innerHTML = `${icon}<span class="${previewClass}">${preview}</span>${badge}`;
 
       if (isPoll) {
         item.dataset.exerciseId = ex.id;

@@ -101,6 +101,10 @@ export class LectureSession extends Model {
             model: SimulatedExerciseResponse,
             required: false,
           },
+          {
+            model: VersionBlock,
+            required: false,
+          },
         ],
         order: [["start_ts", "ASC"]],
       },
@@ -206,6 +210,10 @@ export class LectureSession extends Model {
           {
             model: ExerciseResponse,
             where: { student_id: studentId },
+            required: false,
+          },
+          {
+            model: VersionBlock,
             required: false,
           },
         ],

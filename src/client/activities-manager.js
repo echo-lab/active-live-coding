@@ -45,6 +45,15 @@ export class InstructorActivitiesManager extends EventTarget {
     return this.exercises;
   }
 
+  // Marks the CODE_VARIANT exercise linked to a dissolved Version Block so the UI can show its
+  // anchor is gone -- mirrors the `deleted` flag the server sets on the VersionBlock itself.
+  markVersionBlockDeleted(versionBlockId) {
+    const ex = this.exercises.find((e) => e.VersionBlockId === versionBlockId);
+    if (!ex) return;
+    ex.VersionBlock = { ...ex.VersionBlock, deleted: true };
+    this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
+  }
+
   async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
     const res = await fetch("/exercise", {
       body: JSON.stringify({
@@ -309,6 +318,15 @@ export class StudentActivitiesManager extends EventTarget {
 
   getActiveExercises() {
     return this.exercises.filter((e) => e.end_ts === null);
+  }
+
+  // Marks the CODE_VARIANT exercise linked to a dissolved Version Block so the UI can show its
+  // anchor is gone -- mirrors the `deleted` flag the server sets on the VersionBlock itself.
+  markVersionBlockDeleted(versionBlockId) {
+    const ex = this.exercises.find((e) => e.VersionBlockId === versionBlockId);
+    if (!ex) return;
+    ex.VersionBlock = { ...ex.VersionBlock, deleted: true };
+    this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
   }
 
   async submitResponse({ exerciseId, answer }) {

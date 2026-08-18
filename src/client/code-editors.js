@@ -117,6 +117,7 @@ export class StudentCodeEditor {
     });
     socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, ({ versionBlockId }) => {
       this.removeVersionBlock(versionBlockId);
+      this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
     });
     // TODO: this is not right
     socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, ({ versionBlockId, variantId, changes, id }) => {
@@ -532,6 +533,7 @@ export class InstructorCodeEditor {
 
   async dissolveVersionBlock(versionBlockId) {
     await this._destroyVersionBlockBackend(versionBlockId);
+    this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
 
     const widget = this.versionBlocks[versionBlockId];
     delete this.versionBlocks[versionBlockId];

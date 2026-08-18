@@ -704,6 +704,35 @@ td {
   box-shadow: 0 0 0 1px #646cff33;
 }
 
+.activity-item-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: bold;
+  color: white;
+}
+
+.activity-item-icon-poll {
+  border-radius: 50%;
+  background-color: #5861ff;
+}
+
+.activity-item-icon-code {
+  border-radius: 4px;
+  background-color: #646cff;
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+}
+
+.activity-list-item.anchor-deleted .activity-item-icon {
+  opacity: 0.5;
+}
+
 .activity-item-preview {
   flex: 1;
   font-size: 13px;
@@ -711,6 +740,14 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.activity-item-preview.is-code {
+  font-family: "Courier New", monospace;
+}
+
+.activity-list-item.anchor-deleted .activity-item-preview {
+  color: #999;
 }
 
 .activity-item-answer {
