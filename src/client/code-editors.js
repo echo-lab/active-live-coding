@@ -532,8 +532,11 @@ export class InstructorCodeEditor {
   }
 
   async dissolveVersionBlock(versionBlockId) {
-    await this._destroyVersionBlockBackend(versionBlockId);
+    const finishedExerciseId = await this._destroyVersionBlockBackend(versionBlockId);
     this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
+    if (finishedExerciseId != null) {
+      this.activitiesManager?.markExerciseFinishedSilently(finishedExerciseId);
+    }
 
     const widget = this.versionBlocks[versionBlockId];
     delete this.versionBlocks[versionBlockId];
@@ -674,18 +677,21 @@ export class InstructorCodeEditor {
   }
 
   async _destroyVersionBlockBackend(versionBlockId) {
+    let finishedExerciseId = null;
     try {
       const res = await fetch(`/version-block/${versionBlockId}`, { method: "DELETE" });
-      const { ok, error } = await res.json();
-      if (!ok || error) { console.error("Failed to dissolve version block:", error); return; }
+      const { ok, error, finishedExerciseId: id } = await res.json();
+      if (!ok || error) { console.error("Failed to dissolve version block:", error); return null; }
+      finishedExerciseId = id ?? null;
     } catch (err) {
-      console.error("Failed to dissolve version block:", err); return;
+      console.error("Failed to dissolve version block:", err); return null;
     }
 
     this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, {
       sessionId: this.sessionNumber,
       versionBlockId,
     });
+    return finishedExerciseId;
   }
 
 

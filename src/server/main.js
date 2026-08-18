@@ -171,7 +171,17 @@ app.delete("/version-block/:id", async (req, res) => {
       const block = await VersionBlock.findByPk(req.params.id, { transaction: t });
       if (!block) return res.status(404).json({ error: "Not found" });
       await block.update({ deleted: true }, { transaction: t });
-      return { ok: true };
+
+      // Dissolving a still-active exercise should behave like finishing it (minus the
+      // summary step) so it doesn't linger as "Active" in the activities panel.
+      const exercise = await block.getClassExercise({ transaction: t });
+      let finishedExerciseId = null;
+      if (exercise && exercise.end_ts === null) {
+        await exercise.finish(t);
+        finishedExerciseId = exercise.id;
+      }
+
+      return { ok: true, finishedExerciseId };
     });
     res.json(result);
   } catch (err) {

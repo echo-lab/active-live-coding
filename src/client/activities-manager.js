@@ -263,6 +263,20 @@ export class InstructorActivitiesManager extends EventTarget {
       });
   }
 
+  // Marks an exercise finished locally and notifies other clients, without generating a
+  // summary -- used when dissolving a version block whose exercise is still active (the
+  // server has already set end_ts as part of the delete).
+  markExerciseFinishedSilently(id) {
+    const ex = this.exercises.find((e) => e.id === id);
+    if (!ex || ex.end_ts != null) return;
+    ex.end_ts = Date.now();
+    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, {
+      sessionNumber: this.sessionNumber,
+      exerciseId: ex.id,
+    });
+    this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
+  }
+
   #handleStudentSubmitted(msg) {
     if (msg.sessionNumber !== this.sessionNumber) return;
     const ex = this.exercises.find((e) => e.id === msg.exerciseId);
