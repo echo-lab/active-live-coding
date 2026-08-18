@@ -510,7 +510,11 @@ ExerciseResponse.init(
       allowNull: true,
     },
   },
-  { sequelize },
+  {
+    sequelize,
+    // Matches the (ClassExerciseId, student_id) lookup in submitOrUpdate above.
+    indexes: [{ fields: ["ClassExerciseId", "student_id"] }],
+  },
 );
 
 ClassExercise.hasMany(ExerciseResponse, { foreignKey: "ClassExerciseId" });

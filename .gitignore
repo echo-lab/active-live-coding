@@ -16,7 +16,7 @@ dist-ssr
 TODO.txt
 
 # Sqlite database
-*.sqlite
+*.sqlite*
 
 # Editor directories and files
 .vscode/*
