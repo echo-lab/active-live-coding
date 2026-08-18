@@ -106,6 +106,8 @@ function initialize({
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 
+  socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
+
   const activitiesManager = new InstructorActivitiesManager({
     sessionNumber,
     exercises,
@@ -180,7 +182,7 @@ function initialize({
     source: CLIENT_TYPE.INSTRUCTOR,
     userId,
     broadcastResult: (msg) =>
-      socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg),
+      socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, { ...msg, sessionId: sessionNumber }),
   });
 
   endButton.addEventListener("click", async () => {

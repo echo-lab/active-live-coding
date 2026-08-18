@@ -75,7 +75,6 @@ setUpSurveyModal({ userId, getSessionNumber: () => currentSessionNumber });
 
 const socket = io();
 
-
 //////////////////////////////////////////////////////
 // OKAY: wait until a session starts to initialize
 //////////////////////////////////////////////////////
@@ -89,7 +88,7 @@ async function initialize({
   studentSessionId,
   versionBlocks = [],
 }) {
-  currentSessionNumber = sessionNumber;
+  socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
 
   let sessionActive = true;
 

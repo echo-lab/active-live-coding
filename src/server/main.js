@@ -628,16 +628,26 @@ const io = new Server(server);
 instructorChangeBuffer.initSocket(io);
 
 // io.listen(3000);
+// All lecture-scoped broadcasts are sent only to sockets that have joined this room,
+// so concurrent lectures on the same server don't see each other's traffic.
+function lectureRoom(sessionId) {
+  return `lecture-${sessionId}`;
+}
+
 io.on("connection", async (socket) => {
   console.log("a user connected");
 
+  socket.on(SOCKET_MESSAGE_TYPE.JOIN_SESSION, (sessionId) => {
+    socket.join(lectureRoom(sessionId));
+  });
+
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, async (msg) => {
     // Forward proactively!
-    io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
     // FIXME: these might not get executed in order!
 
     instructorChangeBuffer.enqueue(msg);
@@ -645,55 +655,55 @@ io.on("connection", async (socket) => {
 
   // Forward info about code runs.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
   });
 
   // Exercises
   socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
     instructorChangeBuffer.enqueueVariant(msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, (msg) => {
-    io.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, msg);
+    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, msg);
   });
 
   // Forward/push this so the students stop writing.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately
-    io.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
+    io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
 
     try {
       await db.transaction(async (t) => {

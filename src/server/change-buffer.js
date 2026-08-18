@@ -1,6 +1,12 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { LectureSession, Variant } from "./models.js";
+import { LectureSession, Variant, VersionBlock } from "./models.js";
 import { ChangeSet, Text } from "@codemirror/state";
+
+// Mirrors the room-naming convention in main.js -- kept local to avoid a
+// circular import (main.js imports ChangeBuffer from this file).
+function lectureRoom(sessionId) {
+  return `lecture-${sessionId}`;
+}
 
 // This only supports the Instructor's changes for now.
 // TODO: consider using the same pattern for student changes (though probs not necessary).
@@ -49,7 +55,7 @@ export class ChangeBuffer {
       );
       if (error) {
         console.warn("Failed to flush changes: ", error);
-        this.io?.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC, {
+        this.io?.to(lectureRoom(sessionId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC, {
           sessionId,
           error,
         });
@@ -60,13 +66,17 @@ export class ChangeBuffer {
     this.variantQueue = [];
 
     for (let [variantId, changes] of Object.entries(organizeByVariant(variantQueue))) {
-      let { error } = await flushChangesToVariant(variantId, changes, transaction);
+      let { error, sessionId } = await flushChangesToVariant(variantId, changes, transaction);
       if (error) {
         console.warn("Failed to flush variant changes: ", error);
-        this.io?.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC, {
-          sessionId,
-          error,
-        });
+        if (sessionId) {
+          this.io?.to(lectureRoom(sessionId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC, {
+            sessionId,
+            error,
+          });
+        } else {
+          console.warn(`Could not resolve lecture session for variant ${variantId}; dropping out-of-sync broadcast.`);
+        }
       }
     }
   }
@@ -128,8 +138,13 @@ function organizeBySession(changes) {
 async function flushChangesToVariant(variantId, changeQueue, transaction) {
   changeQueue.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  let variant = await Variant.findByPk(variantId, { transaction });
+  let variant = await Variant.findByPk(variantId, {
+    include: [{ model: VersionBlock, attributes: ["LectureSessionId"] }],
+    transaction,
+  });
   if (!variant) return { error: new Error(`Variant ${variantId} not found`) };
+  // Needed to room-scope the INSTRUCTOR_OUT_OF_SYNC broadcast below on error.
+  let sessionId = variant.VersionBlock?.LectureSessionId;
 
   let existingChanges = await variant.getVariantChanges(
     { attributes: ["change", "change_number"], order: ["change_number"] },
@@ -147,6 +162,7 @@ async function flushChangesToVariant(variantId, changeQueue, transaction) {
     if (id !== docVersion) {
       return {
         error: new Error(`Expected variant change #${docVersion} but got #${id}`),
+        sessionId,
       };
     }
 
@@ -154,7 +170,7 @@ async function flushChangesToVariant(variantId, changeQueue, transaction) {
       doc = ChangeSet.fromJSON(changes).apply(doc);
       docVersion++;
     } catch (error) {
-      return { error: error.message };
+      return { error: error.message, sessionId };
     }
 
     await variant.createVariantChange(

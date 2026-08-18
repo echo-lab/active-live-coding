@@ -710,6 +710,7 @@ export class InstructorCodeEditor {
     ) {
       let { anchor, head } = viewUpdate.state.selection.main;
       this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, {
+        sessionId: this.sessionNumber,
         anchor,
         head,
       });
@@ -717,6 +718,7 @@ export class InstructorCodeEditor {
 
     if (viewUpdate.focusChanged && !viewUpdate.view.hasFocus) {
       this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, {
+        sessionId: this.sessionNumber,
         anchor: -1,
         head: -1,
       });
@@ -766,6 +768,7 @@ export class VariantCodeEditor {
     if (viewUpdate.docChanged || viewUpdate.transactions.some((tr) => tr.isUserEvent("select"))) {
       const { anchor, head } = viewUpdate.state.selection.main;
       this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, {
+        sessionId: this.sessionNumber,
         versionBlockId: this.versionBlockId,
         variantId: this.variantId,
         anchor,
@@ -775,6 +778,7 @@ export class VariantCodeEditor {
 
     if (viewUpdate.focusChanged && !viewUpdate.view.hasFocus) {
       this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, {
+        sessionId: this.sessionNumber,
         versionBlockId: this.versionBlockId,
         variantId: this.variantId,
         anchor: -1,
