@@ -22,6 +22,9 @@ let _versionBlockCallbacks = null;
 // Whether the inner editors should be read-only (set to true on student side).
 let _readOnly = false;
 
+// Whether version blocks start minimized by default.
+const START_MINIMIZED = false;
+
 export function setVersionBlockReadOnly(v) {
   _readOnly = v;
 }
@@ -33,7 +36,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     super();
     this.versionBlockId = versionBlockId;
     this.selectedIndex = 0;
-    this.isMinimized = true;
+    this.isMinimized = START_MINIMIZED;
     this.tabEls = [];
     this.tabsContainer = null;
     this.variantContainer = null;
@@ -415,7 +418,7 @@ export class VersionBlockWidget extends WidgetType {
     this._onDissolve = onDissolve ?? null;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
-    this.isMinimized = true;
+    this.isMinimized = START_MINIMIZED;
 
     this.innerView = null;
 
