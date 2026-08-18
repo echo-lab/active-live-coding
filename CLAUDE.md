@@ -5,9 +5,10 @@ Context:
 - We are building off of an older app, so there may be some legacy code around.
 - Instructors can create short exercises for the students, where the student have to enter code or text.
 - Once an instructor marks an active exercise as complete, the app shows a summary on the instructor's screen that aggregates student responses.
-- To create a text-input exercise, the instructor clicks "poll" and enters a prompt in the instructor activities panel sidebar. Students answer in their own acitvity panel sidebar.
+- To create a text-input exercise, the instructor right clicks the editor, selects "create poll," and then enters their question in the popover that appears. Students answer in a similar popover.
 - To create a code exercise, instructors select one or more lines of code in the editor, right click, and then select "Create exercise". This creates a "Version Block", and gives each student their own variant they can edit and submit. Instructors can view student responses in the activities panel, and they can walk through different solutions by adding them as variants in the version block.
 - The students have a read-only copy of the instructor's editor that updates in real time. The student editor reflects all of the instructor's Version Blocks, including all variants the instructor has authored, as well as their own variant (i.e., the student response to that exercise). 
+- For completed exercises (free-response poll exercises and coding exercises), the instructor can view student responses in the sidebar. When there are enough responses, they are grouped automatically.
 - The app can host multiple lectures at the same time, although it is not expected this will happen very much in practice.
 
 Important files and classes:
