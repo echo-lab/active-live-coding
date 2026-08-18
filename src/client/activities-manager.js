@@ -54,6 +54,18 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
   }
 
+  // Marks a poll exercise whose anchored code has been entirely deleted -- mirrors
+  // markVersionBlockDeleted, but driven locally by this client's own CodeMirror decoration
+  // tracking (see pollMarkerRemovalListener) rather than a server push, since poll anchors have
+  // no equivalent server event today.
+  markPollAnchorDeleted(id) {
+    const ex = this.exercises.find((e) => e.id === id);
+    if (!ex || ex.code_anchor_from == null) return;
+    ex.code_anchor_from = null;
+    ex.code_anchor_to = null;
+    this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
+  }
+
   async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
     const res = await fetch("/exercise", {
       body: JSON.stringify({
@@ -340,6 +352,18 @@ export class StudentActivitiesManager extends EventTarget {
     const ex = this.exercises.find((e) => e.VersionBlockId === versionBlockId);
     if (!ex) return;
     ex.VersionBlock = { ...ex.VersionBlock, deleted: true };
+    this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
+  }
+
+  // Marks a poll exercise whose anchored code has been entirely deleted -- mirrors
+  // markVersionBlockDeleted, but driven locally by this client's own CodeMirror decoration
+  // tracking (see pollMarkerRemovalListener) rather than a server push, since poll anchors have
+  // no equivalent server event today.
+  markPollAnchorDeleted(id) {
+    const ex = this.exercises.find((e) => e.id === id);
+    if (!ex || ex.code_anchor_from == null) return;
+    ex.code_anchor_from = null;
+    ex.code_anchor_to = null;
     this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
   }
 

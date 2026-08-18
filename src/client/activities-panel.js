@@ -99,7 +99,7 @@ function isAnchorDeleted(ex) {
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView }) {
+  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView, closeHistoricalView }) {
     this.manager = manager;
     this.student_id = student_id;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
@@ -108,6 +108,7 @@ export class StudentActivitiesPanel {
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this._openHistoricalView = openHistoricalView;
+    this._closeHistoricalView = closeHistoricalView;
     this._selectedActivityId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
@@ -156,8 +157,11 @@ export class StudentActivitiesPanel {
   }
 
   // Scrolls the anchored code into view before opening -- the poll's marker may not
-  // already be on-screen (e.g. page load, or the user scrolled away since it opened).
+  // already be on-screen (e.g. page load, or the user scrolled away since it opened). No-ops
+  // when the anchor's gone: the historical tab already shows its own popover, and students have
+  // no sidebar summary to fall back to, so there's nothing else to do here.
   _openActivePopover(ex) {
+    if (isAnchorDeleted(ex)) return;
     this._scrollToExercise?.(ex);
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
     this._notifyPollHighlight(ex.id);
@@ -170,6 +174,7 @@ export class StudentActivitiesPanel {
 
   // Scrolls the anchored code into view, then opens the stage-3 review popover.
   _openFinished(ex) {
+    if (isAnchorDeleted(ex)) return;
     this._scrollToExercise?.(ex);
     this._openCompletePopover(ex);
   }
@@ -200,9 +205,12 @@ export class StudentActivitiesPanel {
 
   // Opens the popover for a specific exercise (e.g. from clicking its code-editor gutter
   // marker) -- active exercises open the active popover, finished ones the complete popover.
+  // A gutter marker only exists for a live anchor, so this always means switching to something
+  // live -- close the historical tab if it's showing.
   showExerciseById(id) {
     const ex = this.manager.getExercise(id);
     if (!ex) return;
+    this._closeHistoricalView?.();
     if (ex.end_ts == null) {
       this._openActivePopover(ex);
     } else {
@@ -745,6 +753,7 @@ export class InstructorActivitiesPanel {
     getAnchor,
     scrollToExercise,
     openHistoricalView,
+    closeHistoricalView,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -757,7 +766,9 @@ export class InstructorActivitiesPanel {
     this._getAnchor = getAnchor;
     this._scrollToExercise = scrollToExercise;
     this._openHistoricalView = openHistoricalView;
+    this._closeHistoricalView = closeHistoricalView;
     this._currentPollId = null;
+    this._currentSummaryExerciseId = null;
     this._activePopoverId = null;
     this._completePopoverId = null;
     this._selectedActivityId = null;
@@ -768,11 +779,16 @@ export class InstructorActivitiesPanel {
     this.pollEl = document.querySelector("#activities-poll");
     this.codeExerciseEl = document.querySelector("#activities-code-exercise");
 
-    const onBack = () => this._showView("list");
+    // Back/close from the sidebar always leaves the historical tab behind too.
+    const onBack = () => {
+      this._closeHistoricalView?.();
+      this._showView("list");
+    };
     // The poll summary's back also needs to close the linked complete popover -- hide the
     // sidebar first so the popover's own onClose (notifyCompletePopoverClosed) sees the sidebar
     // already hidden and doesn't redundantly re-trigger _showView.
     const onPollBack = () => {
+      this._closeHistoricalView?.();
       this._showView("list");
       this._completePopover.close();
     };
@@ -780,6 +796,7 @@ export class InstructorActivitiesPanel {
     // as onPollBack (reset view before closing the popover) so notifyCompletePopoverClosed's own
     // guard short-circuits instead of double-firing _showView.
     const onClose = () => {
+      this._closeHistoricalView?.();
       const wasPoll = !this.pollEl.hidden;
       this._showView("list");
       if (wasPoll) this._completePopover.close();
@@ -858,8 +875,11 @@ export class InstructorActivitiesPanel {
   }
 
   // Opens the popover/sidebar to a specific exercise regardless of active/finished state --
-  // e.g. from clicking its code-editor gutter marker.
+  // e.g. from clicking its code-editor gutter marker. A gutter marker only exists for a live
+  // anchor, so this always means switching to something live -- close the historical tab if
+  // it's showing.
   openExercise(ex) {
+    this._closeHistoricalView?.();
     if (ex.end_ts == null) {
       this._openActivePopover(ex);
     } else {
@@ -870,6 +890,7 @@ export class InstructorActivitiesPanel {
   _showView(name) {
     if (name !== "code-exercise") this.manager.notifyCodeSummaryDisplayed(null);
     // if (name === "code-exercise") ==> we already notified w/ the actual exercise
+    if (name === "list") this._currentSummaryExerciseId = null;
     this.listEl.hidden = name !== "list";
     this.pollEl.hidden = name !== "poll";
     this.codeExerciseEl.hidden = name !== "code-exercise";
@@ -877,9 +898,23 @@ export class InstructorActivitiesPanel {
     this._syncPollHighlight();
   }
 
+  // Called by the historical-view controller when the historical tab for `exerciseId` closes on
+  // its own (its own X, "return to live", or clicking the live tab) -- if the sidebar is still
+  // showing that same exercise's summary, return it to the list, mirroring what the sidebar's own
+  // back/x buttons already do. Guarded by id: opening a *different* exercise's historical view
+  // also tears down the old one (asynchronously, after its fetch resolves), by which point the
+  // sidebar may already be showing the new exercise's summary -- that shouldn't be clobbered.
+  notifyHistoricalViewClosed(exerciseId) {
+    if (this._currentSummaryExerciseId === exerciseId) this._showView("list");
+  }
+
   // Scrolls the anchored code into view before opening -- the poll's marker may not
-  // already be on-screen (e.g. page load, or the user scrolled away since it opened).
+  // already be on-screen (e.g. page load, or the user scrolled away since it opened). No-ops
+  // when the anchor's gone: the historical tab already shows its own popover, and an active poll
+  // has no sidebar view to fall back to, so opening this one too would just be a second,
+  // redundantly-positioned popover.
   _openActivePopover(ex) {
+    if (isAnchorDeleted(ex)) return;
     this._scrollToExercise?.(ex);
     this._activePopoverId = ex.id;
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });
@@ -892,12 +927,16 @@ export class InstructorActivitiesPanel {
     this._syncPollHighlight();
   }
 
-  // Scrolls the anchored code into view, then opens the stage-3 review popover. For
-  // free-response POLLs, also opens the (now results-only) sidebar summary; MCQ results live
-  // entirely in the popover, so the sidebar panel is left untouched for those.
+  // Scrolls the anchored code into view, then opens the stage-3 review popover -- skipped when
+  // the anchor's gone, since the historical tab already shows its own copy of this popover and a
+  // second one (with nothing live to anchor it to) would just be redundant. For free-response
+  // POLLs, also opens the (now results-only) sidebar summary regardless of anchor state; MCQ
+  // results live entirely in the popover, so the sidebar panel is left untouched for those.
   _openFinished(ex, options = {}) {
-    this._scrollToExercise?.(ex);
-    this._openCompletePopover(ex);
+    if (!isAnchorDeleted(ex)) {
+      this._scrollToExercise?.(ex);
+      this._openCompletePopover(ex);
+    }
     if (ex.type === "POLL") {
       this.openPanel();
       this._showSummaryView(ex, options);
@@ -944,6 +983,7 @@ export class InstructorActivitiesPanel {
   }
 
   _showSummaryView(ex, options = {}) {
+    this._currentSummaryExerciseId = ex.id;
     if (ex.type === "CODE_VARIANT") {
       this._currentPollId = null;
       this.manager.notifyCodeSummaryDisplayed(ex.id);
@@ -976,9 +1016,8 @@ export class InstructorActivitiesPanel {
         item.dataset.exerciseId = ex.id;
         item.classList.toggle("selected", ex.id === this._selectedActivityId);
         item.addEventListener("click", () => {
-          if (isAnchorDeleted(ex)) {
-            this._openHistoricalView?.(ex);
-          } else if (isActive) {
+          if (isAnchorDeleted(ex)) this._openHistoricalView?.(ex);
+          if (isActive) {
             this._openActivePopover(ex);
           } else {
             this._openFinished(ex);
@@ -988,9 +1027,9 @@ export class InstructorActivitiesPanel {
         item.addEventListener("click", () => {
           if (isAnchorDeleted(ex)) {
             this._openHistoricalView?.(ex);
-            return;
+          } else {
+            this._scrollToExercise?.(ex);
           }
-          this._scrollToExercise?.(ex);
           this.openPanel();
           this._showSummaryView(ex);
         });

@@ -57,7 +57,10 @@ const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = mak
 );
 
 document.querySelector("#open-activities-panel").addEventListener("click", openActivitiesPanel);
-document.querySelector("#student-activities-list-close").addEventListener("click", closeActivitiesPanel);
+document.querySelector("#student-activities-list-close").addEventListener("click", () => {
+  historicalController.returnToLive();
+  closeActivitiesPanel();
+});
 
 // Handle the email stuff.
 const email = getEmail();
@@ -211,6 +214,7 @@ async function initialize({
       }
     },
     openHistoricalView: (ex) => historicalController.open(ex),
+    closeHistoricalView: () => historicalController.returnToLive(),
   });
 }
 

@@ -229,10 +229,36 @@ const pollMarkerTheme = EditorView.baseTheme({
 });
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// MARK: Anchor-deletion detection
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Fires onAnchorRemoved(id) the moment a previously-live poll marker (not the draft) disappears
+// from the doc -- e.g. the anchored code gets fully deleted. Decoration.mark's default mapMode
+// (TrackDel) already drops a marker from pollMarkersField once its span collapses; this just
+// surfaces that moment by diffing the marker id set before/after each transaction.
+function pollMarkerRemovalListener(onAnchorRemoved) {
+  return EditorView.updateListener.of((update) => {
+    if (!update.docChanged) return;
+    const before = new Set();
+    update.startState.field(pollMarkersField).between(0, update.startState.doc.length, (_f, _t, deco) => {
+      before.add(deco.spec.pollId);
+    });
+    if (before.size === 0) return;
+    const after = new Set();
+    update.state.field(pollMarkersField).between(0, update.state.doc.length, (_f, _t, deco) => {
+      after.add(deco.spec.pollId);
+    });
+    for (const id of before) {
+      if (id !== DRAFT_POLL_ID && !after.has(id)) onAnchorRemoved(id);
+    }
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // MARK: Public extension bundle
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-export function pollMarkerExtensions(onOpenPollMarker) {
+export function pollMarkerExtensions(onOpenPollMarker, onAnchorRemoved) {
   return [
     handleOpenPollMarker.of(onOpenPollMarker),
     pollMarkersField,
@@ -241,5 +267,6 @@ export function pollMarkerExtensions(onOpenPollMarker) {
     pollHighlightDecorations,
     pollMarkerGutterColumn,
     pollMarkerTheme,
+    ...(onAnchorRemoved ? [pollMarkerRemovalListener(onAnchorRemoved)] : []),
   ];
 }

@@ -73,7 +73,7 @@ export class StudentCodeEditor {
         ...followInstructorExtensions,
         EditorView.editable.of(false),
         capLength,
-        ...pollMarkerExtensions(onOpenPollMarker),
+        ...pollMarkerExtensions(onOpenPollMarker, (id) => this.activitiesManager?.markPollAnchorDeleted(id)),
         ...pollPopoverExtensions(),
         ...extraExtensions,
       ],
@@ -353,7 +353,7 @@ export class InstructorCodeEditor {
         fillInBlankViewField,
         ...versionBlockExtensions(),
         ...versionWidgetTooltipExtensions(this.createNewVersionBlock.bind(this), this.requestCreatePoll.bind(this)),
-        ...pollMarkerExtensions(onOpenPollMarker),
+        ...pollMarkerExtensions(onOpenPollMarker, (id) => this.activitiesManager?.markPollAnchorDeleted(id)),
         ...pollPopoverExtensions(),
       ],
     });

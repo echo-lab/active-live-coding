@@ -29,6 +29,7 @@ export function createHistoricalViewController({
   historicalMountEl,
   returnToLiveBtn,
   createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose}) => popover instance
+  onClose, // (exerciseId) => void, called whenever the historical tab for that exercise tears down
 }) {
   let historicalEditor = null;
   let historicalPopover = null;
@@ -45,12 +46,29 @@ export function createHistoricalViewController({
     historicalContainerEl.hidden = false;
   }
 
-  function returnToLive() {
-    if (currentExerciseId == null) return;
+  function showLiveTab() {
     liveTabEl.classList.add("selected");
     historicalTabEl.classList.remove("selected");
     liveContainerEl.hidden = false;
     historicalContainerEl.hidden = true;
+  }
+
+  // Fully tears down the historical tab (not just switches away from it) -- destroys the editor
+  // and popover, forgets which exercise was showing, and hides the tab itself. Used any time we
+  // navigate away from the historical view for good: its own close/return-to-live controls, the
+  // activities panel's back/close buttons, picking a new activity, or switching to the live tab.
+  function closeHistorical() {
+    if (currentExerciseId == null) return;
+    const closedId = currentExerciseId;
+    showLiveTab();
+    historicalPopover?.close();
+    historicalEditor?.destroy();
+    historicalEditor = null;
+    historicalPopover = null;
+    currentExerciseId = null;
+    historicalTabEl.hidden = true;
+    historicalMountEl.innerHTML = "";
+    onClose?.(closedId);
   }
 
   async function open(ex) {
@@ -65,55 +83,59 @@ export function createHistoricalViewController({
       return;
     }
 
-    historicalPopover?.close();
-    historicalEditor?.destroy();
-    historicalMountEl.innerHTML = "";
-    historicalEditor = new HistoricalCodeEditor({ node: historicalMountEl, doc: data.doc });
+    closeHistorical();
 
-    // Make the tab/container visible BEFORE placing the marker/widget below -- scrolling to it
-    // needs a real, laid-out (non-hidden) scroller to animate against, or the smooth scroll has
-    // nothing to animate from and just jumps once the container becomes visible afterward.
+    // Make the tab/container visible BEFORE constructing the editor below -- CodeMirror can't
+    // measure real layout while mounted inside a `hidden` (display:none) container, which breaks
+    // the animated scroll-into-view further down.
     historicalTabTextEl.textContent = `instructor.py · ${formatRelativeTime(data.timestamp)}`;
     historicalTabEl.hidden = false;
     currentExerciseId = ex.id;
     showHistoricalTab();
 
-    // One more wait: the browser needs to actually PAINT that now-visible, unscrolled frame
-    // before an animated scroll away from it is perceptible -- doing both in the same tick
-    // means the container's first-ever paint already shows the scrolled state, so there's
-    // nothing to visibly animate from and it just looks like a jump.
+    // Wait a frame so the browser actually PAINTs that now-visible, unscrolled, empty container
+    // before we mount the editor into it -- otherwise the editor's own first paint and its
+    // scrolled-to-target state land in the same frame, and there's nothing to visibly animate
+    // from (it just looks like a jump).
     requestAnimationFrame(() => {
-      if (data.type === "CODE_VARIANT") {
-        historicalEditor.renderVersionBlock(data.versionBlock);
-      } else {
-        historicalEditor.renderPollMarker({ id: ex.id, from: data.anchor.from, to: data.anchor.to });
-        historicalPopover = createCompletePopover({
-          showPollPopover: (args) => historicalEditor.showPollPopover(args),
-          hidePollPopover: (key) => historicalEditor.hidePollPopover(key),
-          coordinator: new PollPopoverCoordinator(),
-          onClose: () => {},
-        });
-        historicalPopover.open({
-          exercise: ex,
-          anchor: {
-            kind: "code",
-            at: historicalEditor.getPollAnchorPosition(ex.id),
-            getRange: () => historicalEditor.getPollAnchorRange(ex.id),
-          },
-        });
-      }
+      historicalEditor = new HistoricalCodeEditor({ node: historicalMountEl, doc: data.doc });
+
+      // One more wait: give CodeMirror a frame to lay out/measure the freshly-mounted,
+      // now-visible editor before we scroll it -- scrolling in the same tick as mounting can
+      // race CodeMirror's own becomes-visible remeasure and again just jump instead of animate.
+      requestAnimationFrame(() => {
+        if (data.type === "CODE_VARIANT") {
+          historicalEditor.renderVersionBlock(data.versionBlock);
+        } else {
+          historicalEditor.renderPollMarker({ id: ex.id, from: data.anchor.from, to: data.anchor.to });
+          historicalPopover = createCompletePopover({
+            showPollPopover: (args) => historicalEditor.showPollPopover(args),
+            hidePollPopover: (key) => historicalEditor.hidePollPopover(key),
+            coordinator: new PollPopoverCoordinator(),
+            onClose: () => {},
+          });
+          historicalPopover.open({
+            exercise: ex,
+            anchor: {
+              kind: "code",
+              at: historicalEditor.getPollAnchorPosition(ex.id),
+              getRange: () => historicalEditor.getPollAnchorRange(ex.id),
+            },
+          });
+        }
+      });
     });
   }
 
-  liveTabEl.addEventListener("click", returnToLive);
+  liveTabEl.addEventListener("click", closeHistorical);
   historicalTabEl.addEventListener("click", () => {
     if (currentExerciseId != null) showHistoricalTab();
   });
   historicalTabCloseBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    returnToLive();
+    closeHistorical();
   });
-  returnToLiveBtn?.addEventListener("click", returnToLive);
+  returnToLiveBtn?.addEventListener("click", closeHistorical);
 
-  return { open, returnToLive, isShowingExercise };
+  return { open, returnToLive: closeHistorical, isShowingExercise };
 }

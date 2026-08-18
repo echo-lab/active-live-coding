@@ -22,6 +22,9 @@ import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 import { createHistoricalViewController } from "./historical-view-controller.js";
 
 const codeContainer = document.querySelector("#code-container");
+// Assigned once initialize() runs (session start) -- declared up here so the historicalController
+// below can reach it via closure, since it's constructed before any session exists.
+let activitiesPanel;
 const historicalController = createHistoricalViewController({
   liveTabEl: document.querySelector("#instructor-code-tab"),
   historicalTabEl: document.querySelector("#historical-code-tab"),
@@ -32,6 +35,7 @@ const historicalController = createHistoricalViewController({
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
   createCompletePopover: (args) => new InstructorPollCompletePopover(args),
+  onClose: (exerciseId) => activitiesPanel?.notifyHistoricalViewClosed(exerciseId),
 });
 const startButton = document.querySelector("#start-session-butt");
 const endButton = document.querySelector("#end-session-butt");
@@ -126,8 +130,6 @@ function initialize({
     socket,
     userId,
   });
-
-  let activitiesPanel;
 
   let codeEditor = new InstructorCodeEditor({
     node: codeContainer,
@@ -255,6 +257,7 @@ function initialize({
       }
     },
     openHistoricalView: (ex) => historicalController.open(ex),
+    closeHistoricalView: () => historicalController.returnToLive(),
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());
