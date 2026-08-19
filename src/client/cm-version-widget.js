@@ -439,6 +439,11 @@ export class VersionBlockWidget extends WidgetType {
         ...(this.readOnly ? this._makeVariantViewer(v) : this._makeVariantCodeEditor(v)),
     }));
 
+    // In the historical view, default to showing the student's own answer (if present) rather
+    // than the instructor's first variant.
+    const ownAnswerIndex = this.variants.findIndex((v) => v.isOwnAnswer);
+    if (ownAnswerIndex >= 0) this.selectedIndex = ownAnswerIndex;
+
     // A read-only widget shows a frozen historical snapshot -- it has no exercise workflow (no
     // "ask students"/"finish"/dissolve buttons) to keep in sync, so none of these are needed.
     if (!this.readOnly && this.activitiesManager) {
@@ -712,6 +717,7 @@ export class VersionBlockWidget extends WidgetType {
     const tab = document.createElement("div");
     tab.className = "cm-version-block-tab" + (index === this.selectedIndex ? " selected" : "");
     tab.dataset.variantId = variant.id;
+    if (variant.isOwnAnswer) tab.classList.add("my-answer");
 
     const label = document.createElement("span");
     label.className = "cm-version-block-tab-label";

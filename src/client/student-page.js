@@ -87,6 +87,7 @@ const historicalController = createHistoricalViewController({
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
   createCompletePopover: (args) => new StudentPollCompletePopover({ ...args, student_id: userId }),
+  studentId: userId,
 });
 
 const socket = io();

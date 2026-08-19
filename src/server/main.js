@@ -550,7 +550,7 @@ app.get("/exercise/:id/historical-context", async (req, res) => {
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
       const lecture = await LectureSession.findByPk(exercise.LectureSessionId, { transaction: t });
       if (!lecture) return { error: `Session #${exercise.LectureSessionId} not found` };
-      return lecture.getHistoricalContextForExercise(exerciseId, t);
+      return lecture.getHistoricalContextForExercise(exerciseId, t, req.query.student_id ?? null);
     });
     res.json(response);
   } catch (error) {

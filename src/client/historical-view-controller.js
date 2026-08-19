@@ -30,6 +30,7 @@ export function createHistoricalViewController({
   returnToLiveBtn,
   createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose}) => popover instance
   onClose, // (exerciseId) => void, called whenever the historical tab for that exercise tears down
+  studentId = null, // when set (student page), also fetch this student's own answer to show as a trailing tab
 }) {
   let historicalEditor = null;
   let historicalPopover = null;
@@ -77,7 +78,11 @@ export function createHistoricalViewController({
       return;
     }
 
-    const data = await fetch(`/exercise/${ex.id}/historical-context`, GET_JSON_REQUEST).then((r) => r.json());
+    const url =
+      studentId != null
+        ? `/exercise/${ex.id}/historical-context?student_id=${encodeURIComponent(studentId)}`
+        : `/exercise/${ex.id}/historical-context`;
+    const data = await fetch(url, GET_JSON_REQUEST).then((r) => r.json());
     if (data.error) {
       console.error("Failed to load historical context:", data.error);
       return;

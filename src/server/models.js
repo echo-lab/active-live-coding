@@ -208,7 +208,7 @@ export class LectureSession extends Model {
   // (deleted_change_number). Used to render a read-only "historical view" once an activity's
   // live anchor is gone. Same bounded ChangeSet-replay technique as getVersionBlocksWithPositions
   // above, just stopping at a fixed past point instead of walking forward to "now".
-  async getHistoricalContextForExercise(exerciseId, transaction) {
+  async getHistoricalContextForExercise(exerciseId, transaction, studentId = null) {
     const exercise = await ClassExercise.findByPk(exerciseId, {
       include: [{ model: VersionBlock, required: false, include: [{ model: Variant, include: [VariantChange] }] }],
       transaction,
@@ -260,17 +260,28 @@ export class LectureSession extends Model {
     }
 
     const sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const variants = sortedVariants.map((v) => {
+      const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
+      return { id: v.id, name: v.name, code: reconstructCMDoc(vChanges).doc.toString() };
+    });
+
+    // Append the viewing student's own submitted answer (if any) as a trailing pseudo-variant,
+    // mirroring the "My Answer" tab pinned last in the live StudentVersionBlockWidget.
+    if (studentId) {
+      const response = await ExerciseResponse.findOne({
+        where: { ClassExerciseId: exercise.id, student_id: studentId },
+        transaction,
+      });
+      if (response) {
+        variants.push({ id: "own-answer", name: "My Answer", code: response.answer, isOwnAnswer: true });
+      }
+    }
+
     return {
       type: "CODE_VARIANT",
       doc: doc.toJSON(),
       timestamp,
-      versionBlock: {
-        from,
-        variants: sortedVariants.map((v) => {
-          const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
-          return { id: v.id, name: v.name, code: reconstructCMDoc(vChanges).doc.toString() };
-        }),
-      },
+      versionBlock: { from, variants },
     };
   }
 
