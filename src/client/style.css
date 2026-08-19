@@ -1999,6 +1999,29 @@ td {
   cursor: not-allowed;
 }
 
+.poll-text-answer-footer {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.poll-text-answer-footer .poll-popover-submit-btn {
+  margin-top: 0;
+}
+
+.poll-submission-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
+}
+
+.poll-submission-status-check {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
 /* Poll active popover (stage 2 -- awaiting responses) */
 .poll-popover--active {
   padding-left: 12px;
@@ -2011,7 +2034,7 @@ td {
   align-items: center;
   margin: -14px -16px 10px -12px;
   padding: 10px 16px 10px 12px;
-  background: #fdecec;
+  background: #ffffff;
   border-radius: 12px 12px 0 0;
 }
 
@@ -2038,7 +2061,7 @@ td {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   color: #c62828;
 }
 

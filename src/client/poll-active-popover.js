@@ -240,8 +240,9 @@ export class StudentActivePollPopover {
     const idx = managerEx.ExerciseResponses.findIndex((r) => r.student_id === this._student_id);
     if (idx >= 0) {
       managerEx.ExerciseResponses[idx].answer = answer;
+      managerEx.ExerciseResponses[idx].submitted_ts = Date.now();
     } else {
-      managerEx.ExerciseResponses.push({ student_id: this._student_id, answer });
+      managerEx.ExerciseResponses.push({ student_id: this._student_id, answer, submitted_ts: Date.now() });
     }
   }
 
@@ -286,9 +287,40 @@ export class StudentActivePollPopover {
     textarea.value = myResponse?.answer ?? "";
     root.appendChild(textarea);
 
+    const footer = document.createElement("div");
+    footer.className = "poll-text-answer-footer";
+    root.appendChild(footer);
+
+    const statusEl = document.createElement("div");
+    statusEl.className = "poll-submission-status";
+    const statusCheck = document.createElement("span");
+    statusCheck.className = "poll-submission-status-check";
+    statusCheck.textContent = "✓";
+    const statusText = document.createElement("span");
+    statusEl.appendChild(statusCheck);
+    statusEl.appendChild(statusText);
+    footer.appendChild(statusEl);
+
     const submitBtn = document.createElement("button");
     submitBtn.className = "poll-popover-submit-btn";
-    submitBtn.textContent = myResponse ? "Resubmit" : "Submit";
+    footer.appendChild(submitBtn);
+
+    let submittedAnswer = myResponse?.answer ?? null;
+    let submittedAt = myResponse?.submitted_ts ?? null;
+
+    const formatTime = (ts) => ts ? new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+
+    const refresh = () => {
+      submitBtn.textContent = submittedAnswer != null ? "Update Answer" : "Submit";
+      const time = formatTime(submittedAt);
+      statusEl.style.display = submittedAnswer == null ? "none" : "flex";
+      statusText.textContent = time ? `Submitted ${time}` : "Submitted";
+      submitBtn.disabled = submittedAnswer != null && textarea.value.trim() === submittedAnswer;
+    };
+    refresh();
+
+    textarea.addEventListener("input", refresh);
+
     submitBtn.addEventListener("click", async () => {
       const answer = textarea.value.trim();
       if (!answer) return;
@@ -296,14 +328,14 @@ export class StudentActivePollPopover {
       try {
         await this._manager.submitResponse({ exerciseId: exercise.id, answer });
         this._updateLocalResponse(exercise, answer);
-        submitBtn.textContent = "Resubmit";
+        submittedAnswer = answer;
+        submittedAt = Date.now();
       } catch (e) {
         alert(e.message);
       } finally {
-        submitBtn.disabled = false;
+        refresh();
       }
     });
-    root.appendChild(submitBtn);
   }
 
   _buildMcqAnswer(root, exercise, myResponse) {
@@ -340,12 +372,10 @@ export class StudentActivePollPopover {
       item.appendChild(label);
       item.appendChild(text);
       if (selectedIndex === i) {
-        const yourAnswerEl = document.createElement("span");
-        yourAnswerEl.className = "your-answer-label";
-        yourAnswerEl.textContent = "(your answer)";
-        yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
-        yourAnswerEl.style.marginLeft = "8px";
-        item.appendChild(yourAnswerEl);
+        const chip = document.createElement("span");
+        chip.className = "poll-mcq-your-answer-chip";
+        chip.textContent = "your answer";
+        item.appendChild(chip);
       }
       choicesEl.appendChild(item);
     });
@@ -353,7 +383,7 @@ export class StudentActivePollPopover {
 
     const submitBtn = document.createElement("button");
     submitBtn.className = "poll-popover-submit-btn";
-    submitBtn.textContent = myResponse ? "Change Answer" : "Submit";
+    submitBtn.textContent = myResponse ? "Update Answer" : "Submit";
     submitBtn.addEventListener("click", async () => {
       const checked = choicesEl.querySelector(`input[name="mcq-${exercise.id}"]:checked`);
       if (!checked) return;
@@ -362,7 +392,12 @@ export class StudentActivePollPopover {
       try {
         await this._manager.submitResponse({ exerciseId: exercise.id, answer });
         this._updateLocalResponse(exercise, answer);
-        submitBtn.textContent = "Change Answer";
+        submitBtn.textContent = "Update Answer";
+        choicesEl.querySelector(".poll-mcq-your-answer-chip")?.remove();
+        const chip = document.createElement("span");
+        chip.className = "poll-mcq-your-answer-chip";
+        chip.textContent = "your answer";
+        checked.closest(".poll-mcq-choice-item").appendChild(chip);
       } catch (e) {
         alert(e.message);
       } finally {
