@@ -36,14 +36,17 @@ export class HistoricalCodeEditor {
     this.view = new EditorView({ state, parent: node });
   }
 
-  // Places a (non-interactive-click, since no onOpenPollMarker callback is wired) poll marker
-  // at the given historical position -- the caller is expected to open the read-only "complete"
-  // popover itself right after, since there's no live exercise-open/close lifecycle to react to.
-  renderPollMarker({ id, from, to }) {
+  // Places a (non-interactive-click, since no onOpenPollMarker callback is wired) poll marker at
+  // the given historical position -- the caller is expected to open the appropriate active/
+  // complete popover itself right after, since there's no live exercise-open/close lifecycle to
+  // react to. `isOpen` drives the same "still live" gutter styling as the live editors (see
+  // code-editors.js); `scroll: false` lets a caller re-dispatch (e.g. once the poll finishes)
+  // without re-triggering the scroll-into-view animation.
+  renderPollMarker({ id, from, to, isOpen = false, scroll = true }) {
     this.view.dispatch({
-      effects: addPollMarkerEffect.of({ id, from, to, isDraft: false, isOpen: false }),
+      effects: addPollMarkerEffect.of({ id, from, to, isDraft: false, isOpen }),
     });
-    scrollIntoViewAccurate(this.view, () => from);
+    if (scroll) scrollIntoViewAccurate(this.view, () => from);
   }
 
   // Places a read-only VersionBlockWidget (all its variants, switchable but not editable) at

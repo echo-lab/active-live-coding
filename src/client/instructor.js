@@ -34,6 +34,7 @@ const historicalController = createHistoricalViewController({
   historicalContainerEl: document.querySelector("#historical-code-container"),
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
+  createActivePopover: (args) => new InstructorActivePollPopover(args),
   createCompletePopover: (args) => new InstructorPollCompletePopover(args),
   onClose: (exerciseId) => activitiesPanel?.notifyHistoricalViewClosed(exerciseId),
 });
@@ -256,7 +257,7 @@ function initialize({
         codeEditor.scrollToPollMarker(ex.id);
       }
     },
-    openHistoricalView: (ex) => historicalController.open(ex),
+    openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),
     addResponseAsVariant: (ex, code, label) =>
       codeEditor.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label),

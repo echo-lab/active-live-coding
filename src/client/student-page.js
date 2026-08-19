@@ -86,6 +86,7 @@ const historicalController = createHistoricalViewController({
   historicalContainerEl: document.querySelector("#historical-code-container"),
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
+  createActivePopover: (args) => new StudentActivePollPopover({ ...args, student_id: userId }),
   createCompletePopover: (args) => new StudentPollCompletePopover({ ...args, student_id: userId }),
   studentId: userId,
 });
@@ -214,7 +215,7 @@ async function initialize({
         codeEditor.scrollToPollMarker(ex.id);
       }
     },
-    openHistoricalView: (ex) => historicalController.open(ex),
+    openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),
   });
 }

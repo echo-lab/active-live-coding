@@ -14,11 +14,15 @@ function formatRelativeTime(ms) {
   return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
 }
 
-// Drives the "historical view" tab: a second, read-only code-editor tab shown in place of the
-// live one when the user clicks a sidebar activity whose anchor is gone. Identical wiring is
-// used on both the instructor and student pages (same DOM pattern, same endpoint) -- the only
-// per-page difference is which PollCompletePopover class/args to build, which the caller
-// supplies via `createCompletePopover`.
+// Drives the "historical view" tab: a second code-editor tab, frozen to a past doc state, shown
+// in place of the live one when the user clicks a sidebar activity whose anchor is gone. Identical
+// wiring is used on both the instructor and student pages (same DOM pattern, same endpoint) -- the
+// only per-page difference is which active/complete PollPopover class/args to build, which the
+// caller supplies via `createActivePopover`/`createCompletePopover`. A poll shown here can still
+// be active (its anchor can be deleted while it's still collecting responses) -- in that case the
+// active popover is built, wired to the SAME activities manager the live editor uses, so
+// answering/finishing behaves identically; once it finishes (from here, or from anywhere else
+// while this tab happens to be open) the popover swaps in place to the read-only complete view.
 export function createHistoricalViewController({
   liveTabEl,
   historicalTabEl,
@@ -28,16 +32,62 @@ export function createHistoricalViewController({
   historicalContainerEl,
   historicalMountEl,
   returnToLiveBtn,
+  createActivePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose, manager}) => popover instance
   createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose}) => popover instance
   onClose, // (exerciseId) => void, called whenever the historical tab for that exercise tears down
   studentId = null, // when set (student page), also fetch this student's own answer to show as a trailing tab
 }) {
   let historicalEditor = null;
   let historicalPopover = null;
-  let currentExerciseId = null;
+  let historicalPopoverIsActive = false;
+  let popoverCoordinator = null;
+  let currentExercise = null;
+  let currentManager = null;
+  let unsubscribeManager = null;
 
   function isShowingExercise(id) {
-    return currentExerciseId === id;
+    return currentExercise?.id === id;
+  }
+
+  // Builds and opens whichever poll popover matches the exercise's current state -- shared by the
+  // initial open() below and by the exerciseFinished swap, both of which need the exact same
+  // "which popover for this state" decision. Reuses the SAME coordinator across a swap so opening
+  // the complete popover auto-closes the still-open active one (PollPopoverCoordinator.notifyOpening).
+  function openPollPopover(anchor) {
+    const isActive = currentExercise.end_ts == null;
+    historicalPopoverIsActive = isActive;
+    const baseArgs = {
+      showPollPopover: (args) => historicalEditor.showPollPopover(args),
+      hidePollPopover: (key) => historicalEditor.hidePollPopover(key),
+      coordinator: popoverCoordinator,
+      onClose: () => {},
+    };
+    historicalPopover = isActive
+      ? createActivePopover({ ...baseArgs, manager: currentManager })
+      : createCompletePopover(baseArgs);
+    historicalPopover.open({ exercise: currentExercise, anchor });
+  }
+
+  // Keeps the historical popover in sync for as long as its exercise is shown here -- an active
+  // poll can finish (via this popover's own Finish button, or from the live editor/sidebar
+  // elsewhere) while the historical tab stays open, same as the live activities panel reacts to
+  // these manager events for the live popovers.
+  function subscribeToManager(manager, exerciseId, anchor, markerRange) {
+    const onFinished = ({ detail: { exercise } }) => {
+      if (exercise.id !== exerciseId || !historicalPopoverIsActive) return;
+      historicalEditor.renderPollMarker({ id: exerciseId, ...markerRange, isOpen: false, scroll: false });
+      openPollPopover(anchor);
+    };
+    const onResponse = ({ detail: { exercise, responseCount } }) => {
+      if (exercise.id !== exerciseId) return;
+      historicalPopover?.updateResponseCount?.(responseCount);
+    };
+    manager.addEventListener("exerciseFinished", onFinished);
+    manager.addEventListener("responseReceived", onResponse);
+    return () => {
+      manager.removeEventListener("exerciseFinished", onFinished);
+      manager.removeEventListener("responseReceived", onResponse);
+    };
   }
 
   function showHistoricalTab() {
@@ -59,20 +109,28 @@ export function createHistoricalViewController({
   // navigate away from the historical view for good: its own close/return-to-live controls, the
   // activities panel's back/close buttons, picking a new activity, or switching to the live tab.
   function closeHistorical() {
-    if (currentExerciseId == null) return;
-    const closedId = currentExerciseId;
+    if (currentExercise == null) return;
+    const closedId = currentExercise.id;
     showLiveTab();
+    unsubscribeManager?.();
+    unsubscribeManager = null;
     historicalPopover?.close();
     historicalEditor?.destroy();
     historicalEditor = null;
     historicalPopover = null;
-    currentExerciseId = null;
+    historicalPopoverIsActive = false;
+    popoverCoordinator = null;
+    currentExercise = null;
+    currentManager = null;
     historicalTabEl.hidden = true;
     historicalMountEl.innerHTML = "";
     onClose?.(closedId);
   }
 
-  async function open(ex) {
+  // `manager` is the InstructorActivitiesManager/StudentActivitiesManager already tracking `ex`
+  // live -- needed so an active poll's popover can finish/submit through the exact same code path
+  // as the live editor, and so this view stays in sync if that happens while it's open.
+  async function open(ex, manager) {
     if (isShowingExercise(ex.id)) {
       showHistoricalTab();
       return;
@@ -95,7 +153,8 @@ export function createHistoricalViewController({
     // the animated scroll-into-view further down.
     historicalTabTextEl.textContent = `instructor.py · ${formatRelativeTime(data.timestamp)}`;
     historicalTabEl.hidden = false;
-    currentExerciseId = ex.id;
+    currentExercise = ex;
+    currentManager = manager;
     showHistoricalTab();
 
     // Wait a frame so the browser actually PAINTs that now-visible, unscrolled, empty container
@@ -112,20 +171,22 @@ export function createHistoricalViewController({
         if (data.type === "CODE_VARIANT") {
           historicalEditor.renderVersionBlock(data.versionBlock);
         } else {
-          historicalEditor.renderPollMarker({ id: ex.id, from: data.anchor.from, to: data.anchor.to });
-          historicalPopover = createCompletePopover({
-            showPollPopover: (args) => historicalEditor.showPollPopover(args),
-            hidePollPopover: (key) => historicalEditor.hidePollPopover(key),
-            coordinator: new PollPopoverCoordinator(),
-            onClose: () => {},
+          popoverCoordinator = new PollPopoverCoordinator();
+          historicalEditor.renderPollMarker({
+            id: ex.id,
+            from: data.anchor.from,
+            to: data.anchor.to,
+            isOpen: ex.end_ts == null,
           });
-          historicalPopover.open({
-            exercise: ex,
-            anchor: {
-              kind: "code",
-              at: historicalEditor.getPollAnchorPosition(ex.id),
-              getRange: () => historicalEditor.getPollAnchorRange(ex.id),
-            },
+          const anchor = {
+            kind: "code",
+            at: historicalEditor.getPollAnchorPosition(ex.id),
+            getRange: () => historicalEditor.getPollAnchorRange(ex.id),
+          };
+          openPollPopover(anchor);
+          unsubscribeManager = subscribeToManager(manager, ex.id, anchor, {
+            from: data.anchor.from,
+            to: data.anchor.to,
           });
         }
       });
@@ -134,7 +195,7 @@ export function createHistoricalViewController({
 
   liveTabEl.addEventListener("click", closeHistorical);
   historicalTabEl.addEventListener("click", () => {
-    if (currentExerciseId != null) showHistoricalTab();
+    if (currentExercise != null) showHistoricalTab();
   });
   historicalTabCloseBtn.addEventListener("click", (e) => {
     e.stopPropagation();
