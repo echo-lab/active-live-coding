@@ -383,6 +383,20 @@ export class StudentActivitiesManager extends EventTarget {
     });
   }
 
+  // Fetches aggregate per-choice counts for a finished POLL_MCQ exercise -- students never
+  // receive other students' raw responses, so this is the only way to get the breakdown shown
+  // in StudentPollCompletePopover. Caches the result onto the local exercise object.
+  async fetchMcqResults(exerciseId) {
+    const res = await fetch("/exercise/mcq-results", {
+      body: JSON.stringify({ exerciseId }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) return null;
+    const ex = this.exercises.find((e) => e.id === exerciseId);
+    if (ex) ex.mcqResults = { counts: res.counts, total: res.total };
+    return ex?.mcqResults ?? null;
+  }
+
   #handleExerciseCreated(msg) {
     if (msg.sessionNumber !== this.sessionNumber) return;
     const ex = msg.exercise;

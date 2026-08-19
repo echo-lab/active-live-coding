@@ -1731,8 +1731,7 @@ td {
   margin: 10px 0 14px;
 }
 
-.poll-mcq-choice-item,
-.poll-mcq-result-item {
+.poll-mcq-choice-item {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1754,24 +1753,78 @@ td {
 .poll-mcq-results {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   margin-top: 10px;
 }
 
-.poll-mcq-result-count {
-  margin-left: auto;
+.poll-mcq-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.poll-mcq-result-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.poll-mcq-result-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.poll-mcq-result-value {
   font-size: 12px;
   color: #666;
   white-space: nowrap;
-  padding-left: 8px;
+  flex-shrink: 0;
+}
+
+.poll-mcq-result-bar-track {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: #ececec;
+  overflow: hidden;
+}
+
+.poll-mcq-result-bar-fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: 3px;
+  background: #b0b0b0;
+  transition: width 0.3s ease;
+}
+
+.poll-mcq-result-item--selected .poll-mcq-result-value {
+  color: #646cff;
+  font-weight: 600;
+}
+
+.poll-mcq-result-item--selected .poll-mcq-result-bar-fill {
+  background: #646cff;
+}
+
+.poll-mcq-your-answer-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #e8e8ff;
+  color: #646cff;
+  white-space: nowrap;
 }
 
 /* Poll create popover */
 .poll-popover {
   position: fixed;
   z-index: 10000;
-  width: 340px;
-  max-width: min(340px, calc(100vw - 24px));
+  width: 440px;
+  max-width: min(440px, calc(100vw - 24px));
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
@@ -1779,6 +1832,7 @@ td {
   white-space: normal;
   line-height: 1.4;
   border: solid 1px blue;
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
 /* Anchor for a popover mounted as a CodeMirror decoration: a zero-footprint inline element

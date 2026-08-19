@@ -33,7 +33,7 @@ export function createHistoricalViewController({
   historicalMountEl,
   returnToLiveBtn,
   createActivePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose, manager}) => popover instance
-  createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose}) => popover instance
+  createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose, manager}) => popover instance
   onClose, // (exerciseId) => void, called whenever the historical tab for that exercise tears down
   studentId = null, // when set (student page), also fetch this student's own answer to show as a trailing tab
 }) {
@@ -64,7 +64,7 @@ export function createHistoricalViewController({
     };
     historicalPopover = isActive
       ? createActivePopover({ ...baseArgs, manager: currentManager })
-      : createCompletePopover(baseArgs);
+      : createCompletePopover({ ...baseArgs, manager: currentManager });
     historicalPopover.open({ exercise: currentExercise, anchor });
   }
 

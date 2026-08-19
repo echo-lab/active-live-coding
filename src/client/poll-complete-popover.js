@@ -1,4 +1,4 @@
-import { PollMcqBuilder, createAnswerDisplay } from "./activities-panel.js";
+import { PollMcqBuilder, computeMcqCounts, createAnswerDisplay } from "./activities-panel.js";
 import { positionPopover } from "./popover-position.js";
 
 // MARK: Shared building blocks
@@ -105,7 +105,8 @@ export class InstructorPollCompletePopover {
 
     if (exercise.type === "POLL_MCQ") {
       const choices = exercise.default_answer ? JSON.parse(exercise.default_answer) : [];
-      PollMcqBuilder.buildSummaryResults(root, choices, exercise.ExerciseResponses ?? []);
+      const { counts, total } = computeMcqCounts(choices, exercise.ExerciseResponses ?? []);
+      PollMcqBuilder.buildResults(root, choices, counts, total);
     }
 
     container.appendChild(root);
@@ -118,8 +119,9 @@ export class InstructorPollCompletePopover {
 // Floating popover for stage 3 (complete/review) of a poll exercise, on the student's side.
 // Shows the question and the student's own answer/choice, read-only.
 export class StudentPollCompletePopover {
-  constructor({ student_id, showPollPopover, hidePollPopover, coordinator, onClose }) {
+  constructor({ student_id, manager, showPollPopover, hidePollPopover, coordinator, onClose }) {
     this._student_id = student_id;
+    this._manager = manager;
     this._showPollPopover = showPollPopover;
     this._hidePollPopover = hidePollPopover;
     this._coordinator = coordinator;
@@ -193,11 +195,10 @@ export class StudentPollCompletePopover {
     const myResponse = this._myResponse(exercise);
     if (exercise.type === "POLL_MCQ") {
       const choices = exercise.default_answer ? JSON.parse(exercise.default_answer) : [];
-      if (myResponse) {
-        PollMcqBuilder.buildCompleteChoices(root, choices, parseInt(myResponse.answer, 10));
-      } else {
-        root.appendChild(noAnswerEl());
-      }
+      const selectedIndex = myResponse ? parseInt(myResponse.answer, 10) : null;
+      const resultsContainer = document.createElement("div");
+      root.appendChild(resultsContainer);
+      this._renderMcqResults(resultsContainer, exercise, choices, selectedIndex);
     } else if (myResponse) {
       root.appendChild(createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:" }));
     } else {
@@ -206,5 +207,27 @@ export class StudentPollCompletePopover {
 
     container.appendChild(root);
     this._rootEl = root;
+  }
+
+  // Aggregate MCQ counts aren't available locally on the student's client (it never receives
+  // other students' raw responses) -- render from cache if we already fetched them for this
+  // exercise, otherwise show a loading state and fetch them via the activities manager.
+  _renderMcqResults(container, exercise, choices, selectedIndex) {
+    if (exercise.mcqResults) {
+      PollMcqBuilder.buildResults(container, choices, exercise.mcqResults.counts, exercise.mcqResults.total, selectedIndex);
+      return;
+    }
+
+    const loadingEl = document.createElement("div");
+    loadingEl.className = "summary-loading";
+    loadingEl.textContent = "Loading results…";
+    container.appendChild(loadingEl);
+
+    this._manager?.fetchMcqResults(exercise.id).then((results) => {
+      if (this._exerciseId !== exercise.id || !this._rootEl || !container.isConnected) return;
+      if (!results) return;
+      container.innerHTML = "";
+      PollMcqBuilder.buildResults(container, choices, results.counts, results.total, selectedIndex);
+    });
   }
 }

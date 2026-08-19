@@ -577,53 +577,22 @@ export class PollMcqBuilder {
     container.appendChild(list);
   }
 
-  static buildSummaryResults(container, choices, responses) {
-    const counts = new Array(choices.length).fill(0);
-    let total = 0;
-    responses.forEach((r) => {
-      const idx = parseInt(r.answer, 10);
-      if (!isNaN(idx) && idx >= 0 && idx < choices.length) {
-        counts[idx]++;
-        total++;
-      }
-    });
-
+  // Renders each choice as a row (letter, text, "XX% (N)") with a proportional bar underneath.
+  // Pass `selectedIndex` to additionally highlight and chip-mark the respondent's own choice
+  // (used for a student's own review); omit it for the instructor's plain aggregate view.
+  static buildResults(container, choices, counts, total, selectedIndex = null) {
     const list = document.createElement("div");
     list.className = "poll-mcq-results";
     choices.forEach((choice, i) => {
-      const item = document.createElement("div");
-      item.className = "poll-mcq-result-item";
-      const count = counts[i];
-      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-      const label = document.createElement("span");
-      label.className = "poll-mcq-choice-label";
-      label.textContent = String.fromCharCode(65 + i) + ".";
-      const text = document.createElement("span");
-      text.className = "poll-mcq-choice-text";
-      text.textContent = choice;
-      const countEl = document.createElement("span");
-      countEl.className = "poll-mcq-result-count";
-      countEl.textContent = `${count} response${count !== 1 ? "s" : ""} (${pct}%)`;
-      item.appendChild(label);
-      item.appendChild(text);
-      item.appendChild(countEl);
-      list.appendChild(item);
-    });
-    container.appendChild(list);
-  }
-
-  // Renders the full choice list read-only, bolding the respondent's own choice (no counts --
-  // used for a single student's own review, as opposed to buildSummaryResults' aggregate view).
-  static buildCompleteChoices(container, choices, selectedIndex) {
-    const list = document.createElement("div");
-    list.className = "poll-mcq-choices-display";
-    choices.forEach((choice, i) => {
-      const item = document.createElement("div");
-      item.className = "poll-mcq-choice-item";
       const isSelected = i === selectedIndex;
-      if (isSelected) {
-        item.style.fontWeight = "600";
-      }
+      const count = counts[i] ?? 0;
+      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+
+      const item = document.createElement("div");
+      item.className = "poll-mcq-result-item" + (isSelected ? " poll-mcq-result-item--selected" : "");
+
+      const row = document.createElement("div");
+      row.className = "poll-mcq-result-row";
 
       const label = document.createElement("span");
       label.className = "poll-mcq-choice-label";
@@ -633,20 +602,56 @@ export class PollMcqBuilder {
       text.className = "poll-mcq-choice-text";
       text.textContent = choice;
 
-      item.appendChild(label);
-      item.appendChild(text);
+      row.appendChild(label);
+      row.appendChild(text);
+
       if (isSelected) {
-        const yourAnswerEl = document.createElement("span");
-        yourAnswerEl.className = "your-answer-label";
-        yourAnswerEl.textContent = "(your answer)";
-        yourAnswerEl.style.color = "var(--color-active, #2e7d32)";
-        yourAnswerEl.style.marginLeft = "8px";
-        item.appendChild(yourAnswerEl);
+        const chip = document.createElement("span");
+        chip.className = "poll-mcq-your-answer-chip";
+        chip.textContent = "your answer";
+        row.appendChild(chip);
       }
+
+      const meter = document.createElement("div");
+      meter.className = "poll-mcq-result-meter";
+
+      const track = document.createElement("div");
+      track.className = "poll-mcq-result-bar-track";
+      const fill = document.createElement("div");
+      fill.className = "poll-mcq-result-bar-fill";
+      fill.style.width = `${pct}%`;
+      track.appendChild(fill);
+
+      const valueEl = document.createElement("span");
+      valueEl.className = "poll-mcq-result-value";
+      valueEl.textContent = `${pct}% (${count})`;
+
+      meter.appendChild(track);
+      meter.appendChild(valueEl);
+
+      item.appendChild(row);
+      item.appendChild(meter);
       list.appendChild(item);
     });
     container.appendChild(list);
   }
+}
+
+// Tallies raw ExerciseResponse rows into per-choice counts. Used by the instructor's popover,
+// which already holds every response locally; the student's popover instead gets pre-tallied
+// counts from the server (see StudentActivitiesManager.fetchMcqResults), since a student's
+// browser never receives other students' raw responses.
+export function computeMcqCounts(choices, responses) {
+  const counts = new Array(choices.length).fill(0);
+  let total = 0;
+  responses.forEach((r) => {
+    const idx = parseInt(r.answer, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < choices.length) {
+      counts[idx]++;
+      total++;
+    }
+  });
+  return { counts, total };
 }
 
 // Builds a `.poll-activity-header` with a "back to list" link (left) and a "x" close button

@@ -582,6 +582,38 @@ app.post("/exercise/finish", async (req, res) => {
   }
 });
 
+// MARK: MCQ results
+// Returns aggregate per-choice counts for a completed POLL_MCQ exercise. Used by students, whose
+// browsers never receive other students' raw responses -- unlike the instructor, who already has
+// every ExerciseResponse locally. Gated on end_ts so results can't be peeked at while still open.
+app.post("/exercise/mcq-results", async (req, res) => {
+  const { exerciseId } = req.body;
+  if (!exerciseId) return res.json({ error: "exerciseId is required" });
+
+  try {
+    const exercise = await ClassExercise.findByPk(exerciseId);
+    if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
+    if (exercise.type !== "POLL_MCQ") return res.json({ error: "Not a multiple-choice poll" });
+    if (exercise.end_ts === null) return res.json({ error: "Exercise is not yet completed" });
+
+    const choices = exercise.default_answer ? JSON.parse(exercise.default_answer) : [];
+    const responses = await ExerciseResponse.findAll({ where: { ClassExerciseId: exerciseId } });
+    const counts = new Array(choices.length).fill(0);
+    let total = 0;
+    responses.forEach((r) => {
+      const idx = parseInt(r.answer, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < choices.length) {
+        counts[idx]++;
+        total++;
+      }
+    });
+    res.json({ counts, total });
+  } catch (error) {
+    console.error("Failed to compute MCQ results:", error);
+    res.json({ error: error.message });
+  }
+});
+
 // MARK: Exercise summary
 // Returns the existing summary for a completed exercise, or generates one via LLM.
 app.post("/exercise/summary", async (req, res) => {

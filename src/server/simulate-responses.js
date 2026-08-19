@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { EXERCISE_TYPE, SimulatedExerciseResponse } from "./models.js";
 import { db } from "./database.js";
 
-const N = 10; // How many simulated responses to create :)
+const N = 100; // How many simulated responses to create :)
 
 const client = new OpenAI(); // reads OPENAI_API_KEY from env
 

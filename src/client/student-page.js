@@ -183,6 +183,7 @@ async function initialize({
 
   const studentCompletePollPopover = new StudentPollCompletePopover({
     student_id: userId,
+    manager: activitiesManager,
     showPollPopover: (args) => codeEditor.showPollPopover(args),
     hidePollPopover: (key) => codeEditor.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
