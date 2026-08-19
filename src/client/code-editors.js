@@ -72,6 +72,7 @@ export class StudentCodeEditor {
         // ...codeSnapshotFields(onNewSnapshot),
         ...followInstructorExtensions,
         EditorView.editable.of(false),
+        EditorState.readOnly.of(true),
         capLength,
         ...pollMarkerExtensions(onOpenPollMarker, (id) => this.activitiesManager?.markPollAnchorDeleted(id)),
         ...pollPopoverExtensions(),
@@ -829,6 +830,7 @@ export class VariantCodeFollowingEditor {
         keymap.of([indentWithTab]),
         ...followInstructorExtensions,
         EditorView.editable.of(false),
+        EditorState.readOnly.of(true),
         EditorView.lineWrapping,
       ],
     });
@@ -868,6 +870,7 @@ export class ReviewCodeEditor {
         ...reviewEditorExtensions({ isEditable, showLineNumbers }),
         ...(isEditable ? [keymap.of([indentWithTab])] : []),
         EditorView.editable.of(isEditable),
+        EditorState.readOnly.of(!isEditable),
         capLength,
         ...(baseDoc !== null ? exerciseDiffGutter : []),
       ],

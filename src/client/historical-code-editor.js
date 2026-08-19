@@ -27,6 +27,7 @@ export class HistoricalCodeEditor {
       extensions: [
         ...basicExtensions,
         EditorView.editable.of(false),
+        EditorState.readOnly.of(true),
         capLength,
         ...versionBlockExtensions(),
         ...pollMarkerExtensions(null),

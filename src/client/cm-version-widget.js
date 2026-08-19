@@ -190,7 +190,7 @@ export class StudentVersionBlockWidget extends WidgetType {
           indentUnit.of("    "),
           keymap.of([indentWithTab]),
           EditorView.lineWrapping,
-          ...(readOnly ? [EditorView.editable.of(false)] : []),
+          ...(readOnly ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : []),
         ],
       }),
       parent: el,
@@ -238,7 +238,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     }
     if (this._studentAnswerView) {
       this._studentAnswerView.dispatch({
-        effects: StateEffect.appendConfig.of(EditorView.editable.of(false)),
+        effects: StateEffect.appendConfig.of([EditorView.editable.of(false), EditorState.readOnly.of(true)]),
       });
     }
     this.variantContainer?.classList.remove("exercise-open");
