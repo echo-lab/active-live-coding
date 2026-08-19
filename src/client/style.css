@@ -1823,8 +1823,8 @@ td {
 .poll-popover {
   position: fixed;
   z-index: 10000;
-  width: 440px;
-  max-width: min(440px, calc(100vw - 24px));
+  width: 350px;
+  max-width: min(350px, calc(100vw - 24px));
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);

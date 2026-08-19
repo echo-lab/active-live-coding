@@ -160,7 +160,10 @@ const pollMarkerGutterColumn = gutter({
     const doc = view.state.doc;
     // Group by line start first: CodeMirror gutters support multiple independent
     // markers at the same position, but RangeSetBuilder requires them added in a
-    // single ascending pass, so we can't add each poll to the builder as we see it.
+    // single ascending pass. RangeSet#between does NOT guarantee ranges are
+    // reported in position order (it's a chain of layers, walked layer-by-layer
+    // rather than merged by position), so we can't rely on encounter order even
+    // for the line-start grouping itself -- the Map's keys must be sorted below.
     const byLine = new Map();
     view.state.field(pollMarkersField).between(0, doc.length, (from, to, deco) => {
       const lineStart = doc.lineAt(from).from;
@@ -170,7 +173,9 @@ const pollMarkerGutterColumn = gutter({
     });
 
     const builder = new RangeSetBuilder();
-    for (const [lineStart, entries] of byLine) {
+    const sortedLineStarts = [...byLine.keys()].sort((a, b) => a - b);
+    for (const lineStart of sortedLineStarts) {
+      const entries = byLine.get(lineStart);
       // Deterministic order (poll ids are auto-incrementing, so this is creation order)
       // rather than whatever order the underlying RangeSet happened to yield.
       entries.sort((a, b) => (a.pollId > b.pollId ? 1 : a.pollId < b.pollId ? -1 : 0));
