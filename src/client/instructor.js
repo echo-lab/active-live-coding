@@ -258,6 +258,8 @@ function initialize({
     },
     openHistoricalView: (ex) => historicalController.open(ex),
     closeHistoricalView: () => historicalController.returnToLive(),
+    addResponseAsVariant: (ex, code, label) =>
+      codeEditor.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label),
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());

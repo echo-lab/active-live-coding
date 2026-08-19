@@ -199,7 +199,7 @@ export class StudentPollCompletePopover {
         root.appendChild(noAnswerEl());
       }
     } else if (myResponse) {
-      root.appendChild(createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:", startExpanded: true }));
+      root.appendChild(createAnswerDisplay(myResponse.answer, "POLL", { label: "Your answer:" }));
     } else {
       root.appendChild(noAnswerEl());
     }

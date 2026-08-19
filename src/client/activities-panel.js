@@ -17,7 +17,7 @@ function trimAnswer(text) {
   return lines.slice(start, end + 1).join("\n");
 }
 
-export function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", startExpanded = true } = {}) {
+export function createAnswerDisplay(answer, exerciseType, { label = "Your submission:", headerActions = [] } = {}) {
   const trimmed = trimAnswer(answer);
 
   const wrapper = document.createElement("div");
@@ -26,20 +26,22 @@ export function createAnswerDisplay(answer, exerciseType, { label = "Your submis
   const header = document.createElement("div");
   header.className = "answer-display-header";
 
-  const caret = document.createElement("span");
-  caret.className = "answer-display-caret";
-  caret.textContent = startExpanded ? "▼" : "▶";
+  headerActions.forEach(({ label: btnLabel, title, onClick }) => {
+    const btn = document.createElement("button");
+    btn.className = "answer-display-action-btn";
+    btn.textContent = btnLabel;
+    if (title) btn.title = title;
+    btn.addEventListener("click", onClick);
+    header.appendChild(btn);
+  });
 
   const labelEl = document.createElement("span");
   labelEl.className = "answer-display-label";
   labelEl.textContent = label;
-
-  header.appendChild(caret);
   header.appendChild(labelEl);
 
   const content = document.createElement("div");
   content.className = "answer-display-content";
-  content.hidden = !startExpanded;
 
   if (exerciseType === "CODE_FITB" || exerciseType === "CODE_VARIANT") {
     const editorContainer = document.createElement("div");
@@ -51,12 +53,6 @@ export function createAnswerDisplay(answer, exerciseType, { label = "Your submis
     pre.textContent = trimmed;
     content.appendChild(pre);
   }
-
-  header.addEventListener("click", () => {
-    const isExpanded = !content.hidden;
-    content.hidden = isExpanded;
-    caret.textContent = isExpanded ? "▶" : "▼";
-  });
 
   wrapper.appendChild(header);
   wrapper.appendChild(content);
@@ -286,24 +282,45 @@ function computeAnonLabels(responses) {
   let n = 0;
   responses.forEach((r) => {
     let identifier = r.StudentSession?.student_identifier || r.student_identifier;
-    if (!identifier) labels.set(r, `Anonymous student ${++n}`);
+    if (!identifier) labels.set(r, `S${n<10?'0':''}${++n}`);
   });
   return labels;
 }
 
-// Renders a single student response element.
-function renderResponseEl(response, ex, anonLabels) {
+// Renders a single student response element. `onAddAsVariant`, when supplied for a code
+// exercise, adds a "⇤" header button that promotes this response into a new Version Block
+// variant -- see InstructorActivitiesPanel's `addResponseAsVariant` option.
+function renderResponseEl(response, ex, anonLabels, onAddAsVariant) {
   let { student_identifier, StudentSession, answer } = response;
   let displayName =
     StudentSession?.student_identifier || student_identifier || anonLabels.get(response);
   let div = document.createElement("div");
   div.className = "summary-response";
-  div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, startExpanded: true }));
+
+  let headerActions = [];
+  if (onAddAsVariant && ex.type === "CODE_VARIANT" && !isAnchorDeleted(ex)) {
+    headerActions.push({
+      label: "⇤",
+      title: "Add to code editor as a new variant",
+      onClick: async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        await onAddAsVariant(ex, trimAnswer(answer), displayName);
+        btn.textContent = "✓";
+        setTimeout(() => {
+          btn.textContent = "⇤";
+          btn.disabled = false;
+        }, 1500);
+      },
+    });
+  }
+
+  div.appendChild(createAnswerDisplay(answer, ex.type, { label: displayName, headerActions }));
   return div;
 }
 
 // Renders all student responses into responsesEl, optionally grouped.
-function renderResponsesEl(responsesEl, ex, groups) {
+function renderResponsesEl(responsesEl, ex, groups, onAddAsVariant) {
   if (!ex.ExerciseResponses || ex.ExerciseResponses.length === 0) {
     responsesEl.textContent = "No responses.";
     return;
@@ -311,7 +328,7 @@ function renderResponsesEl(responsesEl, ex, groups) {
   let anonLabels = computeAnonLabels(ex.ExerciseResponses);
   if (!groups) {
     ex.ExerciseResponses.forEach((response) => {
-      responsesEl.appendChild(renderResponseEl(response, ex, anonLabels));
+      responsesEl.appendChild(renderResponseEl(response, ex, anonLabels, onAddAsVariant));
     });
     return;
   }
@@ -343,14 +360,14 @@ function renderResponsesEl(responsesEl, ex, groups) {
     headerEl.appendChild(countEl);
     groupEl.appendChild(headerEl);
 
-    groupEl.appendChild(renderResponseEl(responses[0], ex, anonLabels));
+    groupEl.appendChild(renderResponseEl(responses[0], ex, anonLabels, onAddAsVariant));
 
     if (responses.length > 1) {
       let extraEl = document.createElement("div");
       extraEl.className = "group-extra-responses";
       extraEl.hidden = true;
       responses.slice(1).forEach((r) => {
-        extraEl.appendChild(renderResponseEl(r, ex, anonLabels));
+        extraEl.appendChild(renderResponseEl(r, ex, anonLabels, onAddAsVariant));
       });
 
       let toggleBtn = document.createElement("button");
@@ -707,10 +724,11 @@ class PollExerciseWidget {
 
 // MARK: CodeExerciseSummaryWidget
 class CodeExerciseSummaryWidget {
-  constructor({ codeExerciseEl, onBack, onClose }) {
+  constructor({ codeExerciseEl, onBack, onClose, onAddAsVariant }) {
     this.codeExerciseEl = codeExerciseEl;
     this._onBack = onBack;
     this._onClose = onClose;
+    this._onAddAsVariant = onAddAsVariant;
     this._responsesEl = null;
   }
 
@@ -729,14 +747,14 @@ class CodeExerciseSummaryWidget {
       this._responsesEl.appendChild(loadingEl);
     } else {
       const resolvedGroups = groups ?? (ex.summary ? JSON.parse(ex.summary) : null);
-      renderResponsesEl(this._responsesEl, ex, resolvedGroups);
+      renderResponsesEl(this._responsesEl, ex, resolvedGroups, this._onAddAsVariant);
     }
   }
 
   updateResponses(ex, groups) {
     if (this._responsesEl) {
       this._responsesEl.innerHTML = "";
-      renderResponsesEl(this._responsesEl, ex, groups);
+      renderResponsesEl(this._responsesEl, ex, groups, this._onAddAsVariant);
     }
   }
 }
@@ -754,6 +772,7 @@ export class InstructorActivitiesPanel {
     scrollToExercise,
     openHistoricalView,
     closeHistoricalView,
+    addResponseAsVariant,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -814,6 +833,7 @@ export class InstructorActivitiesPanel {
       codeExerciseEl: this.codeExerciseEl,
       onBack,
       onClose,
+      onAddAsVariant: addResponseAsVariant,
     });
 
     this.#subscribeToManager();

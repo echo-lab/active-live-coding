@@ -7,7 +7,7 @@ import { indentUnit } from "@codemirror/language";
 import { VariantCodeEditor, VariantCodeFollowingEditor, ReviewCodeEditor } from "./code-editors.js";
 import { followInstructorExtensions, setInstructorSelection } from "./cm-extensions.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { POST_JSON_REQUEST, PATCH_JSON_REQUEST } from "./utils.js";
+import { POST_JSON_REQUEST, PATCH_JSON_REQUEST, PUT_JSON_REQUEST } from "./utils.js";
 
 // ============================================================
 // MARK: Module-level state
@@ -806,48 +806,83 @@ export class VersionBlockWidget extends WidgetType {
   // MARK: -- variants CRUD
   // -------------------------------------------------------
 
-  // May throw an exception!
   async _createVariant() {
     try {
-      let variant = await this._createVariantBackend();
-      variant = {
-        ...variant,
-        ...this._makeVariantCodeEditor(variant),
-      };
-      this.variants.push(variant);
-      this.variantContainer.appendChild(variant.el);
-      const newIndex = this.variants.length - 1;
-      const tabEl = this._makeTabEl(newIndex);
-      this.tabsContainer.insertBefore(tabEl, this.addBtn);
-      this._updateDeleteBtnVisibility();
-      this._selectTab(newIndex);
+      const variant = await this._createVariantBackend();
+      if (!variant) return;
+      this._mountVariant(variant);
+      this._broadcastVariantAdded(variant);
     } catch (err) {
       console.error("Failed to add variant:", err);
     }
   }
 
-  async _createVariantBackend() {
-    // Step 1: create on the backend.
-    const name = `v${this.variants.length}`;
+  // Creates a new variant pre-populated with `code` -- e.g. promoting a student's exercise
+  // response into a variant the instructor can walk through with the rest of the class. Reuses
+  // the (until now unused) PUT /variant/:id/code endpoint to seed its content server-side.
+  async addVariantFromCode(code, name) {
+    try {
+      const created = await this._createVariantBackend(name);
+      if (!created) return;
+      const res = await fetch(`/variant/${created.id}/code`, {
+        body: JSON.stringify({ code }),
+        ...PUT_JSON_REQUEST,
+      });
+      const { error } = await res.json();
+      if (error) { console.error("Failed to seed new variant's code:", error); return; }
+      const variant = { ...created, code, docVersion: created.docVersion + 1 };
+      this._mountVariant(variant);
+      this._broadcastVariantAdded(variant);
+    } catch (err) {
+      console.error("Failed to add variant from response:", err);
+    }
+  }
+
+  // Backend half of variant creation: persists an empty variant and returns its data, or null on
+  // error. Doesn't touch the DOM or broadcast -- callers decide when/what to mount and announce
+  // (e.g. addVariantFromCode seeds the code in between the two).
+  async _createVariantBackend(name = `v${this.variants.length}`) {
     const res = await fetch("/variant", {
       body: JSON.stringify({ versionBlockId: this.versionBlockId, name }),
       ...POST_JSON_REQUEST,
     });
-    const { variantId, error } = await res.json();
-    if (error) { console.error("Failed to add variant:", error); return; }
-    const variant = {id: variantId, name, code: "", docVersion: 1};
+    const { variantId, name: returnedName, docVersion, error } = await res.json();
+    if (error) { console.error("Failed to add variant:", error); return null; }
+    return { id: variantId, name: returnedName, code: "", docVersion };
+  }
 
-    // Step 2: Emit the update to students.
-    this.socket.emit(
-      SOCKET_MESSAGE_TYPE.VARIANT_ADDED,
-      {
-        sessionId: this.sessionNumber,
-        versionBlockId: this.versionBlockId,
-        variant,
-      }
-    );
+  // Local UI half of variant creation: mounts the editor, tab, and selects it. Shared by
+  // _createVariant and addVariantFromCode.
+  _mountVariant(variant) {
+    variant = {
+      ...variant,
+      ...this._makeVariantCodeEditor(variant),
+    };
+    this.variants.push(variant);
+    this.variantContainer.appendChild(variant.el);
+    const newIndex = this.variants.length - 1;
+    const tabEl = this._makeTabEl(newIndex);
+    this.tabsContainer.insertBefore(tabEl, this.addBtn);
+    this._updateDeleteBtnVisibility();
+    this._selectTab(newIndex);
+    this._flashNewVariant();
+  }
 
-    return variant;
+  // Briefly pulses the widget's border to draw the instructor's eye to it -- e.g. after adding a
+  // variant from the sidebar summary, where the widget may not be the thing they were just
+  // looking at.
+  _flashNewVariant() {
+    if (!this.container) return;
+    this.container.classList.add("new-variant-flash");
+    setTimeout(() => this.container?.classList.remove("new-variant-flash"), 1200);
+  }
+
+  _broadcastVariantAdded(variant) {
+    this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, {
+      sessionId: this.sessionNumber,
+      versionBlockId: this.versionBlockId,
+      variant: { id: variant.id, name: variant.name, code: variant.code, docVersion: variant.docVersion },
+    });
   }
 
   async _renameVariantBackend(variantId, newName) {

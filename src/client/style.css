@@ -866,23 +866,6 @@ td {
   gap: 6px;
   padding: 5px 8px;
   background: #f5f5ff;
-  cursor: pointer;
-  user-select: none;
-}
-
-.answer-display-header:hover {
-  background: #eaeaff;
-}
-
-.answer-display-content:not([hidden]) {
-  border-top: 1px solid #ddd;
-}
-
-.answer-display-caret {
-  font-size: 10px;
-  color: #646cff;
-  flex-shrink: 0;
-  line-height: 1;
 }
 
 .answer-display-label {
@@ -891,10 +874,32 @@ td {
   font-weight: 600;
 }
 
+.answer-display-action-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: #646cff;
+  background: white;
+  border: 1px solid #d0d0f5;
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.answer-display-action-btn:hover {
+  background: #eaeaff;
+}
+
+.answer-display-action-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .answer-display-content {
   max-height: 250px;
   overflow-y: auto;
   background-color: white;
+  border-top: 1px solid #ddd;
 }
 
 .summary-response .answer-display-content {
@@ -1384,6 +1389,18 @@ td {
 .cm-version-block-widget.exercise-open .cm-version-block-toolbar{
   /* animation: cm-version-block-toolbar-flash 2.0s ease-in-out infinite; */
   background-color: #fff7ad;
+}
+
+/* Brief attention-getting pulse when a new variant tab is added (via the toolbar "+" or the
+   sidebar summary's "add to editor" button) -- a soft background tint over the widget's
+   interior (behind the toolbar, which has its own opaque background and stays put). */
+@keyframes cm-version-block-new-variant-flash {
+  0%, 100% { background-color: #fff; }
+  20%      { background-color: #e3e5ff; }
+}
+
+.cm-version-block-widget.new-variant-flash {
+  animation: cm-version-block-new-variant-flash 1.0s ease-in-out 1;
 }
 
 .cm-version-block-btn.cm-version-block-minimize {
