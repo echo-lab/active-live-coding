@@ -59,6 +59,11 @@ export function shouldSimulateResponses() {
   return localStorage.getItem("should_simulate_responses") === "true";
 }
 
+window.toggleSimulateResponses = () => {
+  localStorage.setItem("should_simulate_responses", !shouldSimulateResponses());
+  console.log(`should_simulate_response: ${shouldSimulateResponses()}`);
+};
+
 export function setupSimulateResponsesCheckbox(cls) {
   const checkbox = document.querySelector(cls);
   checkbox.checked = shouldSimulateResponses();
