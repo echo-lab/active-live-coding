@@ -66,12 +66,12 @@ function createVersionWidgetTooltipDOM(view) {
 
   let createPollOption = document.createElement("div");
   createPollOption.className = "cm-tooltip-version-option";
-  createPollOption.textContent = "Create Poll";
+  createPollOption.textContent = "Ask question";
   createPollOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleCreatePollClick(); });
 
   let shareCodeBlockOption = document.createElement("div");
   shareCodeBlockOption.className = "cm-tooltip-version-option";
-  shareCodeBlockOption.textContent = "Share code block";
+  shareCodeBlockOption.textContent = "Ask for code";
   shareCodeBlockOption.addEventListener("mousedown", (e) => { e.preventDefault(); handleShareCodeBlock(); });
 
   container.appendChild(createPollOption);
