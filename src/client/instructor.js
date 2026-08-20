@@ -38,7 +38,6 @@ const historicalController = createHistoricalViewController({
   createCompletePopover: (args) => new InstructorPollCompletePopover(args),
   onClose: (exerciseId) => activitiesPanel?.notifyHistoricalViewClosed(exerciseId),
 });
-const startButton = document.querySelector("#start-session-butt");
 const endButton = document.querySelector("#end-session-butt");
 const sessionDetails = document.querySelector("#session-details");
 const runButtonEl = document.querySelector("#run-button");
@@ -119,7 +118,6 @@ function initialize({
   exercises = [],
   versionBlocks = [],
 }) {
-  startButton.disabled = true;
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 

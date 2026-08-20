@@ -397,26 +397,30 @@ pre {
   cursor: pointer;
 }
 
-#start-stop-holder {
-  font-size: xx-small;
-  margin-bottom: 15px;
-}
-
 #session-info button {
   border-color: darkgrey;
-  /* border-radius: */
+  border-radius: 8px;
   padding: 6px 12px;
-}
-
-#session-info button:first-of-type {
   margin-left: 20px;
-  border-radius: 8px 0px 0px 8px;
-}
-#session-info button:last-of-type {
-  border-radius: 0px 8px 8px 0px;
 }
 
-/* #session-info  */
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background-color: darkgrey;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  font-style: italic;
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+}
 
 /***********************************************/
 /*  Top toolbar for the type-along interface   */
