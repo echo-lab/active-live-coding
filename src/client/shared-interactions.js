@@ -228,21 +228,29 @@ export function setUpSurveyModal({ userId, getSessionNumber }) {
   const closeButton = document.querySelector("#survey-close");
   const errorMessage = document.querySelector("#survey-error");
   const reviewLink = document.querySelector("#review-survey");
-  const openResponseField = document.querySelector("#survey-open-response");
-  const participationRadios = document.querySelectorAll(
-    'input[name="survey-participation"]'
-  );
-  const easeRadios = document.querySelectorAll('input[name="survey-ease"]');
+
+  // Likert groups and free-response fields are discovered from the DOM
+  // (rather than hardcoded by name) so that adding, removing, or reordering
+  // survey questions in student-page.html never requires touching this file.
+  const likertGroupNames = [
+    ...new Set(
+      [...modal.querySelectorAll('input[type="radio"]')].map((r) => r.name)
+    ),
+  ];
+  const openFields = [...modal.querySelectorAll("textarea")];
+  const fieldKey = (domName) => domName.replace(/^survey-/, "");
 
   function show() {
     const existing = getSurveyResponse();
-    participationRadios.forEach(
-      (r) => (r.checked = existing != null && r.value === existing.participation)
-    );
-    easeRadios.forEach(
-      (r) => (r.checked = existing != null && r.value === existing.ease)
-    );
-    openResponseField.value = existing?.open_response ?? "";
+    likertGroupNames.forEach((name) => {
+      const key = fieldKey(name);
+      modal.querySelectorAll(`input[name="${name}"]`).forEach((r) => {
+        r.checked = existing != null && r.value === existing[key];
+      });
+    });
+    openFields.forEach((field) => {
+      field.value = existing?.[fieldKey(field.id)] ?? "";
+    });
     errorMessage.textContent = "";
     modal.style.display = "flex";
   }
@@ -252,19 +260,18 @@ export function setUpSurveyModal({ userId, getSessionNumber }) {
   }
 
   async function submit() {
-    const participation = document.querySelector(
-      'input[name="survey-participation"]:checked'
-    );
-    const ease = document.querySelector('input[name="survey-ease"]:checked');
-    if (!participation || !ease) {
-      errorMessage.textContent = "Please answer each question above.";
-      return;
+    const answers = {};
+    for (const name of likertGroupNames) {
+      const checked = modal.querySelector(`input[name="${name}"]:checked`);
+      if (!checked) {
+        errorMessage.textContent = "Please answer each question above.";
+        return;
+      }
+      answers[fieldKey(name)] = checked.value;
     }
-    const answers = {
-      participation: participation.value,
-      ease: ease.value,
-      open_response: openResponseField.value,
-    };
+    openFields.forEach((field) => {
+      answers[fieldKey(field.id)] = field.value;
+    });
     setSurveyResponse(answers);
     close();
     try {
@@ -272,9 +279,7 @@ export function setUpSurveyModal({ userId, getSessionNumber }) {
         body: JSON.stringify({
           student_id: userId,
           lectureId: getSessionNumber(),
-          participation_rating: answers.participation,
-          ease_rating: answers.ease,
-          open_response: answers.open_response,
+          ...answers,
         }),
         ...POST_JSON_REQUEST,
       });

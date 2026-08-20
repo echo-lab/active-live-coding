@@ -363,21 +363,32 @@ app.post("/api/consent", async (req, res) => {
 // Always creates a new row -- resubmitting the survey never overwrites a
 // prior response, so we keep the full history with timestamps.
 app.post("/api/survey-response", async (req, res) => {
-  let { student_id, lectureId, participation_rating, ease_rating, open_response } =
-    req.body;
-  if (!student_id || !participation_rating || !ease_rating) {
-    return res.json({
-      error: "student_id, participation_rating, and ease_rating are required",
-    });
+  let {
+    student_id,
+    lectureId,
+    likert1,
+    likert2,
+    likert3,
+    likert4,
+    likert5,
+    open1,
+    open2,
+  } = req.body;
+  if (!student_id) {
+    return res.json({ error: "student_id is required" });
   }
   try {
     let lecture = lectureId ? await LectureSession.findByPk(lectureId) : null;
     await SurveyResponse.create({
       LectureSessionId: lecture ? lecture.id : null,
       student_id,
-      participation_rating,
-      ease_rating,
-      open_response: open_response ?? null,
+      likert1: likert1 ?? null,
+      likert2: likert2 ?? null,
+      likert3: likert3 ?? null,
+      likert4: likert4 ?? null,
+      likert5: likert5 ?? null,
+      open1: open1 ?? null,
+      open2: open2 ?? null,
       submitted_ts: Date.now(),
     });
     res.json({ ok: true });

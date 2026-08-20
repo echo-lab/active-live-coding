@@ -606,7 +606,7 @@ pre {
   margin: 0;
 }
 
-#survey-open-response {
+.survey-textarea {
   width: 100%;
   font-family: inherit;
   font-size: small;

@@ -400,15 +400,31 @@ SurveyResponse.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    participation_rating: {
+    likert1: {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    ease_rating: {
+    likert2: {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    open_response: {
+    likert3: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    likert4: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    likert5: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    open1: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    open2: {
       type: DataTypes.TEXT,
       allowNull: true,
     },
