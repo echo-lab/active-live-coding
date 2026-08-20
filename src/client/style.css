@@ -1410,6 +1410,7 @@ td {
 .cm-version-block-btn.cm-version-block-minimize {
   font-size: 11px;
   color: #888;
+  display: none;
 }
 
 .cm-version-block-widget.minimized {
