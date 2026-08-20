@@ -56,7 +56,7 @@ export function setSurveyResponse(answers) {
 }
 
 export function shouldSimulateResponses() {
-  return localStorage.getItem("should_simulate_responses") !== "false";
+  return localStorage.getItem("should_simulate_responses") === "true";
 }
 
 export function setupSimulateResponsesCheckbox(cls) {
