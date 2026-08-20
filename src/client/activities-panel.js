@@ -319,6 +319,80 @@ function renderResponseEl(response, ex, anonLabels, onAddAsVariant) {
   return div;
 }
 
+// Renders one response-group: a plain header (description + count/percentage + expand toggle)
+// followed by a body that's either "first card + N more" (collapsed) or all cards in a
+// scrollable list (expanded). Both the header toggle and the "+more" pill drive the same
+// `expanded` flag through one render() function, so they can't fall out of sync with each other.
+function buildResponseGroupEl(group, responses, ex, anonLabels, onAddAsVariant, totalResolved) {
+  const pct = Math.round((responses.length / totalResolved) * 100);
+  const hasMore = responses.length > 1;
+
+  const groupEl = document.createElement("div");
+  groupEl.className = "response-group";
+
+  const headerEl = document.createElement("div");
+  headerEl.className = "group-header";
+  const descEl = document.createElement("span");
+  descEl.className = "group-description";
+  descEl.textContent = group.description;
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "group-header-meta";
+  const countEl = document.createElement("span");
+  countEl.className = "group-count";
+  countEl.textContent = `${responses.length} · ${pct}%`;
+  metaEl.appendChild(countEl);
+
+  let toggleBtn = null;
+  if (hasMore) {
+    toggleBtn = document.createElement("button");
+    toggleBtn.className = "group-toggle-btn";
+    metaEl.appendChild(toggleBtn);
+  }
+
+  headerEl.appendChild(descEl);
+  headerEl.appendChild(metaEl);
+  groupEl.appendChild(headerEl);
+
+  const bodyEl = document.createElement("div");
+  groupEl.appendChild(bodyEl);
+
+  let expanded = false;
+  function render() {
+    if (toggleBtn) {
+      toggleBtn.textContent = expanded ? "Collapse ▲" : "▼";
+      toggleBtn.title = expanded ? "Collapse" : "Expand";
+    }
+
+    bodyEl.innerHTML = "";
+    if (!expanded) {
+      bodyEl.appendChild(renderResponseEl(responses[0], ex, anonLabels, onAddAsVariant));
+      if (hasMore) {
+        const moreBtn = document.createElement("button");
+        moreBtn.className = "group-more-btn";
+        moreBtn.textContent = `+${responses.length - 1} more`;
+        moreBtn.addEventListener("click", toggle);
+        bodyEl.appendChild(moreBtn);
+      }
+    } else {
+      const scrollEl = document.createElement("div");
+      scrollEl.className = "group-cards-scroll";
+      responses.forEach((r) => {
+        scrollEl.appendChild(renderResponseEl(r, ex, anonLabels, onAddAsVariant));
+      });
+      bodyEl.appendChild(scrollEl);
+    }
+  }
+  function toggle() {
+    expanded = !expanded;
+    render();
+  }
+  if (toggleBtn) toggleBtn.addEventListener("click", toggle);
+  render();
+
+  return groupEl;
+}
+
 // Renders all student responses into responsesEl, optionally grouped.
 function renderResponsesEl(responsesEl, ex, groups, onAddAsVariant) {
   if (!ex.ExerciseResponses || ex.ExerciseResponses.length === 0) {
@@ -339,53 +413,19 @@ function renderResponsesEl(responsesEl, ex, groups, onAddAsVariant) {
     responseById[key] = r;
   });
 
-  groups.forEach((group) => {
-    let responses = group.response_ids
-      .map((id) => responseById[id])
-      .filter(Boolean);
-    if (responses.length === 0) return;
+  let resolvedGroups = groups
+    .map((group) => ({
+      group,
+      responses: group.response_ids.map((id) => responseById[id]).filter(Boolean),
+    }))
+    .filter(({ responses }) => responses.length > 0);
 
-    let groupEl = document.createElement("div");
-    groupEl.className = "response-group";
+  let totalResolved = resolvedGroups.reduce((sum, { responses }) => sum + responses.length, 0);
 
-    let headerEl = document.createElement("div");
-    headerEl.className = "group-header";
-    let descEl = document.createElement("span");
-    descEl.className = "group-description";
-    descEl.textContent = group.description;
-    let countEl = document.createElement("span");
-    countEl.className = "group-count";
-    countEl.textContent = `(x${responses.length})`;
-    headerEl.appendChild(descEl);
-    headerEl.appendChild(countEl);
-    groupEl.appendChild(headerEl);
-
-    groupEl.appendChild(renderResponseEl(responses[0], ex, anonLabels, onAddAsVariant));
-
-    if (responses.length > 1) {
-      let extraEl = document.createElement("div");
-      extraEl.className = "group-extra-responses";
-      extraEl.hidden = true;
-      responses.slice(1).forEach((r) => {
-        extraEl.appendChild(renderResponseEl(r, ex, anonLabels, onAddAsVariant));
-      });
-
-      let toggleBtn = document.createElement("button");
-      toggleBtn.className = "group-toggle-btn";
-      toggleBtn.textContent = `▶ Show ${responses.length - 1} more`;
-      toggleBtn.addEventListener("click", () => {
-        let collapsed = extraEl.hidden;
-        extraEl.hidden = !collapsed;
-        toggleBtn.textContent = collapsed
-          ? "▼ Show less"
-          : `▶ Show ${responses.length - 1} more`;
-      });
-
-      groupEl.appendChild(toggleBtn);
-      groupEl.appendChild(extraEl);
-    }
-
-    responsesEl.appendChild(groupEl);
+  resolvedGroups.forEach(({ group, responses }) => {
+    responsesEl.appendChild(
+      buildResponseGroupEl(group, responses, ex, anonLabels, onAddAsVariant, totalResolved)
+    );
   });
 }
 
@@ -706,6 +746,7 @@ class PollExerciseWidget {
     this._buildHeader();
 
     this._responsesEl = document.createElement("div");
+    this._responsesEl.className = "responses-list";
     this.pollEl.appendChild(this._responsesEl);
 
     if (loading) {
@@ -743,6 +784,7 @@ class CodeExerciseSummaryWidget {
     this.codeExerciseEl.appendChild(buildActivityHeader({ onBack: this._onBack, onClose: this._onClose }));
 
     this._responsesEl = document.createElement("div");
+    this._responsesEl.className = "responses-list";
     this.codeExerciseEl.appendChild(this._responsesEl);
 
     if (loading) {
