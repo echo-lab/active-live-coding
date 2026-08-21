@@ -12,6 +12,7 @@ export default defineConfig({
         instructor: resolve(__dirname, "pages/instructor.html"),
         studentPage: resolve(__dirname, "pages/student-page.html"),
         reviewLecture: resolve(__dirname, "pages/review-lecture.html"),
+        lectureList: resolve(__dirname, "pages/lecture-list.html"),
         listSessions: resolve(__dirname, "pages/analysis/sessions.html"),
         sessionDeets: resolve(__dirname, "pages/analysis/session.html"),
       },

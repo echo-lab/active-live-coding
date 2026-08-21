@@ -73,6 +73,34 @@ app.get("/session-details", async (req, res) => {
   res.json({ error: "Not implemented" });
 });
 
+// MARK: List my lectures
+// Return lectures created by the given user, most recent first, for lecture-list.html.
+app.get("/my-lectures", async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.json({ error: "userId is required" });
+  try {
+    let response = await db.transaction(async (t) => {
+      let sessions = await LectureSession.findAll({
+        where: { instructor_id: userId },
+        order: [["createdAt", "DESC"]],
+        transaction: t,
+      });
+      let lectures = sessions
+        .filter((sesh) => sesh.uuid) // older lectures predate the uuid column and have no review link
+        .map((sesh) => ({
+          uuid: sesh.uuid,
+          name: sesh.name,
+          createdAt: sesh.createdAt,
+        }));
+      return { lectures };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Error fetching lectures for user:", error);
+    res.json({ error: error.message });
+  }
+});
+
 // MARK: Get/create lecture
 // Get or create a lecture session
 app.post("/lecture-session", async (req, res) => {
