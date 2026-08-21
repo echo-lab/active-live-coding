@@ -44,15 +44,28 @@ export function setConsentChoice(consented) {
   localStorage.setItem("consent_choice", String(consented));
 }
 
+const SURVEY_RESPONSE_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 hours
+
 // Returns the student's last-submitted survey answers, or null if they
-// haven't submitted the survey yet.
+// haven't submitted the survey yet (or it's more than 8 hours old).
 export function getSurveyResponse() {
-  let val = localStorage.getItem("survey_response");
-  return val ? JSON.parse(val) : null;
+  const val = localStorage.getItem("survey_response");
+  if (!val) return null;
+  let timestamp, answers;
+  try {
+    ({ timestamp, answers } = JSON.parse(val));
+  } catch {
+    return null;
+  }
+  if (Date.now() - timestamp > SURVEY_RESPONSE_MAX_AGE_MS) return null;
+  return answers;
 }
 
 export function setSurveyResponse(answers) {
-  localStorage.setItem("survey_response", JSON.stringify(answers));
+  localStorage.setItem(
+    "survey_response",
+    JSON.stringify({ timestamp: Date.now(), answers })
+  );
 }
 
 export function shouldSimulateResponses() {
