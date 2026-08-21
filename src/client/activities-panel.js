@@ -95,7 +95,7 @@ function isAnchorDeleted(ex) {
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView, closeHistoricalView }) {
+  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView, closeHistoricalView, reviewMode = false }) {
     this.manager = manager;
     this.student_id = student_id;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
@@ -105,6 +105,7 @@ export class StudentActivitiesPanel {
     this._scrollToExercise = scrollToExercise;
     this._openHistoricalView = openHistoricalView;
     this._closeHistoricalView = closeHistoricalView;
+    this.reviewMode = reviewMode;
     this._selectedActivityId = null;
 
     this.listEl = document.querySelector("#student-activities-list");
@@ -157,6 +158,7 @@ export class StudentActivitiesPanel {
   // when the anchor's gone: the historical tab already shows its own popover, and students have
   // no sidebar summary to fall back to, so there's nothing else to do here.
   _openActivePopover(ex) {
+    if (this.reviewMode) return this._openFinished(ex);
     if (isAnchorDeleted(ex)) return;
     this._scrollToExercise?.(ex);
     this._activePopover.open({ exercise: ex, anchor: this._getAnchor(ex) });

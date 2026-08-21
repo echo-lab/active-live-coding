@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import ViteExpress from "vite-express";
 import * as http from "http";
+import { randomUUID } from "node:crypto";
 import { Server } from "socket.io";
 import { db } from "./database.js";
 import {
@@ -85,7 +86,7 @@ app.post("/lecture-session", async (req, res) => {
       let sesh =
         (await LectureSession.current(sessionName, t)) ??
         (await LectureSession.create(
-          { name: sessionName, instructor_id: userId },
+          { name: sessionName, instructor_id: userId, uuid: randomUUID() },
           { transaction: t },
         ));
       if (sesh.instructor_id !== userId) {
@@ -101,6 +102,7 @@ app.post("/lecture-session", async (req, res) => {
         doc: doc.toJSON(),
         docVersion,
         sessionNumber: sesh.id,
+        uuid: sesh.uuid,
         exercises,
         versionBlocks,
       };
@@ -337,6 +339,43 @@ app.post("/current-session-student", async (req, res) => {
 
 app.post("/record-playground-changes", async (req, res) => {
   return res.json({ error: "no longer supported" });
+});
+
+// MARK: Read-only lecture review
+// Returns a one-shot snapshot of a lecture's current state for the read-only review page,
+// keyed by the lecture's uuid (its access token). Only includes the given student's own
+// exercise responses, mirroring getExercisesForStudent's use in /current-session-student --
+// no studentId means no responses (never "everyone's responses").
+app.get("/review-lecture", async (req, res) => {
+  const { id, studentId } = req.query;
+  if (!id) return res.json({ error: "id is required" });
+
+  await flushInstructorChanges();
+
+  try {
+    const response = await db.transaction(async (t) => {
+      const lecture = await LectureSession.findOne({ where: { uuid: id }, transaction: t });
+      if (!lecture) return { error: "Lecture not found" };
+
+      const { doc: lectureDoc, docVersion: lectureDocVersion } = await lecture.getDoc(t);
+      const exercises = await lecture.getExercisesForStudent(studentId ?? "", t);
+      const versionBlocks = await lecture.getVersionBlocksWithPositions(t);
+
+      return {
+        name: lecture.name,
+        isFinished: lecture.isFinished,
+        sessionNumber: lecture.id,
+        lectureDoc,
+        lectureDocVersion,
+        exercises,
+        versionBlocks,
+      };
+    });
+    res.json(response);
+  } catch (error) {
+    console.error("Error fetching lecture for review:", error);
+    res.json({ error: error.message });
+  }
 });
 
 // MARK: record consent

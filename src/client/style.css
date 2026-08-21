@@ -404,6 +404,29 @@ pre {
   margin-left: 20px;
 }
 
+#session-info .review-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 20px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #646cff;
+  cursor: pointer;
+}
+
+.review-link-btn:hover {
+  color: #4a50cc;
+  text-decoration: underline;
+}
+
+.review-link-icon {
+  flex-shrink: 0;
+}
+
 .info-icon {
   display: inline-flex;
   align-items: center;

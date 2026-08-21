@@ -326,6 +326,13 @@ LectureSession.init(
       allowNull: false,
       defaultValue: false,
     },
+    // Unguessable per-lecture id used as the access token for the read-only review page
+    // (review-lecture.html?id=<uuid>). Not backfilled for lectures created before this
+    // column existed -- those simply have no review link.
+    uuid: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
   { sequelize },
 );

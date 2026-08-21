@@ -61,10 +61,11 @@ function scrollPollMarkerIntoView(view, id) {
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker}) {
+  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false}) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     this.activitiesManager = activitiesManager;
+    this._reviewMode = reviewMode;
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
@@ -135,7 +136,7 @@ export class StudentCodeEditor {
 
   addVersionBlock({from, to, versionBlockId, variants}) {
     // console.log("adding version block: ", {from, to, versionBlockId, variants});
-    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view});
+    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),

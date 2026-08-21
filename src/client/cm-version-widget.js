@@ -32,7 +32,7 @@ export function setVersionBlockReadOnly(v) {
 // MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
-  constructor({ versionBlockId, variants, activitiesManager = null, outerView = null }) {
+  constructor({ versionBlockId, variants, activitiesManager = null, outerView = null, reviewMode = false }) {
     super();
     this.versionBlockId = versionBlockId;
     this.selectedIndex = 0;
@@ -43,6 +43,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     this.minimizeBtn = null;
 
     this._outerView = outerView;
+    this._reviewMode = reviewMode;
 
     // Student exercise state
     this._activitiesManager = activitiesManager;
@@ -332,7 +333,10 @@ export class StudentVersionBlockWidget extends WidgetType {
       const ex = this._activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
       if (ex) {
         const hasResponse = ex.ExerciseResponses?.length > 0;
-        if (!ex.end_ts) {
+        if (this._reviewMode) {
+          if (hasResponse) this._activateExercise(ex, { readOnly: true });
+          // else: no response from this viewer -- show nothing, per "just don't show a response".
+        } else if (!ex.end_ts) {
           this._activateExercise(ex);
         } else if (hasResponse) {
           this._activateExercise(ex, { readOnly: true });

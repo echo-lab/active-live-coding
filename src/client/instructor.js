@@ -86,8 +86,23 @@ async function getOrCreateSession(sessionName) {
   modal.style.display = "none";
   document.querySelector("#session-name-display").innerText =
     `Lecture ID: ${sessionName}`;
+  setUpCopyReviewLink(res.uuid);
   initialize(res);
   return res.sessionNumber;
+}
+
+function setUpCopyReviewLink(uuid) {
+  if (!uuid) return;
+  const btn = document.querySelector("#copy-review-link-btn");
+  const label = btn.querySelector(".review-link-text");
+  btn.hidden = false;
+  btn.addEventListener("click", async () => {
+    const url = `${location.origin}/pages/review-lecture.html?id=${uuid}`;
+    await navigator.clipboard.writeText(url);
+    const original = label.textContent;
+    label.textContent = "Copied!";
+    setTimeout(() => { label.textContent = original; }, 1500);
+  });
 }
 
 const tryStartSession = async () => {

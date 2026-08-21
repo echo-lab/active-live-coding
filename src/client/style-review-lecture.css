@@ -1,0 +1,28 @@
+/* review-lecture.html reuses the student page's grid layout (style-student-page.css) but
+   drops the console row -- the review page has no "Run" capability. */
+#student-page-interface.review-page .parent-container {
+  grid-template-rows: [toolbar] 40px [code] auto;
+  grid-template-areas:
+    "code-tabs gutter activities-display"
+    "code-display gutter activities-display";
+}
+
+.review-mode-label {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.review-in-progress-banner {
+  background-color: #fff6d6;
+  border-bottom: 1px solid #e0d090;
+  padding: 6px 12px;
+  font-size: 0.9em;
+  text-align: center;
+}
+
+#review-error {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #b00020;
+  font-size: 1.1rem;
+}

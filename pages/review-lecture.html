@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Live Coding Lecture (Review)</title>
+  </head>
+  <body id="student-page-interface" class="review-page">
+    <div id="app">
+      <div class="topbar">
+        <div class="topbar-left">
+          <span>
+            <span id="session-name-display"></span>
+          </span>
+        </div>
+        <div class="topbar-right">
+          <span class="review-mode-label">Read-only review</span>
+        </div>
+      </div>
+      <div id="review-banner" class="review-in-progress-banner" hidden>
+        This lecture may still in progress — showing the latest available state.
+      </div>
+      <div id="review-error" hidden></div>
+      <div class="parent-container" id="review-parent-container">
+        <div id="code-tabs">
+          <div id="code-tabs-inner">
+            <div class="code-tab selected blink-tab" id="instructor-code-tab">
+              <div class="code-tab-text">instructor.py</div>
+            </div>
+            <div class="code-tab historical-code-tab" id="historical-code-tab" hidden>
+              <div class="code-tab-text" id="historical-code-tab-text"></div>
+              <button class="historical-code-tab-close" aria-label="Close">×</button>
+            </div>
+          </div>
+          <button id="open-activities-panel">activities list</button>
+        </div>
+        <div id="instructor-code-container" class="code-container uneditable"></div>
+        <div id="historical-code-container" class="code-container historical-code-container" hidden>
+          <div class="historical-banner">
+            <span>Viewing a past version — read only</span>
+            <button id="return-to-live-btn">Back to lecture</button>
+          </div>
+          <div class="historical-editor-mount"></div>
+        </div>
+        <div id="resize-activities"></div>
+        <div id="activities-container">
+          <div id="student-activities-list">
+            <div id="student-activities-list-header" class="poll-activity-header">
+              <span>Activities</span>
+              <button id="student-activities-list-close" class="poll-popover-close" aria-label="Close">×</button>
+            </div>
+            <div id="student-activities-list-items"></div>
+            <div id="student-activities-placeholder">No activities yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/client/review-lecture.js"></script>
+  </body>
+</html>

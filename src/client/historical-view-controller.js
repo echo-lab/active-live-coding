@@ -36,6 +36,7 @@ export function createHistoricalViewController({
   createCompletePopover, // ({showPollPopover, hidePollPopover, coordinator, onClose, manager}) => popover instance
   onClose, // (exerciseId) => void, called whenever the historical tab for that exercise tears down
   studentId = null, // when set (student page), also fetch this student's own answer to show as a trailing tab
+  reviewMode = false, // when true, always show the read-only complete popover, even for a poll the instructor never finished
 }) {
   let historicalEditor = null;
   let historicalPopover = null;
@@ -54,7 +55,7 @@ export function createHistoricalViewController({
   // "which popover for this state" decision. Reuses the SAME coordinator across a swap so opening
   // the complete popover auto-closes the still-open active one (PollPopoverCoordinator.notifyOpening).
   function openPollPopover(anchor) {
-    const isActive = currentExercise.end_ts == null;
+    const isActive = !reviewMode && currentExercise.end_ts == null;
     historicalPopoverIsActive = isActive;
     const baseArgs = {
       showPollPopover: (args) => historicalEditor.showPollPopover(args),
