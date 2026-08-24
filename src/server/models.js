@@ -5,12 +5,10 @@ import { db as sequelize } from "./database.js";
 /*
 LectureSession
   InstructorChange
-  InstructorAction
   ClassExercise
     ExerciseResponse
     SimulatedExerciseResponse
   StudentSession          (new student interface: student-page.html)
-    StudentAction
     ExerciseResponse
 */
 
@@ -19,15 +17,6 @@ const CODE_CHANGE_SCHEMA = {
   change_number: DataTypes.INTEGER,
   change: DataTypes.TEXT,
   change_ts: DataTypes.INTEGER,
-};
-
-// Actions that are NOT document/code edits, e.g., running code; copying code into the playground.
-const USER_ACTION_SCHEMA = {
-  action_ts: DataTypes.INTEGER,
-  code_version: DataTypes.INTEGER,
-  doc_version: DataTypes.INTEGER,
-  action_type: DataTypes.STRING,
-  details: DataTypes.STRING,
 };
 
 export function reconstructCMDoc(changes) {
@@ -666,18 +655,6 @@ export class InstructorChange extends Model {}
 InstructorChange.init(CODE_CHANGE_SCHEMA, { sequelize });
 LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionId" });
 InstructorChange.belongsTo(LectureSession);
-
-// MARK: Action Logging
-export class InstructorAction extends Model {}
-InstructorAction.init(USER_ACTION_SCHEMA, { sequelize });
-LectureSession.hasMany(InstructorAction, { foreignKey: "LectureSessionId" });
-InstructorAction.belongsTo(LectureSession);
-
-// TODO: Figure out if this is used, and possibly NIX/edit
-export class StudentAction extends Model {}
-StudentAction.init(USER_ACTION_SCHEMA, { sequelize });
-StudentSession.hasMany(StudentAction, { foreignKey: "StudentSessionId" });
-StudentAction.belongsTo(StudentSession);
 
 // MARK: VersionBlock
 export class VersionBlock extends Model {

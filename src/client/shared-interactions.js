@@ -1,4 +1,4 @@
-import { CLIENT_TYPE, USER_ACTIONS } from "../shared-constants";
+import { CLIENT_TYPE, EVENT_TYPES } from "../shared-constants";
 import {
   clearEmail,
   getConsentChoice,
@@ -10,6 +10,66 @@ import {
 
 const MAX_OUTPUT_LENGTH = 50;
 
+// MARK: Event logging
+const EVENT_FLUSH_INTERVAL_MS = 15000;
+const getJitter = () => Math.random() * 5000; // staggers clients so they don't all flush at once
+
+async function gzipCompress(str) {
+  let stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function uint8ToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// Buffers {timestamp, payload} events for one (isStudent, userId, lectureId)
+// context and flushes them, compressed as a single batch, on a jittered timer.
+export class ClientEventsBuffer {
+  constructor(isStudent, userId, lectureId) {
+    this.isStudent = isStudent;
+    this.userId = userId;
+    this.lectureId = lectureId;
+    this.queue = [];
+    this._scheduleFlush();
+  }
+
+  recordEvent(timestamp, payload) {
+    this.queue.push({ timestamp, payload });
+  }
+
+  _scheduleFlush() {
+    setTimeout(() => this.flush(), EVENT_FLUSH_INTERVAL_MS + getJitter());
+  }
+
+  async flush() {
+    if (this.queue.length > 0) {
+      let events = this.queue;
+      this.queue = [];
+      try {
+        let compressed = await gzipCompress(JSON.stringify(events));
+        await fetch("/api/events", {
+          body: JSON.stringify({
+            isStudent: this.isStudent,
+            userId: this.userId,
+            lectureId: this.lectureId,
+            eventArray: uint8ToBase64(compressed),
+          }),
+          ...POST_JSON_REQUEST,
+        });
+      } catch (e) {
+        console.error("Failed to flush events:", e); // best-effort; dropped events are not retried
+      }
+    }
+    this._scheduleFlush();
+  }
+}
+
 // Wrapping this in an object so we can swap out the editor when we have multiple tabs.
 export class RunInteractions {
   constructor({
@@ -19,23 +79,17 @@ export class RunInteractions {
     consoleOutput,
     sessionNumber,
     source,
-    email,
     userId,
-    logRuns = true,
     broadcastResult = () => {},
   }) {
     this.editor = codeEditor;
     this.running = false;
-    this.logRuns = logRuns;
 
     this.el = runButtonEl;
     this.runner = codeRunner;
     this.console = consoleOutput;
-    this.sessionNumber = sessionNumber;
-    this.source = source;
-    this.email = email;
-    this.userId = userId;
     this.broadcastResult = broadcastResult;
+    this.eventsBuffer = new ClientEventsBuffer(source === CLIENT_TYPE.STUDENT, userId, sessionNumber);
 
     runButtonEl.addEventListener("click", this.runCode.bind(this));
   }
@@ -51,25 +105,12 @@ export class RunInteractions {
     this.el.disabled = true;
     this.el.textContent = "Running...";
 
-    // Record the action on the server. No need to await.
-    if (this.logRuns) {
-      let payload = {
-        ts: Date.now(),
-        codeVersion: this.editor.getDocVersion(),
-        actionType: USER_ACTIONS.CODE_RUN,
-        sessionNumber: this.sessionNumber,
-        source: this.source,
-        email: this.email,
-        userId: this.userId,
-      };
-      fetch("/record-user-action", {
-        body: JSON.stringify(payload),
-        ...POST_JSON_REQUEST,
-      });
-    }
+    // Record the event on the server. No need to await.
+    let ts = Date.now();
+    let code = this.editor.currentCode();
+    this.eventsBuffer.recordEvent(ts, { type: EVENT_TYPES.CODE_RUN, timestamp: ts, code });
 
     let minRunTime = new Promise((resolve) => setTimeout(resolve, 500));
-    let code = this.editor.currentCode();
     let res = await this.runner.asyncRun(code);
     await minRunTime;
     this.console.addResult({ fileName: this.editor.fileName, ...res });

@@ -1,11 +1,5 @@
-export const USER_ACTIONS = Object.freeze({
-  CODE_RUN: "CODE_RUN",
-  OPEN_INST_CODE_PLAYGROUND: "OPEN_INST_CODE_PLAYGROUND",
-  OPEN_SNAPSHOT_PLAYGROUND: "OPEN_SNAPSHOT_PLAYGROUND",
-  SWITCH_TAB: "SWITCH_TAB",
-  SUBMIT_CODE: "SUBMIT_CODE",  // For quizzes.
-  LOAD_PAGE: "LOAD_PAGE",  // For quizzes/reviewing notes.
-  VISIBILITY_CHANGE: "VISIBILITY_CHANGE", // For reviewing notes only.
+export const EVENT_TYPES = Object.freeze({
+  CODE_RUN: 0,
 });
 
 export const ANONYMOUS_STUDENT_MODE = true;

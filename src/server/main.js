@@ -23,13 +23,16 @@ import { ChangeSet } from "@codemirror/state";
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { suggestMcqChoices } from "./suggest-mcq-choices.js";
 import { createGroupSummary } from "./group-responses.js";
-import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
+import { eventsDb } from "./events-database.js";
+import { EventBuffer } from "./event-buffer.js";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
 let instructorChangeBuffer = new ChangeBuffer(5000, db);
+let eventBuffer = new EventBuffer(30000);
 let flushInstructorChanges = async () => {
   try {
     await db.transaction(async (t) => {
@@ -464,58 +467,21 @@ app.post("/api/survey-response", async (req, res) => {
   }
 });
 
-// MARK: record action
-app.post("/record-user-action", async (req, res) => {
-  let {
-    ts,
-    docVersion,
-    codeVersion,
-    actionType,
-    sessionNumber,
-    source,
-    email,
-    details,
-    userId,
-  } = req.body;
-  if (!source) return;
-
-  try {
-    let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.findByPk(sessionNumber, {
-        transaction: t,
-      });
-      if (!lecture)
-        throw new Error(
-          `Can't record user action for non-existing session #${sessionNumber}`,
-        );
-
-      const record = {
-        action_ts: ts,
-        code_version: codeVersion,
-        doc_version: docVersion,
-        action_type: actionType,
-        details,
-      };
-
-      if (source === CLIENT_TYPE.INSTRUCTOR) {
-        if (lecture.instructor_id !== userId) {
-          throw new Error(
-            "Unauthorized: user ID does not match session instructor",
-          );
-        }
-        await lecture.createInstructorAction(record, { transaction: t });
-      } else if (source === CLIENT_TYPE.STUDENT) {
-        console.log("Student action logging not supported.")
-      } else {
-        throw new Error(`User action with unknown source: ${source}`);
-      }
-      return { success: true };
+// MARK: record events
+// eventArray is a client-compressed batch of {timestamp, payload} events;
+// it's stored as-is (one row per batch, not per event) -- see event-buffer.js.
+app.post("/api/events", (req, res) => {
+  let { isStudent, userId, lectureId, eventArray } = req.body;
+  if (typeof eventArray === "string") {
+    eventBuffer.enqueue({
+      isStudent,
+      userId,
+      lectureId,
+      timestamp: Date.now(),
+      payload: Buffer.from(eventArray, "base64"),
     });
-    res.json(response);
-  } catch (error) {
-    console.error("Failed to log user action", error);
-    return { error: error.message };
   }
+  res.json({ success: true });
 });
 
 // MARK: create exercise
@@ -771,6 +737,7 @@ app.post("/exercise/response", async (req, res) => {
 // models), never drops/alters existing ones. See DANGER_sync_db.js for the
 // destructive force-sync used when resetting the whole dev DB.
 await db.sync();
+await eventsDb.sync();
 
 const server = http.createServer(app).listen(3000, () => {
   console.log("Server is listening!");
