@@ -6,8 +6,9 @@ import { python } from "@codemirror/lang-python";
 import { indentUnit } from "@codemirror/language";
 import { VariantCodeEditor, VariantCodeFollowingEditor, ReviewCodeEditor } from "./code-editors.js";
 import { followInstructorExtensions, setInstructorSelection } from "./cm-extensions.js";
-import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, PATCH_JSON_REQUEST, PUT_JSON_REQUEST } from "./utils.js";
+import { recordEvent } from "./shared-interactions.js";
 
 // ============================================================
 // MARK: Module-level state
@@ -182,6 +183,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     el.hidden = true;
     this._studentAnswerEl = el;
 
+    let hasStarted = false;
     this._studentAnswerView = new EditorView({
       state: EditorState.create({
         doc: initialDoc,
@@ -191,6 +193,12 @@ export class StudentVersionBlockWidget extends WidgetType {
           indentUnit.of("    "),
           keymap.of([indentWithTab]),
           EditorView.lineWrapping,
+          EditorView.updateListener.of((vu) => {
+            if (vu.docChanged && !hasStarted) {
+              hasStarted = true;
+              recordEvent(EVENT_TYPES.STUDENT_START_EXERCISE, { exerciseId: exercise.id });
+            }
+          }),
           ...(readOnly ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : []),
         ],
       }),
@@ -232,6 +240,12 @@ export class StudentVersionBlockWidget extends WidgetType {
   }
 
   _deactivateExercise() {
+    if (this._exerciseId != null && this._studentAnswerView) {
+      recordEvent(EVENT_TYPES.STUDENT_END_EXERCISE, {
+        exerciseId: this._exerciseId,
+        answer: this._studentAnswerView.state.doc.toString(),
+      });
+    }
     this._exerciseReadOnly = true;
     if (this._submitBtn) {
       this._submitBtn.hidden = true;
@@ -822,6 +836,11 @@ export class VersionBlockWidget extends WidgetType {
       if (!variant) return;
       this._mountVariant(variant);
       this._broadcastVariantAdded(variant);
+      recordEvent(EVENT_TYPES.INSTRUCTOR_CREATE_VARIANT, {
+        variantId: variant.id,
+        versionBlockId: this.versionBlockId,
+        fromImport: false,
+      });
     } catch (err) {
       console.error("Failed to add variant:", err);
     }
@@ -843,6 +862,11 @@ export class VersionBlockWidget extends WidgetType {
       const variant = { ...created, code, docVersion: created.docVersion + 1 };
       this._mountVariant(variant);
       this._broadcastVariantAdded(variant);
+      recordEvent(EVENT_TYPES.INSTRUCTOR_CREATE_VARIANT, {
+        variantId: variant.id,
+        versionBlockId: this.versionBlockId,
+        fromImport: true,
+      });
     } catch (err) {
       console.error("Failed to add variant from response:", err);
     }
@@ -950,6 +974,12 @@ export class VersionBlockWidget extends WidgetType {
 
     this.tabEls[this.selectedIndex]?.classList.remove("selected");
     const [removed] = this.variants.splice(index, 1);
+    recordEvent(EVENT_TYPES.INSTRUCTOR_DESTROY_VARIANT, {
+      variantId,
+      versionBlockId: this.versionBlockId,
+      name: removed.name,
+      code: removed.editor.currentCode(),
+    });
     removed.el.remove();
     removed.editor.destroy();
     this.tabEls.splice(index, 1)[0]?.remove();

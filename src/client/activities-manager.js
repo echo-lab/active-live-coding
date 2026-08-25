@@ -1,5 +1,6 @@
-import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
+import { recordEvent } from "./shared-interactions.js";
 
 // MARK: Instructor
 export class InstructorActivitiesManager extends EventTarget {
@@ -373,6 +374,7 @@ export class StudentActivitiesManager extends EventTarget {
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
     if (res.error) throw new Error(res.error);
+    recordEvent(EVENT_TYPES.STUDENT_SUBMIT_EXERCISE, { exerciseId, answer });
     this.socket.emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, {
       sessionNumber: this.sessionNumber,
       exerciseId,

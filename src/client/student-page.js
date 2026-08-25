@@ -5,7 +5,6 @@ import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
 import { StudentCodeEditor } from "./code-editors.js";
-import { fillInBlankViewField } from "./cm-fill-in-the-blank.js";
 import {
   versionBlocksField,
   setVersionBlockReadOnly,
@@ -13,6 +12,7 @@ import {
 import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
+  initEventLogging,
   makeActivitiesPanelResizable,
   makeConsoleResizable,
   RunInteractions,
@@ -22,7 +22,6 @@ import {
   setupJoinLectureModalV2,
 } from "./shared-interactions.js";
 import {
-  CLIENT_TYPE,
   SOCKET_MESSAGE_TYPE,
 } from "../shared-constants.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
@@ -108,6 +107,8 @@ async function initialize({
 }) {
   socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
 
+  initEventLogging(/*isStudent=*/ true, userId, sessionNumber);
+
   let sessionActive = true;
 
   setVersionBlockReadOnly(true);
@@ -146,9 +147,6 @@ async function initialize({
     codeEditor,
     codeRunner,
     consoleOutput,
-    sessionNumber,
-    source: CLIENT_TYPE.STUDENT,
-    userId,
   });
 
   function syncRunButtonVisibility() {

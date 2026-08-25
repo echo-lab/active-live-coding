@@ -1,4 +1,4 @@
-import { CLIENT_TYPE, EVENT_TYPES } from "../shared-constants";
+import { EVENT_TYPES } from "../shared-constants";
 import {
   clearEmail,
   getConsentChoice,
@@ -30,7 +30,7 @@ function uint8ToBase64(bytes) {
 
 // Buffers {timestamp, payload} events for one (isStudent, userId, lectureId)
 // context and flushes them, compressed as a single batch, on a jittered timer.
-export class ClientEventsBuffer {
+class ClientEventsBuffer {
   constructor(isStudent, userId, lectureId) {
     this.isStudent = isStudent;
     this.userId = userId;
@@ -70,6 +70,19 @@ export class ClientEventsBuffer {
   }
 }
 
+// Singleton event logger for the current page load -- initEventLogging() must be called once,
+// as soon as isStudent/userId/lectureId are known, before anything calls recordEvent().
+let eventsBuffer = null;
+
+export function initEventLogging(isStudent, userId, lectureId) {
+  eventsBuffer = new ClientEventsBuffer(isStudent, userId, lectureId);
+}
+
+export function recordEvent(type, payload = {}) {
+  const timestamp = Date.now();
+  eventsBuffer.recordEvent(timestamp, { type, timestamp, ...payload });
+}
+
 // Wrapping this in an object so we can swap out the editor when we have multiple tabs.
 export class RunInteractions {
   constructor({
@@ -77,9 +90,6 @@ export class RunInteractions {
     codeEditor,
     codeRunner,
     consoleOutput,
-    sessionNumber,
-    source,
-    userId,
     broadcastResult = () => {},
   }) {
     this.editor = codeEditor;
@@ -89,7 +99,6 @@ export class RunInteractions {
     this.runner = codeRunner;
     this.console = consoleOutput;
     this.broadcastResult = broadcastResult;
-    this.eventsBuffer = new ClientEventsBuffer(source === CLIENT_TYPE.STUDENT, userId, sessionNumber);
 
     runButtonEl.addEventListener("click", this.runCode.bind(this));
   }
@@ -106,9 +115,8 @@ export class RunInteractions {
     this.el.textContent = "Running...";
 
     // Record the event on the server. No need to await.
-    let ts = Date.now();
     let code = this.editor.currentCode();
-    this.eventsBuffer.recordEvent(ts, { type: EVENT_TYPES.CODE_RUN, timestamp: ts, code });
+    recordEvent(EVENT_TYPES.CODE_RUN, { code });
 
     let minRunTime = new Promise((resolve) => setTimeout(resolve, 500));
     let res = await this.runner.asyncRun(code);

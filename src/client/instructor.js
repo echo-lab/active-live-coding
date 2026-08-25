@@ -7,11 +7,12 @@ import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
   RunInteractions,
+  initEventLogging,
   makeActivitiesPanelResizable,
   makeConsoleResizable,
 } from "./shared-interactions.js";
 import { InstructorCodeEditor } from "./code-editors.js";
-import { CLIENT_TYPE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
@@ -138,6 +139,8 @@ function initialize({
 
   socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
 
+  initEventLogging(/*isStudent=*/ false, userId, sessionNumber);
+
   const activitiesManager = new InstructorActivitiesManager({
     sessionNumber,
     exercises,
@@ -206,9 +209,6 @@ function initialize({
     codeEditor,
     codeRunner,
     consoleOutput,
-    sessionNumber,
-    source: CLIENT_TYPE.INSTRUCTOR,
-    userId,
     broadcastResult: (msg) =>
       socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, { ...msg, sessionId: sessionNumber }),
   });

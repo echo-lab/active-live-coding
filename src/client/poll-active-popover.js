@@ -1,5 +1,7 @@
 import { PollMcqBuilder } from "./activities-panel.js";
 import { positionPopover } from "./popover-position.js";
+import { EVENT_TYPES } from "../shared-constants.js";
+import { recordEvent } from "./shared-interactions.js";
 
 // MARK: Shared building blocks
 
@@ -188,6 +190,24 @@ export class StudentActivePollPopover {
     this._rootEl = null;
     this._anchorKey = null;
     this._exerciseId = null;
+
+    // Event logging: dedups STUDENT_START_EXERCISE per exerciseId (this popover instance is
+    // reused across every poll in the lecture), and tracks each exercise's current draft answer
+    // so STUDENT_END_EXERCISE can report it even if the popover has already closed by then.
+    this._startedExercises = new Set();
+    this._drafts = new Map();
+    manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
+      if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
+      const answer = this._drafts.get(exercise.id) ?? exercise.default_answer ?? null;
+      recordEvent(EVENT_TYPES.STUDENT_END_EXERCISE, { exerciseId: exercise.id, answer });
+      this._drafts.delete(exercise.id);
+    });
+  }
+
+  _recordStart(exerciseId) {
+    if (this._startedExercises.has(exerciseId)) return;
+    this._startedExercises.add(exerciseId);
+    recordEvent(EVENT_TYPES.STUDENT_START_EXERCISE, { exerciseId });
   }
 
   isOpenFor(id) {
@@ -286,6 +306,7 @@ export class StudentActivePollPopover {
     textarea.maxLength = 500;
     textarea.value = myResponse?.answer ?? "";
     root.appendChild(textarea);
+    this._drafts.set(exercise.id, textarea.value);
 
     const footer = document.createElement("div");
     footer.className = "poll-text-answer-footer";
@@ -319,7 +340,11 @@ export class StudentActivePollPopover {
     };
     refresh();
 
-    textarea.addEventListener("input", refresh);
+    textarea.addEventListener("input", () => {
+      this._recordStart(exercise.id);
+      this._drafts.set(exercise.id, textarea.value);
+      refresh();
+    });
 
     submitBtn.addEventListener("click", async () => {
       const answer = textarea.value.trim();
@@ -341,6 +366,7 @@ export class StudentActivePollPopover {
   _buildMcqAnswer(root, exercise, myResponse) {
     const choices = exercise.default_answer ? JSON.parse(exercise.default_answer) : [];
     const selectedIndex = myResponse ? parseInt(myResponse.answer, 10) : null;
+    this._drafts.set(exercise.id, selectedIndex != null ? String(selectedIndex) : null);
 
     const choicesEl = document.createElement("div");
     choicesEl.className = "poll-mcq-choices-display";
@@ -366,7 +392,11 @@ export class StudentActivePollPopover {
       text.className = "poll-mcq-choice-text";
       text.textContent = choice;
 
-      item.addEventListener("click", () => { radio.checked = true; });
+      item.addEventListener("click", () => {
+        radio.checked = true;
+        this._recordStart(exercise.id);
+        this._drafts.set(exercise.id, String(i));
+      });
 
       item.appendChild(radio);
       item.appendChild(label);
