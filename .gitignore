@@ -18,6 +18,10 @@ TODO.txt
 # Sqlite database
 *.sqlite*
 
+# Load-test run outputs (fixtures/ is intentionally committed)
+src/scripts/load-test/results/*
+!src/scripts/load-test/results/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
