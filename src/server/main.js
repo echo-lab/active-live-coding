@@ -4,6 +4,7 @@ import ViteExpress from "vite-express";
 import * as http from "http";
 import { randomUUID } from "node:crypto";
 import { Server } from "socket.io";
+import { Sequelize } from "sequelize";
 import { db } from "./database.js";
 import {
   LectureSession,
@@ -27,6 +28,7 @@ import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { ChangeBuffer } from "./change-buffer.js";
 import { eventsDb } from "./events-database.js";
 import { EventBuffer } from "./event-buffer.js";
+import { getCachedDoc, applyChangeToCache, invalidateCachedDoc, unregisterVersionBlockAnchor } from "./lecture-doc-cache.js";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -34,6 +36,10 @@ app.use(express.json({ limit: "50mb" }));
 let instructorChangeBuffer = new ChangeBuffer(5000, db);
 let eventBuffer = new EventBuffer(30000);
 let flushInstructorChanges = async () => {
+  // Skip opening a transaction (an IMMEDIATE write-lock acquisition) entirely when there's
+  // nothing queued -- this endpoint is called before nearly every read, so an empty flush was
+  // otherwise taking a wasted lock on every single request.
+  if (!instructorChangeBuffer.hasPending()) return true;
   try {
     await db.transaction(async (t) => {
       await instructorChangeBuffer.flush(t);
@@ -126,7 +132,7 @@ app.post("/lecture-session", async (req, res) => {
         };
       }
 
-      let { doc, docVersion } = await sesh.getDoc(t);
+      let { doc, docVersion } = await getCachedDoc(sesh);
       let exercises = await sesh.getExercisesForInstructor(t);
       let versionBlocks = await sesh.getVersionBlocksWithPositions(t);
       return {
@@ -215,6 +221,7 @@ app.delete("/version-block/:id", async (req, res) => {
         transaction: t,
       });
       await block.update({ deleted: true, deleted_change_number }, { transaction: t });
+      unregisterVersionBlockAnchor(block.LectureSessionId, block.id);
 
       // Dissolving a still-active exercise should behave like finishing it (minus the
       // summary step) so it doesn't linger as "Active" in the activities panel.
@@ -331,36 +338,59 @@ app.post("/current-session-student", async (req, res) => {
   await flushInstructorChanges();
 
   try {
-    let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.current(sessionName, t);
-      if (!lecture) return {};
+    // Cheap read-only pre-check, no transaction -- lets the common case (a student reloading,
+    // who already has a StudentSession) skip the IMMEDIATE write-lock entirely below. This is
+    // purely an optimization hint, not relied on for correctness: the "first join" branch still
+    // does its own atomic check-then-create inside a real transaction.
+    let lecture = await LectureSession.current(sessionName);
+    if (!lecture) return res.json({});
 
-      let existing = await lecture.getStudentSessions(
-        { where: { student_id } },
-        { transaction: t },
-      );
-      let sesh =
-        existing.length > 0
-          ? existing[0]
-          : await lecture.createStudentSession(
-              { student_id, student_identifier },
-              { transaction: t },
-            );
+    let existing = await lecture.getStudentSessions({ where: { student_id } });
 
-      let { doc: lectureDoc, docVersion: lectureDocVersion } =
-        await lecture.getDoc(t);
-      let exercises = await lecture.getExercisesForStudent(student_id, t);
-      let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
+    let response;
+    if (existing.length > 0) {
+      // Fast path: this branch is guaranteed to never write, so DEFERRED is safe here -- it can
+      // never hit the SHARED->RESERVED lock-upgrade race that IMMEDIATE exists to avoid.
+      let sesh = existing[0];
+      response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
+        let { doc: lectureDoc, docVersion: lectureDocVersion } = await getCachedDoc(lecture);
+        let exercises = await lecture.getExercisesForStudent(student_id, t);
+        let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
+        return {
+          sessionNumber: lecture.id,
+          studentSessionId: sesh.id,
+          lectureDoc: lectureDoc.toJSON(),
+          lectureDocVersion,
+          exercises,
+          versionBlocks,
+        };
+      });
+    } else {
+      // Slow-but-safe path: first-ever join for this student, may need to INSERT a
+      // StudentSession. Unchanged from before this fix: default IMMEDIATE, atomic
+      // check-then-create, so two genuinely-concurrent first joins for the same student are
+      // still safely serialized.
+      response = await db.transaction(async (t) => {
+        let existingInner = await lecture.getStudentSessions({ where: { student_id }, transaction: t });
+        let sesh =
+          existingInner.length > 0
+            ? existingInner[0]
+            : await lecture.createStudentSession({ student_id, student_identifier }, { transaction: t });
 
-      return {
-        sessionNumber: lecture.id,
-        studentSessionId: sesh.id,
-        lectureDoc,
-        lectureDocVersion,
-        exercises,
-        versionBlocks,
-      };
-    });
+        let { doc: lectureDoc, docVersion: lectureDocVersion } = await getCachedDoc(lecture);
+        let exercises = await lecture.getExercisesForStudent(student_id, t);
+        let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
+
+        return {
+          sessionNumber: lecture.id,
+          studentSessionId: sesh.id,
+          lectureDoc: lectureDoc.toJSON(),
+          lectureDocVersion,
+          exercises,
+          versionBlocks,
+        };
+      });
+    }
     res.json(response);
   } catch (error) {
     console.error("Failed to get or create student session:", error);
@@ -772,6 +802,10 @@ io.on("connection", async (socket) => {
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
     // FIXME: these might not get executed in order!
 
+    // Synchronous, no await above or below this line -- required for the doc cache's
+    // correctness invariant (see lecture-doc-cache.js).
+    applyChangeToCache(msg.sessionId ?? msg.sessionNumber, msg);
+
     instructorChangeBuffer.enqueue(msg);
   });
 
@@ -826,6 +860,10 @@ io.on("connection", async (socket) => {
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately
     io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
+    // A finished lecture won't be read live again -- drop its cache entry so it doesn't sit in
+    // memory indefinitely (it'll cheaply re-hydrate from the DB if it's ever read again, e.g.
+    // the read-only lecture review page).
+    invalidateCachedDoc(msg.sessionNumber);
 
     try {
       await db.transaction(async (t) => {

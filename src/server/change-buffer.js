@@ -1,6 +1,7 @@
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { LectureSession, Variant, VersionBlock } from "./models.js";
 import { ChangeSet, Text } from "@codemirror/state";
+import { invalidateCachedDoc } from "./lecture-doc-cache.js";
 
 // Mirrors the room-naming convention in main.js -- kept local to avoid a
 // circular import (main.js imports ChangeBuffer from this file).
@@ -29,6 +30,10 @@ export class ChangeBuffer {
 
   initSocket(io) {
     this.io = io;
+  }
+
+  hasPending() {
+    return this.queue.length > 0 || this.variantQueue.length > 0;
   }
 
   // NOTE: queue changes MUST come in order.
@@ -96,6 +101,11 @@ async function flushChangesToSession(sessionId, changeQueue, transaction) {
   // Now, let's try to apply the changes
   for (let { id, changes, ts } of changeQueue) {
     if (id !== docVersion) {
+      // The doc cache may now be out of sync with what actually got persisted -- drop it so the
+      // next read re-hydrates fresh from the DB rather than trusting a possibly-diverged cache.
+      // Use lecture.id (numeric), not the sessionId param -- Object.entries() in flush() above
+      // coerces object keys to strings, and the cache is keyed by the numeric lecture PK.
+      invalidateCachedDoc(lecture.id);
       return {
         error: new Error(`Expected instructor change #${docVersion} but got #${id}`),
       };
@@ -105,6 +115,7 @@ async function flushChangesToSession(sessionId, changeQueue, transaction) {
       doc = ChangeSet.fromJSON(changes).apply(doc);
       docVersion++;
     } catch (error) {
+      invalidateCachedDoc(lecture.id);
       return { error: error.message };
     }
 

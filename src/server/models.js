@@ -1,6 +1,7 @@
 import { DataTypes, Model, Op } from "sequelize";
 import { Text, ChangeSet } from "@codemirror/state";
 import { db as sequelize } from "./database.js";
+import { getCachedVersionBlockAnchor, getCachedPollAnchor } from "./lecture-doc-cache.js";
 
 /*
 LectureSession
@@ -36,13 +37,11 @@ export function reconstructCMDoc(changes) {
 export class LectureSession extends Model {
   // Get the active session w/ the given name
   static async current(name, transaction) {
-    let sesh = await LectureSession.findAll(
-      {
-        where: { isFinished: false, name },
-        order: [["id", "DESC"]],
-      },
-      { transaction },
-    );
+    let sesh = await LectureSession.findAll({
+      where: { isFinished: false, name },
+      order: [["id", "DESC"]],
+      transaction,
+    });
     // TODO: Probably try to make sure there's not more than one session lol.
     return sesh.length > 0 ? sesh[0] : null;
   }
@@ -67,13 +66,11 @@ export class LectureSession extends Model {
   }
 
   async getDoc(transaction) {
-    let changes = await this.getInstructorChanges(
-      {
-        attributes: ["change", "change_number"],
-        order: ["change_number"],
-      },
-      { transaction },
-    );
+    let changes = await this.getInstructorChanges({
+      attributes: ["change", "change_number"],
+      order: ["change_number"],
+      transaction,
+    });
     return reconstructCMDoc(changes);
   }
 
@@ -112,83 +109,72 @@ export class LectureSession extends Model {
     );
     if (!needsResolution) return exercises;
 
-    const allChanges = await this.getInstructorChanges(
-      { attributes: ["change_number", "change"], order: ["change_number"] },
-      { transaction },
+    // Position resolution now comes from the in-memory anchor cache (bounded replay from the
+    // anchor's own recorded version, not the whole lecture) instead of replaying every
+    // InstructorChange here -- see lecture-doc-cache.js. `transaction` is no longer used by this
+    // method (kept in the signature so callers don't need to change).
+    return Promise.all(
+      exercises.map(async (ex) => {
+        if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null) return ex;
+
+        // assoc=1 for from / -1 for to inside the cache: edits landing exactly on a boundary are
+        // excluded from the range, matching CodeMirror's own non-inclusive Decoration.mark
+        // semantics (the same convention used by the live client-side marker in cm-poll-marker.js).
+        const anchor = await getCachedPollAnchor(
+          this,
+          ex.id,
+          ex.code_anchor_from,
+          ex.code_anchor_to,
+          ex.code_anchor_doc_version,
+        );
+        // The anchored code was entirely deleted -- report no anchor rather than a collapsed range.
+        if (!anchor) return { ...ex.toJSON(), code_anchor_from: null, code_anchor_to: null };
+        return { ...ex.toJSON(), code_anchor_from: anchor.from, code_anchor_to: anchor.to };
+      }),
     );
-
-    return exercises.map((ex) => {
-      if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null) return ex;
-
-      let from = ex.code_anchor_from;
-      let to = ex.code_anchor_to;
-      for (const { change_number, change } of allChanges) {
-        if (change_number >= ex.code_anchor_doc_version) {
-          const cs = ChangeSet.fromJSON(JSON.parse(change));
-          // assoc=1 for from / -1 for to: edits landing exactly on a boundary are excluded
-          // from the range, matching CodeMirror's own non-inclusive Decoration.mark semantics
-          // (the same convention used by the live client-side marker in cm-poll-marker.js).
-          from = cs.mapPos(from, 1);
-          to = cs.mapPos(to, -1);
-        }
-      }
-      // The anchored code was entirely deleted -- report no anchor rather than a collapsed range.
-      if (to <= from) return { ...ex.toJSON(), code_anchor_from: null, code_anchor_to: null };
-      return { ...ex.toJSON(), code_anchor_from: from, code_anchor_to: to };
-    });
   }
 
   async getVersionBlocksWithPositions(transaction) {
-    const blocks = await this.getVersionBlocks(
-      {
-        where: { deleted: false },
-        include: [{ model: Variant, include: [VariantChange] }],
-        order: [["createdAt", "ASC"]],
-      },
-      { transaction },
-    );
+    const blocks = await this.getVersionBlocks({
+      where: { deleted: false },
+      include: [{ model: Variant, include: [VariantChange] }],
+      order: [["createdAt", "ASC"]],
+      transaction,
+    });
 
     if (blocks.length === 0) return [];
 
-    const allChanges = await this.getInstructorChanges(
-      { attributes: ["change_number", "change"], order: ["change_number"] },
-      { transaction },
+    // Position resolution now comes from the in-memory anchor cache (bounded replay from the
+    // block's own anchor_change_number, not the whole lecture) instead of replaying every
+    // InstructorChange here -- see lecture-doc-cache.js.
+    return Promise.all(
+      blocks.map(async (block) => {
+        const v0 = block.Variants.find((v) => v.name === "v0") ?? block.Variants[0];
+        const variantChanges = v0
+          ? [...v0.VariantChanges].sort((a, b) => a.change_number - b.change_number)
+          : [];
+        const { doc: variantDoc } = reconstructCMDoc(variantChanges);
+        const variantCode = variantDoc.toString();
+
+        const { from, to } = await getCachedVersionBlockAnchor(this, block.id, block.anchor_pos, block.anchor_change_number);
+
+        let sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        return {
+          id: block.id,
+          from,
+          to,
+          variants: sortedVariants.map((v) => {
+            const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
+            return {
+              id: v.id,
+              name: v.name,
+              code: reconstructCMDoc(vChanges).doc.toString(),
+              docVersion: vChanges.length,
+            };
+          }),
+        };
+      }),
     );
-
-    return blocks.map((block) => {
-      const v0 = block.Variants.find((v) => v.name === "v0") ?? block.Variants[0];
-      const variantChanges = v0
-        ? [...v0.VariantChanges].sort((a, b) => a.change_number - b.change_number)
-        : [];
-      const { doc: variantDoc } = reconstructCMDoc(variantChanges);
-      const variantCode = variantDoc.toString();
-
-      let from = block.anchor_pos;
-
-      for (const { change_number, change } of allChanges) {
-        if (change_number >= block.anchor_change_number) {
-          const cs = ChangeSet.fromJSON(JSON.parse(change));
-          from = cs.mapPos(from);
-        }
-      }
-      const to = from;
-
-      let sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      return {
-        id: block.id,
-        from,
-        to,
-        variants: sortedVariants.map((v) => {
-          const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
-          return {
-            id: v.id,
-            name: v.name,
-            code: reconstructCMDoc(vChanges).doc.toString(),
-            docVersion: vChanges.length,
-          };
-        }),
-      };
-    });
   }
 
   // Reconstructs the main doc + the ONE given exercise's anchor exactly as they looked at the
@@ -276,23 +262,21 @@ export class LectureSession extends Model {
 
   // Returns all exercises for this lecture with only the given student's response (if any).
   async getExercisesForStudent(studentId, transaction) {
-    const exercises = await this.getClassExercises(
-      {
-        include: [
-          {
-            model: ExerciseResponse,
-            where: { student_id: studentId },
-            required: false,
-          },
-          {
-            model: VersionBlock,
-            required: false,
-          },
-        ],
-        order: [["start_ts", "ASC"]],
-      },
-      { transaction },
-    );
+    const exercises = await this.getClassExercises({
+      include: [
+        {
+          model: ExerciseResponse,
+          where: { student_id: studentId },
+          required: false,
+        },
+        {
+          model: VersionBlock,
+          required: false,
+        },
+      ],
+      order: [["start_ts", "ASC"]],
+      transaction,
+    });
     return this._resolvePollAnchors(exercises, transaction);
   }
 }
