@@ -90,11 +90,13 @@ export const versionWidgetContextMenu = EditorView.domEventHandlers({
       view.dispatch({ selection: { anchor: pos } });
     }
 
-    let tooltipPos = view.state.selection.main.head;
+    let { anchor, head } = view.state.selection.main;
     view.dispatch({
       effects: showVersionWidgetTooltip.of({
-        pos: tooltipPos,
-        above: true,
+        pos: head,
+        // head is above the anchor when the selection was dragged bottom-to-top;
+        // keep the popover on the opposite side of `head` from the rest of the selection.
+        above: head <= anchor,
         arrow: true,
         create: (v) => ({ dom: createVersionWidgetTooltipDOM(v) }),
       }),
@@ -111,10 +113,12 @@ export const versionWidgetTooltipTheme = EditorView.baseTheme({
     borderRadius: "4px",
     padding: "2px 0",
     "& .cm-tooltip-arrow:before": {
-      borderTopColor: "##5861ff",
+      borderTopColor: "#5861ff",
+      borderBottomColor: "#5861ff",
     },
     "& .cm-tooltip-arrow:after": {
       borderTopColor: "transparent",
+      borderBottomColor: "transparent",
     },
   },
   ".cm-tooltip-version-option": {
