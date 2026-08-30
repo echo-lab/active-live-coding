@@ -10,9 +10,10 @@ import {
   initEventLogging,
   makeActivitiesPanelResizable,
   makeConsoleResizable,
+  recordEvent,
 } from "./shared-interactions.js";
 import { InstructorCodeEditor } from "./code-editors.js";
-import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
@@ -199,6 +200,7 @@ function initialize({
 
   // The only poll-creation entry point (right-click "Create Poll" in the editor).
   function tryOpenCreatePopover({ from, to, code = "" }) {
+    recordEvent(EVENT_TYPES.INSTRUCTOR_START_POLL_CREATION);
     pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
     codeEditor.startPollDraft({ from, to });
     const at = codeEditor.getPollDraftAnchor()?.from;

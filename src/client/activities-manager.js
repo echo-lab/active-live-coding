@@ -96,6 +96,7 @@ export class InstructorActivitiesManager extends EventTarget {
       ExerciseResponses: [],
     };
     this.exercises.push(newEx);
+    recordEvent(EVENT_TYPES.INSTRUCTOR_START_EXERCISE, { exerciseId: newEx.id });
     this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
       sessionNumber: this.sessionNumber,
       exercise: {
@@ -143,6 +144,7 @@ export class InstructorActivitiesManager extends EventTarget {
       ExerciseResponses: [],
     };
     this.exercises.push(newEx);
+    recordEvent(EVENT_TYPES.INSTRUCTOR_START_EXERCISE, { exerciseId: newEx.id });
     this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
       sessionNumber: this.sessionNumber,
       exercise: {
@@ -197,6 +199,7 @@ export class InstructorActivitiesManager extends EventTarget {
       ExerciseResponses: [],
     };
     this.exercises.push(newEx);
+    recordEvent(EVENT_TYPES.INSTRUCTOR_START_EXERCISE, { exerciseId: newEx.id });
     this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, {
       sessionNumber: this.sessionNumber,
       exercise: {

@@ -32,6 +32,17 @@ importing a student solution via the sidebar.
 INSTRUCTOR_DESTROY_VARIANT: an event for when an instructor deletes a variant.
 The payload should contain the timestamp, the variant ID, the VersionBlock ID, the
 variant's name, and the content of the variant (i.e., the code).
+
+INSTRUCTOR_START_POLL_CREATION: happens when an instructor opens the "Create poll"
+popover (right after right-clicking selected code and choosing "Ask question"), i.e.
+before they've written anything. The payload is just a timestamp. Since only one poll
+draft can be open at a time, this can be paired with the following
+INSTRUCTOR_START_EXERCISE event for the resulting poll to measure how long drafting took.
+
+INSTRUCTOR_START_EXERCISE: happens when an instructor creates any exercise (a poll,
+multiple-choice poll, or coding exercise) and it goes live for students. This fires once
+the exercise is actually created (server-assigned ID and all), since that's the earliest
+point an exercise ID exists. The payload is a timestamp and the exercise ID.
 */
 export const EVENT_TYPES = Object.freeze({
   CODE_RUN: 0,
@@ -40,6 +51,8 @@ export const EVENT_TYPES = Object.freeze({
   STUDENT_END_EXERCISE: 3,
   INSTRUCTOR_CREATE_VARIANT: 4,
   INSTRUCTOR_DESTROY_VARIANT: 5,
+  INSTRUCTOR_START_POLL_CREATION: 6,
+  INSTRUCTOR_START_EXERCISE: 7,
 });
 
 export const ANONYMOUS_STUDENT_MODE = true;
