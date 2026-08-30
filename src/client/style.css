@@ -603,6 +603,10 @@ pre {
   margin-bottom: 8px;
 }
 
+.survey-question {
+  padding-bottom: 5px;
+}
+
 .survey-likert {
   display: flex;
   justify-content: space-between;
