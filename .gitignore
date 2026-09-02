@@ -18,6 +18,9 @@ TODO.txt
 # Sqlite database
 *.sqlite*
 
+# CSVs from analysis scripts.
+*.csv
+
 # Load-test run outputs (fixtures/ is intentionally committed)
 src/scripts/load-test/results/*
 !src/scripts/load-test/results/.gitkeep
