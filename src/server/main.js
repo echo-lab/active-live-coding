@@ -479,6 +479,11 @@ app.post("/api/survey-response", async (req, res) => {
   }
   try {
     let lecture = lectureId ? await LectureSession.findByPk(lectureId) : null;
+    if (!lecture) {
+      console.warn(
+        `Survey response from student ${student_id} has no resolvable lectureId (got: ${lectureId}) -- saving with LectureSessionId: null`
+      );
+    }
     await SurveyResponse.create({
       LectureSessionId: lecture ? lecture.id : null,
       student_id,

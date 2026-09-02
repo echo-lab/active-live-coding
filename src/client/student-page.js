@@ -105,6 +105,7 @@ async function initialize({
   studentSessionId,
   versionBlocks = [],
 }) {
+  currentSessionNumber = sessionNumber;
   socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
   // Socket.IO reconnects (e.g. a wifi blip) get a new server-side socket id that isn't
   // automatically re-joined to the lecture room -- without this, a reconnected student would
