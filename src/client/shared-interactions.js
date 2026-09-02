@@ -36,7 +36,13 @@ class ClientEventsBuffer {
     this.userId = userId;
     this.lectureId = lectureId;
     this.queue = [];
+
+    const joinTimestamp = Date.now();
+    const joinType = isStudent ? EVENT_TYPES.STUDENT_JOIN_LECTURE : EVENT_TYPES.INSTRUCTOR_JOIN_LECTURE;
+    this.recordEvent(joinTimestamp, { type: joinType, timestamp: joinTimestamp });
+
     this._scheduleFlush();
+    window.addEventListener("pagehide", () => this._flushOnLeave());
   }
 
   recordEvent(timestamp, payload) {
@@ -67,6 +73,34 @@ class ClientEventsBuffer {
       }
     }
     this._scheduleFlush();
+  }
+
+  // Fires once as the tab is closed, reloaded, or navigated away from. Can't reuse flush()
+  // here since CompressionStream is async and isn't guaranteed to finish before the page is
+  // torn down -- so this sends the queue uncompressed via sendBeacon, which the browser
+  // guarantees to attempt even after the page is gone. sendBeacon caps payload size (~64KB);
+  // if the full queue doesn't fit, fall back to just the leave event so that signal isn't
+  // lost even if older buffered events are.
+  _flushOnLeave() {
+    const timestamp = Date.now();
+    const type = this.isStudent ? EVENT_TYPES.STUDENT_LEAVE_LECTURE : EVENT_TYPES.INSTRUCTOR_LEAVE_LECTURE;
+    const leaveEvent = { timestamp, payload: { type, timestamp } };
+    this.queue.push(leaveEvent);
+    if (!this._sendBeacon(this.queue)) {
+      this._sendBeacon([leaveEvent]);
+    }
+    this.queue = [];
+  }
+
+  _sendBeacon(events) {
+    const bytes = new TextEncoder().encode(JSON.stringify(events));
+    const body = JSON.stringify({
+      isStudent: this.isStudent,
+      userId: this.userId,
+      lectureId: this.lectureId,
+      eventArray: uint8ToBase64(bytes),
+    });
+    return navigator.sendBeacon("/api/events", new Blob([body], { type: "application/json" }));
   }
 }
 

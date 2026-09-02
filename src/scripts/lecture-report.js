@@ -143,7 +143,12 @@ let hasEventData = false;
 try {
   const rows = await Event.findAll({ where: { lectureId }, raw: true });
   for (const row of rows) {
-    const batch = JSON.parse(zlib.gunzipSync(row.payload).toString("utf-8"));
+    // Most rows are gzip (the normal batched flush); rows written by the pagehide/sendBeacon
+    // leave-flush are stored uncompressed, since compression there isn't guaranteed to finish
+    // before the page unloads -- payload is self-describing via the gzip magic bytes.
+    const isGzip = row.payload.length >= 2 && row.payload[0] === 0x1f && row.payload[1] === 0x8b;
+    const json = isGzip ? zlib.gunzipSync(row.payload).toString("utf-8") : row.payload.toString("utf-8");
+    const batch = JSON.parse(json);
     for (const item of batch) {
       events.push({ type: item.payload.type, timestamp: item.timestamp, data: item.payload, userId: row.userId, isStudent: !!row.isStudent });
     }

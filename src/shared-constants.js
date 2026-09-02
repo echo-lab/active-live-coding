@@ -43,6 +43,17 @@ INSTRUCTOR_START_EXERCISE: happens when an instructor creates any exercise (a po
 multiple-choice poll, or coding exercise) and it goes live for students. This fires once
 the exercise is actually created (server-assigned ID and all), since that's the earliest
 point an exercise ID exists. The payload is a timestamp and the exercise ID.
+
+INSTRUCTOR_JOIN_LECTURE / STUDENT_JOIN_LECTURE: fires once per page load, the moment the
+instructor's or student's client starts event logging for a lecture (i.e., right after
+starting/resuming a session or joining one). The payload is just a timestamp.
+
+INSTRUCTOR_LEAVE_LECTURE / STUDENT_LEAVE_LECTURE: fires when the instructor's or student's
+tab is closed, reloaded, or navigated away from (via a `pagehide` listener). Unlike every
+other event here, this is delivered immediately via `navigator.sendBeacon` instead of the
+normal batched/gzipped flush, since the page may be gone before an async flush could finish --
+so this row (and any other events still queued at the time) is stored uncompressed rather than
+gzipped. The payload is just a timestamp.
 */
 export const EVENT_TYPES = Object.freeze({
   CODE_RUN: 0,
@@ -53,6 +64,10 @@ export const EVENT_TYPES = Object.freeze({
   INSTRUCTOR_DESTROY_VARIANT: 5,
   INSTRUCTOR_START_POLL_CREATION: 6,
   INSTRUCTOR_START_EXERCISE: 7,
+  INSTRUCTOR_JOIN_LECTURE: 8,
+  STUDENT_JOIN_LECTURE: 9,
+  INSTRUCTOR_LEAVE_LECTURE: 10,
+  STUDENT_LEAVE_LECTURE: 11,
 });
 
 export const ANONYMOUS_STUDENT_MODE = true;
