@@ -2029,9 +2029,6 @@ td {
 }
 
 .poll-popover-submit-btn {
-  display: block;
-  width: fit-content;
-  margin: 10px 0 0 auto;
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
@@ -2055,10 +2052,6 @@ td {
   display: flex;
   align-items: center;
   margin-top: 10px;
-}
-
-.poll-text-answer-footer .poll-popover-submit-btn {
-  margin-top: 0;
 }
 
 .poll-submission-status {
