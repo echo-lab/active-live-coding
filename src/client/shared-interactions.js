@@ -166,37 +166,32 @@ export class RunInteractions {
 }
 
 const MAX_HEIGHT = 400;
-const MIN_HEIGHT = 65;
+const MIN_HEIGHT = 40;
 // Height of the #resize-console bar -- must match the CSS `grid-template-rows` for the
 // "resizer" row (style.css / style-student-page.css), since the Run button now lives inside
 // this bar and needs room to render.
 const RESIZER_BAR_HEIGHT = 36;
-export function makeConsoleResizable(
-  outputConsole,
-  resizeBar,
-  twoColWorkaround
-) {
+export function makeConsoleResizable(outputConsole, resizeBar) {
   let isDragging = false;
-  let consoleBottom = 0;
+  let startY = 0;
+  let startHeight = 0;
   resizeBar.addEventListener("mousedown", (ev) => {
     if (ev.target.closest("button")) return; // let the Run button inside the bar be clicked, not dragged
     isDragging = true;
-    let { bottom } = outputConsole.getBoundingClientRect();
-    consoleBottom = bottom + window.scrollY;
+    startY = ev.pageY;
+    let rows = getComputedStyle(outputConsole.parentElement).gridTemplateRows.split(" ");
+    startHeight = parseFloat(rows[rows.length - 1]);
     resizeBar.classList.add("is-dragging");
+    ev.preventDefault(); // stop the drag from turning into a text selection over the editor
   });
   document.addEventListener("mousemove", (ev) => {
     if (!isDragging) return;
-    let y = ev.pageY;
-    let height = consoleBottom - y - 4; // 4 for the resizer's height
+    // Delta-based: whatever point on the bar was grabbed stays under the cursor.
+    let height = startHeight + (startY - ev.pageY);
     height = Math.min(MAX_HEIGHT, height);
     height = Math.max(height, MIN_HEIGHT);
-    if (!twoColWorkaround) {
-      outputConsole.style.height = `${height}px`;
-    } else {
-      outputConsole.style.height = "100%";
-      outputConsole.parentElement.style.gridTemplateRows = `40px auto ${RESIZER_BAR_HEIGHT}px ${height}px`;
-    }
+    outputConsole.style.height = "100%";
+    outputConsole.parentElement.style.gridTemplateRows = `40px auto ${RESIZER_BAR_HEIGHT}px ${height}px`;
   });
   document.addEventListener("mouseup", (ev) => {
     isDragging = false;

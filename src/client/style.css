@@ -117,6 +117,7 @@ span.sep {
   cursor: row-resize;
   padding: 0 10px;
   box-sizing: border-box;
+  user-select: none;
 }
 
 #resize-console #run-button {
@@ -127,8 +128,8 @@ span.sep {
 .resize-symbol {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 4px;
+  transform: translateX(-50%);
   width: 40px;
   border: solid 1px grey;
   border-bottom: 0px;

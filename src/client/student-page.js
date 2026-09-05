@@ -40,7 +40,7 @@ const runButtonEl = document.querySelector("#run-button");
 const codeOutputsEl = document.querySelector("#all-code-outputs");
 const codeOutputsContainer = document.querySelector("#output-container");
 const consoleResizer = document.querySelector("#resize-console");
-makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
+makeConsoleResizable(codeOutputsContainer, consoleResizer);
 setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));
 let instructorTabActive = true;
 

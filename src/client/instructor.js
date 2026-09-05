@@ -49,7 +49,7 @@ const consoleResizer = document.querySelector("#resize-console");
 const codeOutputsContainer = document.querySelector("#output-container");
 setupSimulateResponsesCheckbox("#simulate-responses-checkbox");
 
-makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
+makeConsoleResizable(codeOutputsContainer, consoleResizer);
 setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));
 const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
