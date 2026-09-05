@@ -7,8 +7,7 @@
 //   node src/scripts/query-events.js lectures
 //   node src/scripts/query-events.js users <lectureId>
 //   node src/scripts/query-events.js events <lectureId> <userId>
-import zlib from "node:zlib";
-import { Event } from "../server/events-database.js";
+import { Event, decompressEventBatch } from "../server/events-database.js";
 
 function usage() {
   console.log(`Usage:
@@ -36,22 +35,11 @@ async function listUsers(lectureId) {
   return rows.map((r) => ({ isStudent: !!r.isStudent, userId: r.userId }));
 }
 
-// Most rows are gzip (the normal batched flush); rows written by the pagehide/sendBeacon
-// leave-flush are stored uncompressed since compression there isn't guaranteed to finish
-// before the page unloads -- payload is self-describing via the gzip magic bytes.
-function isGzip(payload) {
-  return payload.length >= 2 && payload[0] === 0x1f && payload[1] === 0x8b;
-}
-
 async function listEvents(lectureId, userId) {
   let rows = await Event.findAll({ where: { lectureId, userId } });
   let events = [];
   for (let row of rows) {
-    let json = isGzip(row.payload)
-      ? zlib.gunzipSync(row.payload).toString("utf-8")
-      : row.payload.toString("utf-8");
-    let batch = JSON.parse(json);
-    events.push(...batch);
+    events.push(...decompressEventBatch(row.payload));
   }
   events.sort((a, b) => a.timestamp - b.timestamp);
   return events;

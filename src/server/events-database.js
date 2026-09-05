@@ -1,3 +1,4 @@
+import zlib from "node:zlib";
 import { Sequelize, DataTypes, Model } from "sequelize";
 
 const BUSY_TIMEOUT_MS = 5000;
@@ -34,3 +35,13 @@ Event.init(
   },
   { sequelize: eventsDb, timestamps: false },
 );
+
+// A pagehide-triggered flush (see ClientEventsBuffer._flushOnLeave in shared-interactions.js)
+// sends its batch uncompressed, since CompressionStream is async and isn't guaranteed to finish
+// before the page is torn down -- so a stored payload may or may not actually be gzip. Detect by
+// the gzip magic bytes (1f 8b) rather than assuming, so both encodings read back correctly.
+export function decompressEventBatch(payload) {
+  const isGzip = payload.length >= 2 && payload[0] === 0x1f && payload[1] === 0x8b;
+  const json = isGzip ? zlib.gunzipSync(payload).toString("utf-8") : payload.toString("utf-8");
+  return JSON.parse(json);
+}

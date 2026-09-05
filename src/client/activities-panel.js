@@ -67,7 +67,7 @@ function mostRecentlyCreated(exercises) {
 
 // Single-line preview text for an activity-list row: polls preview their instructions,
 // code exercises (which have no instructions) preview their first non-blank line of code instead.
-function activityPreviewText(ex) {
+export function activityPreviewText(ex) {
   if (ex.type === "CODE_VARIANT") {
     const code = ex.default_answer ?? "";
     const firstLine = code.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
@@ -77,7 +77,7 @@ function activityPreviewText(ex) {
 }
 
 // Icon shown to the left of an activity-list row's preview text, indicating its type.
-function activityIconHtml(ex) {
+export function activityIconHtml(ex) {
   const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
   return isPoll
     ? `<span class="activity-item-icon activity-item-icon-poll">?</span>`
@@ -88,7 +88,7 @@ function activityIconHtml(ex) {
 // always set at creation (poll-create-popover.js) and gets nulled out server-side once the
 // anchored code is entirely deleted (see LectureSession._resolvePollAnchors); a code exercise's
 // anchor is its Version Block, which is soft-deleted (not removed) when dissolved.
-function isAnchorDeleted(ex) {
+export function isAnchorDeleted(ex) {
   const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
   return isPoll ? ex.code_anchor_from == null : ex.VersionBlock?.deleted === true;
 }
@@ -279,7 +279,7 @@ export class StudentActivitiesPanel {
 
 // Assigns "Anonymous student N" labels to responses with no email on file, numbered in
 // the order they appear so instructors can refer to a specific one during discussion.
-function computeAnonLabels(responses) {
+export function computeAnonLabels(responses) {
   let labels = new Map();
   let n = 0;
   responses.forEach((r) => {
@@ -699,7 +699,7 @@ export function computeMcqCounts(choices, responses) {
 // Builds a `.poll-activity-header` with a "back to list" link (left) and a "x" close button
 // (right) -- shared between the poll and code-exercise summary views, which both need identical
 // markup but different back/close behavior (the poll view also closes its linked popover).
-function buildActivityHeader({ onBack, onClose }) {
+export function buildActivityHeader({ onBack, onClose }) {
   const header = document.createElement("div");
   header.className = "poll-activity-header";
 

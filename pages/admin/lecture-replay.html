@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Lecture Replay (Admin)</title>
+  </head>
+  <body class="admin-page replay-page">
+    <div id="app">
+      <div class="topbar">
+        <div class="topbar-left">
+          <span id="replay-session-name-display"></span>
+        </div>
+        <div class="topbar-right">
+          <span class="review-mode-label">Admin replay — read-only</span>
+        </div>
+      </div>
+      <div id="replay-error" hidden></div>
+      <div id="replay-main">
+        <div id="replay-code-container" class="code-container uneditable"></div>
+        <div id="activities-container">
+          <div id="activities-list">
+            <div id="activities-list-header" class="poll-activity-header">
+              <span>Activities</span>
+              <button id="activities-list-close" class="poll-popover-close" aria-label="Close">×</button>
+            </div>
+            <div id="activities-list-items"></div>
+          </div>
+          <div id="activities-poll" hidden></div>
+          <div id="activities-code-exercise" hidden></div>
+        </div>
+      </div>
+      <div id="replay-timeline">
+        <div id="replay-timeline-controls">
+          <button id="replay-prev-btn" title="Previous event">&#9664;</button>
+          <button id="replay-next-btn" title="Next event">&#9654;</button>
+          <span id="replay-timeline-time"></span>
+        </div>
+        <div id="replay-timeline-track">
+          <div id="replay-timeline-gaps"></div>
+          <input type="range" id="replay-timeline-range" min="0" max="0" value="0" />
+          <div id="replay-timeline-markers"></div>
+        </div>
+      </div>
+      <div id="replay-event-log">
+        <button id="replay-event-log-toggle">▸ Event log</button>
+        <div id="replay-event-log-list" hidden></div>
+      </div>
+    </div>
+    <script type="module" src="/src/client/admin/lecture-replay.js"></script>
+  </body>
+</html>

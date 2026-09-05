@@ -29,8 +29,24 @@ import { ChangeBuffer } from "./change-buffer.js";
 import { eventsDb } from "./events-database.js";
 import { EventBuffer } from "./event-buffer.js";
 import { getCachedDoc, applyChangeToCache, invalidateCachedDoc, unregisterVersionBlockAnchor } from "./lecture-doc-cache.js";
+import { registerAdminRoutes } from "./admin-routes.js";
 
 const app = express();
+
+// MARK: Dev-only admin gate
+// Blocks the dev-only lecture-list/replay pages and their API, for offline analysis of past
+// lectures, from ever being reachable in production -- registered first (before body-parsing,
+// before any route) so it always runs regardless of where the routes themselves are defined.
+// Uses the same NODE_ENV check vite-express itself uses to decide dev vs. prod serving, so this
+// gate can never disagree with which mode is actually serving pages.
+const ADMIN_PATH_PREFIXES = ["/pages/admin", "/api/admin"];
+app.use(ADMIN_PATH_PREFIXES, (req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Not available in production" });
+  }
+  next();
+});
+
 app.use(express.json({ limit: "50mb" }));
 
 let instructorChangeBuffer = new ChangeBuffer(5000, db);
@@ -50,6 +66,17 @@ let flushInstructorChanges = async () => {
     return false;
   }
 };
+let flushEvents = async () => {
+  try {
+    await eventBuffer.flush();
+    return true;
+  } catch (error) {
+    console.error("Error flushing events:", error);
+    return false;
+  }
+};
+
+registerAdminRoutes(app, { flushInstructorChanges, flushEvents });
 
 // MARK: list lectures
 // Return a list of all the lectures.

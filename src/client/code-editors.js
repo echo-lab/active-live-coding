@@ -61,11 +61,16 @@ function scrollPollMarkerIntoView(view, id) {
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false}) {
+  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
     this.docVersion = docVersion;
     this.sessionId = sessionId;
     this.activitiesManager = activitiesManager;
     this._reviewMode = reviewMode;
+    // Overrides how addVersionBlock builds a widget -- e.g. the admin lecture-replay page uses
+    // this to mount a read-only VersionBlockWidget (with every student's response as a browsable
+    // pseudo-variant) instead of the default single-student StudentVersionBlockWidget. Defaults to
+    // null, which preserves existing behavior everywhere else.
+    this._makeVersionBlockWidget = makeVersionBlockWidget;
     let state = EditorState.create({
       doc: Text.of(doc),
       extensions: [
@@ -136,7 +141,9 @@ export class StudentCodeEditor {
 
   addVersionBlock({from, to, versionBlockId, variants}) {
     // console.log("adding version block: ", {from, to, versionBlockId, variants});
-    const widget = new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode});
+    const widget = this._makeVersionBlockWidget
+      ? this._makeVersionBlockWidget({ versionBlockId, variants, view: this.view })
+      : new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),

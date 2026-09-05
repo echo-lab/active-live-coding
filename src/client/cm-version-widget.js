@@ -585,13 +585,18 @@ export class VersionBlockWidget extends WidgetType {
     return container;
   }
 
-//   destroy() {
-//     if (this._innerEditor) { this._innerEditor.destroy(); }
-//     else { this.innerView?.destroy(); }
-//     this.innerView = null;
-//     this._innerEditor = null;
-//     widgetInstances.delete(this.versionBlockId);
-//   }
+  // Called by CodeMirror whenever this widget's decoration is removed from the view -- whether a
+  // single widget is removed (live dissolve, via removeVersionBlockEffect) or the whole outer
+  // EditorView is destroyed (e.g. the admin replay page tearing down and remounting on every
+  // scrub step). Cleans up each variant's own nested EditorView, which CodeMirror has no other way
+  // to reach. ReviewCodeEditor (the read-only viewer used when readOnly:true) has no destroy() of
+  // its own, only `.view`, unlike VariantCodeEditor.
+  destroy(dom) {
+    for (const { editor } of this.variants) {
+      if (editor?.destroy) editor.destroy();
+      else editor?.view?.destroy();
+    }
+  }
 
   ignoreEvent() {
     return true;
@@ -610,9 +615,11 @@ export class VersionBlockWidget extends WidgetType {
   }
 
   async dissolve() {
-    await this._onDissolve?.();  // from InstructorCodeEditor.
-    // Cleanup
-    for (const { editor } of this.variants) { editor?.destroy(); }
+    // _onDissolve (InstructorCodeEditor.dissolveVersionBlock) dispatches removeVersionBlockEffect,
+    // which synchronously removes this widget's decoration -- CodeMirror then calls destroy(dom)
+    // on it as part of that same dispatch, which is what actually cleans up each variant's
+    // editor. Don't duplicate that cleanup here.
+    await this._onDissolve?.();
     this._clearExerciseState();
     this.activitiesManager.removeEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
   }
