@@ -167,6 +167,10 @@ export class RunInteractions {
 
 const MAX_HEIGHT = 400;
 const MIN_HEIGHT = 65;
+// Height of the #resize-console bar -- must match the CSS `grid-template-rows` for the
+// "resizer" row (style.css / style-student-page.css), since the Run button now lives inside
+// this bar and needs room to render.
+const RESIZER_BAR_HEIGHT = 36;
 export function makeConsoleResizable(
   outputConsole,
   resizeBar,
@@ -174,7 +178,8 @@ export function makeConsoleResizable(
 ) {
   let isDragging = false;
   let consoleBottom = 0;
-  resizeBar.addEventListener("mousedown", () => {
+  resizeBar.addEventListener("mousedown", (ev) => {
+    if (ev.target.closest("button")) return; // let the Run button inside the bar be clicked, not dragged
     isDragging = true;
     let { bottom } = outputConsole.getBoundingClientRect();
     consoleBottom = bottom + window.scrollY;
@@ -190,7 +195,7 @@ export function makeConsoleResizable(
       outputConsole.style.height = `${height}px`;
     } else {
       outputConsole.style.height = "100%";
-      outputConsole.parentElement.style.gridTemplateRows = `40px auto 6px ${height}px`;
+      outputConsole.parentElement.style.gridTemplateRows = `40px auto ${RESIZER_BAR_HEIGHT}px ${height}px`;
     }
   });
   document.addEventListener("mouseup", (ev) => {
@@ -229,7 +234,7 @@ export class Console {
 
     let header = document.createElement("span");
     let timeString = new Date(ts).toLocaleTimeString();
-    header.innerText = `${fileName} (${timeString})`;
+    header.innerText = `${fileName} · ${timeString}`;
     header.classList.add("code-output-header");
     container.appendChild(header);
 
@@ -245,7 +250,11 @@ export class Console {
     stderr.forEach((line) => addOutput(line, "stderr-line"));
     error && addOutput(error, "stderr-line");
     results && addOutput(results, "stdout-line");
-    !error && addOutput("[Run success]", "stdout-line");
+
+    let statusBadge = document.createElement("span");
+    statusBadge.classList.add("run-status-badge", error ? "failure" : "success");
+    statusBadge.innerText = error ? "✗ Failed" : "✓ Succeeded";
+    container.appendChild(statusBadge);
 
     this.el.appendChild(container);
     this.el.scrollTo(0, 1e6);
@@ -456,8 +465,13 @@ export function makeActivitiesPanelResizable(
     let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
     savedActivitiesWidth = cols[2] || null;
     activitiesPanel.style.display = "none";
-    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
+    // Zero out the gutter too (not just the activities column) -- while collapsed there's
+    // nothing to drag, and leaving it non-zero left a persistent gap between the code pane's
+    // right edge and the rest of the page (e.g. the topbar's gear icon no longer lined up).
+    parentContainer.style.gridTemplateColumns = `auto 0px 0px`;
     resizer.style.cursor = "default";
+    resizer.classList.add("collapsed");
+    parentContainer.classList.add("collapsed");
     if (openButton) openButton.hidden = false;
   }
 
@@ -468,14 +482,18 @@ export function makeActivitiesPanelResizable(
     let restoreWidth = savedActivitiesWidth || `calc(31% - ${gutterWidth}px)`;
     parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
     resizer.style.cursor = "col-resize";
+    resizer.classList.remove("collapsed");
+    parentContainer.classList.remove("collapsed");
     if (openButton) openButton.hidden = true;
   }
 
   if (initiallyCollapsed) {
     collapsed = true;
     activitiesPanel.style.display = "none";
-    parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px 0px`;
+    parentContainer.style.gridTemplateColumns = `auto 0px 0px`;
     resizer.style.cursor = "default";
+    resizer.classList.add("collapsed");
+    parentContainer.classList.add("collapsed");
   } else if (openButton) {
     openButton.hidden = true;
   }
@@ -508,4 +526,36 @@ export function makeActivitiesPanelResizable(
     openPanel: expand,
     closePanel: collapse,
   };
+}
+
+/**
+ * Wires a topbar icon button (e.g. the gear/settings icon) to toggle a dropdown menu open and
+ * closed, closing on an outside click or Escape. Used for both the instructor's (review link,
+ * end session) and student's (consent form, survey) settings menus.
+ */
+export function setupDropdownMenu(triggerBtn, menuEl) {
+  function close() {
+    menuEl.hidden = true;
+    triggerBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function open() {
+    menuEl.hidden = false;
+    triggerBtn.setAttribute("aria-expanded", "true");
+  }
+
+  triggerBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    menuEl.hidden ? open() : close();
+  });
+
+  document.addEventListener("click", (ev) => {
+    if (!menuEl.hidden && !menuEl.contains(ev.target) && ev.target !== triggerBtn) close();
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !menuEl.hidden) close();
+  });
+
+  return { open, close };
 }

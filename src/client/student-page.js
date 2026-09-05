@@ -19,6 +19,7 @@ import {
   setUpChangeEmail,
   setUpConsentModal,
   setUpSurveyModal,
+  setupDropdownMenu,
   setupJoinLectureModalV2,
 } from "./shared-interactions.js";
 import {
@@ -40,6 +41,7 @@ const codeOutputsEl = document.querySelector("#all-code-outputs");
 const codeOutputsContainer = document.querySelector("#output-container");
 const consoleResizer = document.querySelector("#resize-console");
 makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
+setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));
 let instructorTabActive = true;
 
 const activitiesResizer = document.querySelector("#resize-activities");

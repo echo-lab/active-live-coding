@@ -11,20 +11,24 @@
     <div id="app">
       <div class="topbar">
         <div class="topbar-left">
-          <span>
-            <span id="session-name-display"></span>
-          </span>
-        </div>
-        <div class="run-button-grid">
-          <button id="run-button" hidden>▶ ️Run</button>
+          <span class="app-logo">AD LIB</span>
+          <span id="session-name-display"></span>
         </div>
         <div class="topbar-right">
-          <span>
-            <span id="student-email"></span>
-            <a href="#" id="change-email" hidden>(change)</a>
-            <a href="#" id="review-consent">Consent form</a> <span class="vert-sep">|</span>
-            <a href="#" id="review-survey">Survey</a>
-          </span>
+          <span id="student-email"></span>
+          <a href="#" id="change-email" hidden>(change)</a>
+          <div class="settings-menu-wrapper">
+            <button id="settings-menu-btn" class="settings-menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Settings">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+            <div id="settings-menu" class="settings-dropdown" hidden>
+              <a href="#" id="review-consent" class="settings-dropdown-item">Consent form</a>
+              <a href="#" id="review-survey" class="settings-dropdown-item">Survey</a>
+            </div>
+          </div>
         </div>
       </div>
       <div class="parent-container">
@@ -59,7 +63,10 @@
         >
           <!-- <button id="run-button">▶ ️Run</button> -->
         </div>
-        <div id="resize-console"><div class="resize-symbol"></div></div>
+        <div id="resize-console">
+          <button id="run-button" hidden>▶ ️Run</button>
+          <div class="resize-symbol"></div>
+        </div>
         <div id="output-container">
           <div id="all-code-outputs" class="empty">
             Code output will appear here...

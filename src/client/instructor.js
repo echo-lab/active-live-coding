@@ -11,6 +11,7 @@ import {
   makeActivitiesPanelResizable,
   makeConsoleResizable,
   recordEvent,
+  setupDropdownMenu,
 } from "./shared-interactions.js";
 import { InstructorCodeEditor } from "./code-editors.js";
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
@@ -49,6 +50,7 @@ const codeOutputsContainer = document.querySelector("#output-container");
 setupSimulateResponsesCheckbox("#simulate-responses-checkbox");
 
 makeConsoleResizable(codeOutputsContainer, consoleResizer, true);
+setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));
 const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = makeActivitiesPanelResizable(
   document.querySelector(".parent-container"),
   document.querySelector("#resize-activities"),
