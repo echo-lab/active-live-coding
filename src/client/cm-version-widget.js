@@ -585,13 +585,19 @@ export class VersionBlockWidget extends WidgetType {
     return container;
   }
 
-  // Called by CodeMirror whenever this widget's decoration is removed from the view -- whether a
-  // single widget is removed (live dissolve, via removeVersionBlockEffect) or the whole outer
-  // EditorView is destroyed (e.g. the admin replay page tearing down and remounting on every
-  // scrub step). Cleans up each variant's own nested EditorView, which CodeMirror has no other way
+  // Explicit cleanup for each variant's own nested EditorView, which CodeMirror has no other way
   // to reach. ReviewCodeEditor (the read-only viewer used when readOnly:true) has no destroy() of
   // its own, only `.view`, unlike VariantCodeEditor.
-  destroy(dom) {
+  //
+  // NOT wired up as WidgetType's `destroy(dom)` lifecycle hook -- CodeMirror calls that on
+  // ordinary viewport virtualization too (a widget scrolled far enough off-screen has its DOM
+  // dropped, then rebuilt via toDOM() if it scrolls back), not just when a widget is truly gone.
+  // Since toDOM() reuses the same long-lived variant `el`/`editor` rather than recreating them,
+  // hooking real cleanup to `destroy(dom)` left every variant pane permanently blank after a
+  // scroll-off/scroll-back cycle. Call this explicitly instead, only at real teardown points:
+  // dissolve() below, the admin replay page's per-scrub-step rebuild, and the historical view tab
+  // closing.
+  disposeVariantEditors() {
     for (const { editor } of this.variants) {
       if (editor?.destroy) editor.destroy();
       else editor?.view?.destroy();
@@ -615,11 +621,8 @@ export class VersionBlockWidget extends WidgetType {
   }
 
   async dissolve() {
-    // _onDissolve (InstructorCodeEditor.dissolveVersionBlock) dispatches removeVersionBlockEffect,
-    // which synchronously removes this widget's decoration -- CodeMirror then calls destroy(dom)
-    // on it as part of that same dispatch, which is what actually cleans up each variant's
-    // editor. Don't duplicate that cleanup here.
-    await this._onDissolve?.();
+    await this._onDissolve?.();  // from InstructorCodeEditor.
+    this.disposeVariantEditors();
     this._clearExerciseState();
     this.activitiesManager.removeEventListener("codeSummaryDisplayed", this._summaryDisplayListener);
   }

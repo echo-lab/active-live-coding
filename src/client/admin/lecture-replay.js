@@ -77,10 +77,15 @@ const sidebar = createReplayActivitiesSidebar({
 function renderAtTime(T) {
   const snapshot = computeSnapshotAtTime(data, T);
 
-  // Destroying the outer view cascades into every VersionBlockWidget's destroy(dom) hook, which in
-  // turn tears down each variant's nested EditorView -- see the destroy(dom) added to
-  // VersionBlockWidget for this feature.
+  // Explicitly dispose each version block's nested variant EditorViews before discarding the
+  // outer view -- VersionBlockWidget no longer cleans these up via CodeMirror's destroy(dom) hook
+  // (that also fires on ordinary scroll-driven viewport recycling, which broke the live instructor
+  // editor), so this page has to release them itself on every scrub-step rebuild.
   if (codeEditor) {
+    const decorations = codeEditor.view.state.field(versionBlocksField);
+    decorations.between(0, codeEditor.view.state.doc.length, (_from, _to, deco) => {
+      deco.spec.widget?.disposeVariantEditors?.();
+    });
     codeEditor.view.destroy();
     codeEditor = null;
   }

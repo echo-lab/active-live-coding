@@ -59,6 +59,7 @@ export class HistoricalCodeEditor {
       view: this.view,
       readOnly: true,
     });
+    this._versionBlockWidget = widget;
     this.view.dispatch({
       effects: addVersionBlockEffect.of({ from, to: from, widget }),
     });
@@ -84,6 +85,7 @@ export class HistoricalCodeEditor {
   }
 
   destroy() {
+    this._versionBlockWidget?.disposeVariantEditors?.();
     this.view.destroy();
   }
 }
