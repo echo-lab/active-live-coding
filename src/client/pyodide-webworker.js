@@ -122,6 +122,7 @@ self.onmessage = async (event) => {
 
   const dict = self.pyodide.globals.get("dict");
   const globals = dict();
+  globals.set("__name__", "__main__");
   try {
     self.postMessage({ type: "status", runId, message: "Loading packages…" });
     await self.pyodide.loadPackagesFromImports(python);
