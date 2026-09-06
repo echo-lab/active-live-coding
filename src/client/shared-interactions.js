@@ -445,7 +445,7 @@ export function makeActivitiesPanelResizable(
   resizer,
   activitiesPanel,
   openButton,
-  gutterWidth = 12,
+  gutterWidth = 8,
   minCodeWidth = 150,
   minActivitiesWidth = 150,
   initiallyCollapsed = false
@@ -454,16 +454,43 @@ export function makeActivitiesPanelResizable(
   let collapsed = false;
   let savedActivitiesWidth = null;
 
+  // Cleans up after a collapse()/expand() animation settles: drops the transition-enabling
+  // class and, if we ended up collapsed, applies display:none (deferred so the panel stays
+  // rendered -- and thus visibly slides/fades -- for the whole animation instead of vanishing
+  // instantly). Reads the live `collapsed` flag rather than being told an outcome, so rapid
+  // open/close reversal mid-animation self-corrects: whichever call settles last wins.
+  function settleTransition() {
+    if (!parentContainer.classList.contains("panel-animating")) return;
+    parentContainer.classList.remove("panel-animating");
+    activitiesPanel.classList.remove("panel-animating");
+    if (collapsed) activitiesPanel.style.display = "none";
+  }
+
+  parentContainer.addEventListener("transitionend", (e) => {
+    if (e.target === parentContainer && e.propertyName === "grid-template-columns") {
+      settleTransition();
+    }
+  });
+
   function collapse() {
     if (collapsed) return;
     collapsed = true;
-    let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
-    savedActivitiesWidth = cols[2] || null;
-    activitiesPanel.style.display = "none";
+    // Skip recapturing the width while an open animation is still in flight -- getComputedStyle
+    // would return a mid-interpolation value, corrupting the saved width for next time.
+    if (!parentContainer.classList.contains("panel-animating")) {
+      let cols = getComputedStyle(parentContainer).gridTemplateColumns.split(" ");
+      savedActivitiesWidth = cols[2] || null;
+    }
+    parentContainer.classList.add("panel-animating");
+    activitiesPanel.classList.add("panel-animating");
+    activitiesPanel.style.opacity = "0";
     // Zero out the gutter too (not just the activities column) -- while collapsed there's
     // nothing to drag, and leaving it non-zero left a persistent gap between the code pane's
     // right edge and the rest of the page (e.g. the topbar's gear icon no longer lined up).
     parentContainer.style.gridTemplateColumns = `auto 0px 0px`;
+    // display:none is applied by settleTransition() once the slide/fade finishes, as a
+    // fallback in case a browser doesn't fire transitionend for grid-template-columns.
+    setTimeout(settleTransition, 300);
     resizer.style.cursor = "default";
     resizer.classList.add("collapsed");
     parentContainer.classList.add("collapsed");
@@ -473,9 +500,21 @@ export function makeActivitiesPanelResizable(
   function expand() {
     if (!collapsed) return;
     collapsed = false;
+    // Establish the pre-animation baseline and force a synchronous style flush before setting
+    // the open target. Without this, the display:none -> "" flip and the target width/opacity
+    // change get coalesced into one recalc with no intermediate frame to transition from, and
+    // the panel just snaps open instead of sliding in.
     activitiesPanel.style.display = "";
+    activitiesPanel.style.opacity = "0";
+    parentContainer.style.gridTemplateColumns = `auto 0px 0px`;
+    void parentContainer.offsetHeight;
+
+    parentContainer.classList.add("panel-animating");
+    activitiesPanel.classList.add("panel-animating");
     let restoreWidth = savedActivitiesWidth || `calc(31% - ${gutterWidth}px)`;
     parentContainer.style.gridTemplateColumns = `auto ${gutterWidth}px ${restoreWidth}`;
+    activitiesPanel.style.opacity = "1";
+    setTimeout(settleTransition, 300);
     resizer.style.cursor = "col-resize";
     resizer.classList.remove("collapsed");
     parentContainer.classList.remove("collapsed");
@@ -495,6 +534,10 @@ export function makeActivitiesPanelResizable(
 
   resizer.addEventListener("mousedown", (e) => {
     if (collapsed) return;
+    // Guard against grabbing the gutter in the last few ms of an open animation -- dragging
+    // should always be instant, never subject to the panel-open/close transition.
+    parentContainer.classList.remove("panel-animating");
+    activitiesPanel.classList.remove("panel-animating");
     isDragging = true;
     resizer.classList.add("is-dragging");
     e.preventDefault();

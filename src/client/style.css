@@ -826,9 +826,10 @@ td {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-color: rgb(236, 236, 236);
-  border-left: solid 1px lightgrey;
-  border-right: solid 1px lightgrey;
+  /* background-color: rgb(236, 236, 236); */
+  background-color: #eef0fc;
+  border-top: solid 1px lightgrey;
+  border-bottom: solid 1px lightgrey;
   cursor: col-resize;
   user-select: none;
   z-index: 10;
@@ -859,6 +860,18 @@ td {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+/* Slide-in/out transition for opening/closing the activities panel. Kept behind a JS-toggled
+   class (rather than always-on) so manual gutter dragging and the initial collapsed page load
+   both stay instant -- only programmatic open/close animates. Keep duration/easing identical to
+   the matching rules in style-student-page.css. */
+#instructor-interface .parent-container.panel-animating {
+  transition: grid-template-columns 220ms ease-in-out;
+}
+
+#instructor-interface #activities-container.panel-animating {
+  transition: opacity 220ms ease-in-out;
 }
 
 #activities-placeholder {

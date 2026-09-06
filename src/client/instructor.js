@@ -56,7 +56,7 @@ const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = mak
   document.querySelector("#resize-activities"),
   document.querySelector("#activities-container"),
   document.querySelector("#open-activities-panel"),
-  /*gutterWidth=*/ 12,
+  /*gutterWidth=*/ 5,
   /*minCodeWidth=*/ 400,
   /*minActivitiesWidth=*/ 300,
   /*initiallyCollapsed=*/ true,

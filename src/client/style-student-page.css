@@ -45,6 +45,18 @@
   overflow: hidden;
 }
 
+/* Slide-in/out transition for opening/closing the activities panel. Kept behind a JS-toggled
+   class (rather than always-on) so manual gutter dragging and the initial collapsed page load
+   both stay instant -- only programmatic open/close animates. Keep duration/easing identical to
+   the matching rules in style.css. */
+#student-page-interface .parent-container.panel-animating {
+  transition: grid-template-columns 220ms ease-in-out;
+}
+
+#activities-container.panel-animating {
+  transition: opacity 220ms ease-in-out;
+}
+
 #student-page-interface #code-tabs {
   border-radius: 5px 0px 0px 0px; /* only round the outer top-left corner */
 }
