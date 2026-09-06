@@ -435,6 +435,7 @@ export class VersionBlockWidget extends WidgetType {
     this._outerView = view;
     this._onDissolve = onDissolve ?? null;
     this.readOnly = readOnly;
+    this._locked = false;
 
     this.selectedIndex = 0; // TODO: make this an ID instead... maybe?
     this.isMinimized = START_MINIMIZED;
@@ -556,6 +557,7 @@ export class VersionBlockWidget extends WidgetType {
           await this.dissolve();
         }
       });
+      this.closeBtn = closeBtn;
       rightGroup.appendChild(closeBtn);
     }
 
@@ -620,7 +622,23 @@ export class VersionBlockWidget extends WidgetType {
     return {from, to};
   }
 
+  // Freezes an already-mounted, still-editable widget in place once the lecture has ended --
+  // hides every control that would add/rename/delete a variant or dissolve the block, and
+  // switches each variant's editor to read-only. Mirrors the `readOnly` construction-time mode
+  // above, but applied live instead of requiring the widget to be rebuilt.
+  lock() {
+    this._locked = true;
+    if (this.addBtn) this.addBtn.hidden = true;
+    if (this.closeBtn) this.closeBtn.hidden = true;
+    if (this.exerciseBtnContainer) this.exerciseBtnContainer.hidden = true;
+    this.container?.querySelectorAll(".cm-version-block-tab-delete").forEach((btn) => { btn.hidden = true; });
+    for (const { editor } of this.variants) {
+      editor.lock?.();
+    }
+  }
+
   async dissolve() {
+    if (this._locked) return;
     await this._onDissolve?.();  // from InstructorCodeEditor.
     this.disposeVariantEditors();
     this._clearExerciseState();
@@ -788,6 +806,7 @@ export class VersionBlockWidget extends WidgetType {
   }
 
   _startRename(index, labelEl, tabEl) {
+    if (this._locked) return;
     const variant = this.variants[index];
     const input = document.createElement("input");
     input.className = "cm-version-block-tab-rename";
@@ -841,6 +860,7 @@ export class VersionBlockWidget extends WidgetType {
   // -------------------------------------------------------
 
   async _createVariant() {
+    if (this._locked) return;
     try {
       const variant = await this._createVariantBackend();
       if (!variant) return;
@@ -969,6 +989,7 @@ export class VersionBlockWidget extends WidgetType {
   }
 
   async _deleteVariant(variantId) {
+    if (this._locked) return;
     try {
       await this._deleteVariantBackend(variantId);
     } catch (err) {

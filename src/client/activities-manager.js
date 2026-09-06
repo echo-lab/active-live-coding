@@ -27,6 +27,16 @@ export class InstructorActivitiesManager extends EventTarget {
     socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
       this.#handleStudentSubmitted(msg);
     });
+
+    this.active = true;
+  }
+
+  // Stops this manager from creating or finishing any more exercises/polls -- called once the
+  // lecture has ended, so every UI entry point that funnels through here (the inline
+  // version-block "ask students"/"finish exercise" button, the poll-active-popover's own
+  // "Finish" button, the activities panel) stops persisting anything with a single flag.
+  endSession() {
+    this.active = false;
   }
 
   getActiveExercises() {
@@ -68,6 +78,7 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 
   async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
+    if (!this.active) return;
     const res = await fetch("/exercise", {
       body: JSON.stringify({
         lectureId: this.sessionNumber,
@@ -113,6 +124,7 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 
   async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
+    if (!this.active) return;
     const default_answer = JSON.stringify(choices);
     const res = await fetch("/exercise", {
       body: JSON.stringify({
@@ -171,6 +183,7 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 
   async createCodeVariantExercise({ default_answer, instructor_code, versionBlockId }) {
+    if (!this.active) return null;
     if (this.exercises.some((e) => e.VersionBlockId === versionBlockId)) {
       alert("This version block already has an exercise.");
       return null;
@@ -248,6 +261,7 @@ export class InstructorActivitiesManager extends EventTarget {
   }
 
   async finishExercise(id) {
+    if (!this.active) return;
     console.log("finishing exercise: ", id);
     const ex = this.exercises.find((e) => e.id === id);
     if (!ex) return;

@@ -1,5 +1,5 @@
 import { EditorView, minimalSetup } from "codemirror";
-import { EditorState, Text, ChangeSet, Compartment } from "@codemirror/state";
+import { EditorState, Text, ChangeSet, Compartment, StateEffect } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
 import { indentUnit } from "@codemirror/language";
 import {
@@ -419,6 +419,7 @@ export class InstructorCodeEditor {
   // overlaps an existing version block (not supported), or if there's truly nothing in the
   // document to anchor to.
   requestCreatePoll({ from, to }) {
+    if (!this.active) return;
     // Trim leading/trailing whitespace so the anchor tightly bounds real code -- this keeps
     // boundary-adjacent edits from landing inside the range, and lets it fully collapse (rather
     // than leaving a whitespace-only remainder) if the code is later deleted. If the selection is
@@ -549,6 +550,7 @@ export class InstructorCodeEditor {
   }
 
   async dissolveVersionBlock(versionBlockId) {
+    if (!this.active) return;
     const finishedExerciseId = await this._destroyVersionBlockBackend(versionBlockId);
     this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
     if (finishedExerciseId != null) {
@@ -638,9 +640,16 @@ export class InstructorCodeEditor {
 
   endSession() {
     this.active = false;
+    this.view.dispatch({
+      effects: StateEffect.appendConfig.of([EditorView.editable.of(false), EditorState.readOnly.of(true)]),
+    });
+    for (const widget of Object.values(this.versionBlocks)) {
+      widget.lock();
+    }
   }
 
   async createNewVersionBlock({ variantCode, from, to, autoStartExercise = false }) {
+    if (!this.active) return;
     // Step 0: Make sure we're not creating nested version blocks!
     const decorations = this.view.state.field(versionBlocksField);
     let containsExistingBlock = false;
@@ -773,9 +782,19 @@ export class VariantCodeEditor {
     });
 
     this.view = new EditorView({ state, parent: node });
+    this.active = true;
+  }
+
+  lock() {
+    this.active = false;
+    this.view.dispatch({
+      effects: StateEffect.appendConfig.of([EditorView.editable.of(false), EditorState.readOnly.of(true)]),
+    });
   }
 
   broadcastVariantChanges(viewUpdate) {
+    if (!this.active) return;
+
     if (viewUpdate.docChanged) {
       viewUpdate.transactions.forEach((tr) => {
         this.socket.emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, {
