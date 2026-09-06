@@ -144,10 +144,6 @@ async function initialize({
 
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(codeOutputsEl);
-  const fitbOnRun = async (code) => {
-    const res = await codeRunner.asyncRun(code);
-    consoleOutput.addResult({ fileName: "<exercise>", ...res });
-  };
 
   let runInteractions = new RunInteractions({
     runButtonEl,
@@ -164,10 +160,33 @@ async function initialize({
   activitiesManager.addEventListener("exerciseCreated", syncRunButtonVisibility);
   activitiesManager.addEventListener("exerciseFinished", syncRunButtonVisibility);
 
-  socket.on(
-    SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN,
-    (msg) => sessionActive && consoleOutput.addResult(msg)
-  );
+  // Purely passive rendering of the instructor's broadcast run -- this client never executes
+  // this code itself, it only mirrors incoming events. A msg.runId with no "start" seen yet (e.g.
+  // this student joined mid-run) has no entry in consoleOutput's run map, so every method below
+  // silently no-ops for it -- that's the intended way late joiners drop in-flight run events.
+  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, (msg) => {
+    if (!sessionActive) return;
+    switch (msg.phase) {
+      case "start":
+        consoleOutput.startRun(msg.runId, { fileName: msg.fileName, ts: msg.ts, interactive: false });
+        break;
+      case "output":
+        consoleOutput.appendOutput(msg.runId, { stdout: msg.stdout, stderr: msg.stderr });
+        break;
+      case "awaiting-input":
+        consoleOutput.showInputPrompt(msg.runId, {});
+        break;
+      case "input-text":
+        consoleOutput.updateInputText(msg.runId, msg.text);
+        break;
+      case "input-submitted":
+        consoleOutput.submitInputLine(msg.runId, msg.text);
+        break;
+      case "end":
+        consoleOutput.finishRun(msg.runId, msg);
+        break;
+    }
+  });
 
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, () => {
     console.log("SESSION IS ENDED!");

@@ -33,6 +33,18 @@ import { registerAdminRoutes } from "./admin-routes.js";
 
 const app = express();
 
+// MARK: Cross-origin isolation
+// Required so the client can use SharedArrayBuffer + Atomics.wait/notify to implement blocking
+// Python input() inside the Pyodide web worker. require-corp (not the newer credentialless mode)
+// is used because jsdelivr -- the only cross-origin resource this app loads (Pyodide's runtime,
+// wasm, and packages) -- already sends Cross-Origin-Resource-Policy: cross-origin, and
+// credentialless has no Safari support at all while require-corp works from Safari 15.2+.
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  next();
+});
+
 // MARK: Dev-only admin gate
 // Blocks the dev-only lecture-list/replay pages and their API, for offline analysis of past
 // lectures, from ever being reachable in production -- registered first (before body-parsing,

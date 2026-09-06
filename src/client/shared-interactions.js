@@ -117,6 +117,21 @@ export function recordEvent(type, payload = {}) {
   eventsBuffer.recordEvent(timestamp, { type, timestamp, ...payload });
 }
 
+// Simple trailing debounce -- used only for live input-text broadcasts (a "replace with latest"
+// operation, where dropping intermediate keystrokes is fine). Never use this for output, where
+// every chunk must survive; see the worker's own batch-and-concatenate flushing for that instead.
+export function debounce(fn, waitMs) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), waitMs);
+  };
+}
+
+const RUN_LABEL = "▶ ️Run";
+const STOP_LABEL = "■ Stop";
+const RESTARTING_LABEL = "Restarting…";
+
 // Wrapping this in an object so we can swap out the editor when we have multiple tabs.
 export class RunInteractions {
   constructor({
@@ -141,27 +156,73 @@ export class RunInteractions {
     this.editor = editor;
   }
 
-  async runCode() {
-    if (this.running) return;
+  runCode() {
+    if (this.running) {
+      // The button doubles as Stop while a run is in progress.
+      this.runner.cancel();
+      return;
+    }
     this.running = true;
     this.el.classList.add("in-progress");
-    this.el.disabled = true;
-    this.el.textContent = "Running...";
+    this.el.textContent = STOP_LABEL;
 
-    // Record the event on the server. No need to await.
     let code = this.editor.currentCode();
     recordEvent(EVENT_TYPES.CODE_RUN, { code });
 
-    let minRunTime = new Promise((resolve) => setTimeout(resolve, 500));
-    let res = await this.runner.asyncRun(code);
-    await minRunTime;
-    this.console.addResult({ fileName: this.editor.fileName, ...res });
-    this.broadcastResult({ fileName: this.editor.fileName, ...res }); // A no-op in student interfaces.
+    let fileName = this.editor.fileName;
+    let ts = Date.now();
+    let runId;
 
-    this.el.classList.remove("in-progress");
-    this.el.disabled = false;
-    this.el.textContent = "▶ ️Run";
-    this.running = false;
+    const broadcastInputText = debounce((text) => {
+      this.broadcastResult({ phase: "input-text", runId, text });
+    }, 120);
+
+    const finishButton = ({ cancelled }) => {
+      this.running = false;
+      this.el.classList.remove("in-progress");
+      if (cancelled) {
+        // restartWebWorker() re-loads Pyodide from scratch, so the button stays disabled until
+        // the fresh worker is actually ready rather than silently absorbing that delay.
+        this.el.textContent = RESTARTING_LABEL;
+        this.el.disabled = true;
+        this.runner.onWorkerReady = () => {
+          this.runner.onWorkerReady = null;
+          this.el.disabled = false;
+          this.el.textContent = RUN_LABEL;
+        };
+      } else {
+        this.el.textContent = RUN_LABEL;
+      }
+    };
+
+    runId = this.runner.startRun(code, {
+      onOutput: ({ stdout, stderr }) => {
+        this.console.appendOutput(runId, { stdout, stderr });
+        this.broadcastResult({ phase: "output", runId, stdout, stderr });
+      },
+      onStatus: (message) => {
+        this.console.setStatus(runId, message);
+      },
+      onAwaitingInput: () => {
+        this.broadcastResult({ phase: "awaiting-input", runId });
+        this.console.showInputPrompt(runId, {
+          onTextChange: broadcastInputText,
+          onSubmit: (text) => {
+            this.runner.submitInput(runId, text);
+            this.console.submitInputLine(runId, text);
+            this.broadcastResult({ phase: "input-submitted", runId, text });
+          },
+        });
+      },
+      onEnd: (result) => {
+        this.console.finishRun(runId, result);
+        this.broadcastResult({ phase: "end", runId, ...result }); // A no-op in student interfaces.
+        finishButton(result);
+      },
+    });
+
+    this.console.startRun(runId, { fileName, ts, interactive: true });
+    this.broadcastResult({ phase: "start", runId, fileName, ts }); // A no-op in student interfaces.
   }
 }
 
@@ -199,59 +260,198 @@ export function makeConsoleResizable(outputConsole, resizeBar) {
   });
 }
 
+// Renders one code run per call, keyed by a caller-supplied runId (see startRun below). Every
+// other method looks its runId up in `this.runs` and silently no-ops if it isn't found -- this is
+// deliberate: a student who joins after a run's "start" event never gets an entry for it, so any
+// later events for that run (output, prompts, etc.) are correctly dropped rather than displayed
+// half-formed. The same instance renders both a client's own interactive runs (real, focusable
+// input) and passively mirrored runs from another client (read-only, driven only by incoming
+// socket messages) -- which one a given run is is fixed at startRun() time via `interactive`.
 export class Console {
   constructor(innerContainer) {
     this.el = innerContainer;
+    this.runs = new Map();
   }
 
-  addResult({
-    results = null,
-    error = null,
-    stderr = [],
-    stdout = [],
-    fileName = "instructor.py",
-    ts = Date.now(),
-  }) {
+  startRun(runId, { fileName = "instructor.py", ts = Date.now(), interactive = false } = {}) {
     if (this.el.classList.contains("empty")) {
       this.el.innerText = "";
       this.el.classList.remove("empty");
-    }
-
-    if (stdout.length > MAX_OUTPUT_LENGTH) {
-      stdout = [
-        `[ ${stdout.length - MAX_OUTPUT_LENGTH} lines hidden ]`,
-        ...stdout.slice(-MAX_OUTPUT_LENGTH),
-      ];
     }
 
     let container = document.createElement("div");
     container.classList.add("one-code-run-output");
 
     let header = document.createElement("span");
-    let timeString = new Date(ts).toLocaleTimeString();
-    header.innerText = `${fileName} · ${timeString}`;
+    header.innerText = `${fileName} · ${new Date(ts).toLocaleTimeString()}`;
     header.classList.add("code-output-header");
     container.appendChild(header);
 
-    let addOutput = (text, className) => {
-      let div = document.createElement("div");
-      div.classList.add(className);
-      let pre = document.createElement("pre");
-      pre.innerText = text;
-      div.appendChild(pre);
-      container.appendChild(div);
-    };
-    stdout.forEach((line) => addOutput(line, "stdout-line"));
-    stderr.forEach((line) => addOutput(line, "stderr-line"));
-    error && addOutput(error, "stderr-line");
-    results && addOutput(results, "stdout-line");
+    this.el.appendChild(container);
+    this.el.scrollTo(0, 1e6);
+
+    this.runs.set(runId, { container, interactive, stdoutLineEls: [], hiddenCount: 0, lastStdoutLineEl: null });
+  }
+
+  _addLine(run, text, className) {
+    let div = document.createElement("div");
+    div.classList.add(className);
+    let pre = document.createElement("pre");
+    pre.innerText = text;
+    div.appendChild(pre);
+    run.container.appendChild(div);
+    this.el.scrollTo(0, 1e6);
+    // Tracks the most recently printed stdout line so a following input() prompt can continue
+    // on the same line instead of starting a new one below it -- see showInputPrompt.
+    if (className === "stdout-line") run.lastStdoutLineEl = div;
+    return div;
+  }
+
+  _clearStatus(run) {
+    run.statusEl?.remove();
+    run.statusEl = null;
+  }
+
+  setStatus(runId, message) {
+    let run = this.runs.get(runId);
+    if (!run) return;
+    if (!run.statusEl) {
+      run.statusEl = document.createElement("div");
+      run.statusEl.classList.add("run-status-line");
+      run.container.appendChild(run.statusEl);
+    }
+    run.statusEl.innerText = message;
+  }
+
+  appendOutput(runId, { stdout = [], stderr = [] } = {}) {
+    let run = this.runs.get(runId);
+    if (!run) return;
+    this._clearStatus(run);
+
+    stdout.forEach((line) => {
+      run.stdoutLineEls.push(this._addLine(run, line, "stdout-line"));
+      this._trimIfNeeded(run);
+    });
+    stderr.forEach((line) => this._addLine(run, line, "stderr-line"));
+  }
+
+  // Ports the old one-shot MAX_OUTPUT_LENGTH slice to an incremental world: once a run's stdout
+  // exceeds the cap, drop the oldest surviving line and fold it into a running "[N lines hidden]"
+  // marker left in that line's place.
+  _trimIfNeeded(run) {
+    if (run.stdoutLineEls.length <= MAX_OUTPUT_LENGTH) return;
+    let oldest = run.stdoutLineEls.shift();
+    run.hiddenCount++;
+    if (!run.hiddenMarkerEl) {
+      run.hiddenMarkerEl = document.createElement("div");
+      run.hiddenMarkerEl.classList.add("stdout-line");
+      run.hiddenMarkerEl.appendChild(document.createElement("pre"));
+      oldest.replaceWith(run.hiddenMarkerEl);
+    } else {
+      oldest.remove();
+    }
+    run.hiddenMarkerEl.querySelector("pre").innerText = `[ ${run.hiddenCount} lines hidden ]`;
+  }
+
+  // input()'s prompt (e.g. "your number: ") arrives moments earlier as a normal, just-flushed
+  // stdout line with no trailing newline -- so the cursor continues right there on that same
+  // line, like a real terminal, instead of starting a new line below it. Only a genuinely bare
+  // input() (nothing printed immediately before it, or the last thing printed was on stderr)
+  // falls back to a fresh line.
+  showInputPrompt(runId, { onTextChange, onSubmit } = {}) {
+    let run = this.runs.get(runId);
+    if (!run) return;
+    this._clearStatus(run);
+
+    let row = run.lastStdoutLineEl;
+    if (!row) {
+      row = document.createElement("div");
+      row.classList.add("stdout-line");
+      row.appendChild(document.createElement("pre"));
+      run.container.appendChild(row);
+    }
+    run.lastStdoutLineEl = null; // consumed -- a later, unrelated input() must not reuse this line
+
+    if (run.interactive) {
+      let input = document.createElement("input");
+      input.classList.add("console-stdin-input");
+      input.type = "text";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.addEventListener("input", () => onTextChange?.(input.value));
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        onSubmit?.(input.value);
+      });
+      row.appendChild(input);
+      run.promptInputEl = input;
+    } else {
+      let textEl = document.createElement("span");
+      textEl.classList.add("run-input-mirrored-text");
+      let cursorEl = document.createElement("span");
+      cursorEl.classList.add("run-input-cursor");
+      row.appendChild(textEl);
+      row.appendChild(cursorEl);
+      run.promptTextEl = textEl;
+    }
+
+    run.promptRowEl = row;
+    this.el.scrollTo(0, 1e6);
+    run.promptInputEl?.focus();
+  }
+
+  // Live-mirrors what another client is currently typing (only meaningful for a non-interactive,
+  // mirrored run -- the owning client's own <input> already shows its own text natively).
+  updateInputText(runId, text) {
+    let run = this.runs.get(runId);
+    if (!run?.promptTextEl) return;
+    run.promptTextEl.innerText = text;
+  }
+
+  // Replaces the live input control with plain finalized text, in place, on the same prompt line
+  // -- so the transcript reads "your number: 42" as one continuous line, not two.
+  submitInputLine(runId, text) {
+    let run = this.runs.get(runId);
+    if (!run?.promptRowEl) return;
+    run.promptInputEl?.remove();
+    run.promptTextEl?.remove();
+    run.promptRowEl.querySelector(".run-input-cursor")?.remove();
+
+    let finalText = document.createElement("span");
+    finalText.classList.add("typed-input-text");
+    finalText.innerText = text;
+    run.promptRowEl.appendChild(finalText);
+
+    run.promptRowEl = null;
+    run.promptInputEl = null;
+    run.promptTextEl = null;
+    this.el.scrollTo(0, 1e6);
+  }
+
+  finishRun(runId, { results = null, error = null, cancelled = false, timedOut = false } = {}) {
+    let run = this.runs.get(runId);
+    if (!run) return;
+    this._clearStatus(run);
+    if (run.promptRowEl) {
+      // Leave the prompt text itself in place (it's part of the printed transcript) -- just
+      // strip the now-moot interactive control/cursor from it.
+      run.promptInputEl?.remove();
+      run.promptTextEl?.remove();
+      run.promptRowEl.querySelector(".run-input-cursor")?.remove();
+      run.promptRowEl = null;
+      run.promptInputEl = null;
+      run.promptTextEl = null;
+    }
+
+    error && this._addLine(run, error, "stderr-line");
+    results && this._addLine(run, results, "stdout-line");
 
     let statusBadge = document.createElement("span");
-    statusBadge.classList.add("run-status-badge", error ? "failure" : "success");
-    statusBadge.innerText = error ? "✗ Failed" : "✓ Succeeded";
-    container.appendChild(statusBadge);
-
-    this.el.appendChild(container);
+    let stopped = cancelled || timedOut;
+    statusBadge.classList.add("run-status-badge", stopped ? "cancelled" : error ? "failure" : "success");
+    statusBadge.innerText = cancelled ? "■ Stopped" : timedOut ? "✗ Timed out" : error ? "✗ Failed" : "✓ Succeeded";
+    run.container.appendChild(statusBadge);
     this.el.scrollTo(0, 1e6);
   }
 }

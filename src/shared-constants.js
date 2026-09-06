@@ -76,6 +76,10 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   JOIN_SESSION: "JOIN_SESSION",
   INSTRUCTOR_EDIT: "INSTRUCTOR_EDIT",
   INSTRUCTOR_CURSOR: "INSTRUCTOR_CURSOR",
+  // Payload always carries {runId, sessionId, phase}, where phase is one of:
+  // "start" | "output" | "awaiting-input" | "input-text" | "input-submitted" | "end".
+  // One run's messages are correlated purely by runId -- the server relay is a stateless
+  // pass-through, so ordering/dropping for late-joining clients is handled entirely client-side.
   INSTRUCTOR_CODE_RUN: "INSTRUCTOR_CODE_RUN",
   INSTRUCTOR_END_SESSION: "INSTRUCTOR_END_SESSION",
   STUDENT_CODE_EDIT: "STUDENT_CODE_EDIT",

@@ -319,12 +319,16 @@ span.sep {
   border-radius: 5px;
   animation-name: flash-in;
   animation-duration: 1.2s;
+  margin-bottom: 10px;
 }
 
 .stdout-line,
 .stderr-line {
   display: flex;
-  align-items: flex-start;
+  /* baseline (not flex-start) so an input()'s inline <input>/cursor lines up with the text
+     baseline of the prompt's <pre> beside it, instead of aligning by box top -- an <input>'s
+     box doesn't sit the same way relative to its own text as a <pre>'s does. */
+  align-items: baseline;
   gap: 6px;
 }
 
@@ -355,6 +359,53 @@ span.sep {
 .run-status-badge.failure {
   background-color: #fdecec;
   color: #c62828;
+}
+
+.run-status-badge.cancelled {
+  background-color: #f1f1f1;
+  color: #555;
+}
+
+.run-status-line {
+  color: #999;
+  font-style: italic;
+  font-size: small;
+  padding: 2px 0;
+}
+
+/* input()'s cursor/answer render inline, inside the same .stdout-line as the prompt that
+   preceded it (see Console.showInputPrompt) -- so these only ever style content nested inside
+   an existing .stdout-line row, not a row of their own. */
+.console-stdin-input {
+  flex: 1;
+  min-width: 4ch;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: "Courier New", monospace;
+  font-size: inherit;
+  color: inherit;
+  padding: 0;
+}
+
+.typed-input-text {
+  color: #5457d6;
+  font-weight: 600;
+}
+
+.run-input-mirrored-text {
+  font-family: "Courier New", monospace;
+  white-space: pre-wrap;
+}
+
+.run-input-cursor {
+  display: inline-block;
+  width: 0px;
+  height: 1em;
+  vertical-align: text-bottom;
+  animation-name: blink-cursor;
+  animation-duration: 1.2s;
+  animation-iteration-count: infinite;
 }
 
 #all-code-outputs {
@@ -589,6 +640,14 @@ pre {
 }
 
 #run-button.in-progress {
+  background-color: #d64545;
+}
+
+#run-button.in-progress:hover {
+  background-color: #b83a3a;
+}
+
+#run-button:disabled {
   background-color: lightgrey;
   color: grey;
 }

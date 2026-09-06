@@ -6,10 +6,6 @@ export const POST_JSON_REQUEST = { method: "POST", headers: JSON_HEADERS };
 export const PATCH_JSON_REQUEST = { method: "PATCH", headers: JSON_HEADERS };
 export const PUT_JSON_REQUEST = { method: "PUT", headers: JSON_HEADERS };
 
-export function makeID() {
-  return Date.now();
-}
-
 export function getEmail() {
   if (ANONYMOUS_STUDENT_MODE) return null;
   let email = localStorage.getItem("user_email");
