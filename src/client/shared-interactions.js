@@ -268,9 +268,10 @@ export function makeConsoleResizable(outputConsole, resizeBar) {
 // input) and passively mirrored runs from another client (read-only, driven only by incoming
 // socket messages) -- which one a given run is is fixed at startRun() time via `interactive`.
 export class Console {
-  constructor(innerContainer) {
+  constructor(innerContainer, { authorLabels = false } = {}) {
     this.el = innerContainer;
     this.runs = new Map();
+    this.authorLabels = authorLabels;
   }
 
   startRun(runId, { fileName = "instructor.py", ts = Date.now(), interactive = false } = {}) {
@@ -283,7 +284,9 @@ export class Console {
     container.classList.add("one-code-run-output");
 
     let header = document.createElement("span");
-    header.innerText = `${fileName} · ${new Date(ts).toLocaleTimeString()}`;
+    header.innerText = this.authorLabels
+      ? `${interactive ? "You" : "Instructor"} · ${new Date(ts).toLocaleTimeString()}`
+      : `${fileName} · ${new Date(ts).toLocaleTimeString()}`;
     header.classList.add("code-output-header");
     container.appendChild(header);
 

@@ -143,7 +143,7 @@ async function initialize({
   });
 
   let codeRunner = new PythonCodeRunner();
-  let consoleOutput = new Console(codeOutputsEl);
+  let consoleOutput = new Console(codeOutputsEl, { authorLabels: true });
 
   let runInteractions = new RunInteractions({
     runButtonEl,
