@@ -13,12 +13,7 @@
         <div class="topbar-left">
           <span class="app-logo">AD LIB</span>
           <h3 id="session-name-display"></h3>
-          <span hidden>
-            <label style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
-              <input type="checkbox" id="simulate-responses-checkbox">
-              Simulate responses
-            </label>
-          </span>
+          <span id="session-ended-warning" class="session-ended-chip" hidden>Session terminated: future updates not saved</span>
         </div>
         <div class="topbar-right">
           <div class="settings-menu-wrapper">
@@ -30,6 +25,13 @@
             </button>
             <div id="settings-menu" class="settings-dropdown" hidden>
               <span id="session-details" hidden></span>
+              <label class="settings-dropdown-item">
+                Simulate responses
+                <span class="toggle-switch">
+                  <input type="checkbox" id="simulate-responses-checkbox">
+                  <span class="toggle-slider"></span>
+                </span>
+              </label>
               <button id="copy-review-link-btn" class="settings-dropdown-item" hidden>
                 <span class="review-link-text">review link</span>
                 <svg class="review-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -37,7 +39,7 @@
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
               </button>
-              <button id="end-session-butt" class="settings-dropdown-item" title="Ending the lecture disables future edits and frees up the lecture ID for future use." disabled>end</button>
+              <button id="end-session-butt" class="settings-dropdown-item" title="Ending the lecture disables future edits and frees up the lecture ID for future use." disabled>end session</button>
             </div>
           </div>
         </div>

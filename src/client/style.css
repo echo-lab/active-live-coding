@@ -539,6 +539,7 @@ pre {
 .settings-dropdown-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   width: 100%;
   box-sizing: border-box;
@@ -570,6 +571,49 @@ pre {
 
 .review-link-icon {
   flex-shrink: 0;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+}
+
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background-color: #ccc;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #646cff;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(14px);
 }
 
 .info-icon {
@@ -620,6 +664,34 @@ pre {
   border-radius: 20px;
   padding: 4px 12px;
   vertical-align: middle;
+}
+
+.session-ended-chip {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b3261e;
+  background-color: #fdecea;
+  border: 1px solid #f5c2c0;
+  border-radius: 20px;
+  padding: 4px 12px;
+  vertical-align: middle;
+  animation: session-ended-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes session-ended-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-ended-chip {
+    animation: none;
+  }
 }
 
 #run-button {
@@ -1310,8 +1382,9 @@ td {
 .response-group {
   width: 100%;
   margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 15px;
+  padding-top: 15px;
+  border-bottom: 2px solid #e0e0e0;
   box-sizing: border-box;
 }
 

@@ -43,6 +43,7 @@ const historicalController = createHistoricalViewController({
 });
 const endButton = document.querySelector("#end-session-butt");
 const sessionDetails = document.querySelector("#session-details");
+const sessionEndedWarning = document.querySelector("#session-ended-warning");
 const runButtonEl = document.querySelector("#run-button");
 const outputCodeContainer = document.querySelector("#all-code-outputs");
 const consoleResizer = document.querySelector("#resize-console");
@@ -229,6 +230,7 @@ function initialize({
     // TODO: make it so you can't edit the code :)
     endButton.disabled = true;
     sessionDetails.textContent += " (Terminated)";
+    sessionEndedWarning.hidden = false;
     codeEditor.endSession();
     socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, { sessionNumber });
   });
