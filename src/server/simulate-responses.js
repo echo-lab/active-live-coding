@@ -109,9 +109,10 @@ function createVariantPrompt(exercise) {
 
   Give your response in JSON format as a list of strings which contain possible student responses. You should produce ${N} responses in total.
   Try to vary the responses somewhat, but keep them plausible (even if incorrect or incomplete) -- it's okay if some are very similar or the same.
+  If there are multiple viable correct solutions, try to have responses that reflect that.
   Some responses should display common misconceptions that a student might have, though only when it is relevant and feels like a plausible student response.
   Make sure you only respond with the JSON-parsable list of responses.
-  If it is absolutely impossible to infer the intent of the question, you can return an empty JSON list.
+  If it is not reasonable to infer the intent of the question, you can return an empty JSON list.
 
   Here is the instructor's code and the code being replaced.
   <INSTRUCTOR_CODE>

@@ -57,9 +57,10 @@ Here are the student responses, each with a unique ID and their answer:
 ${allResponses.map((r) => `<response id='${r.id}'>${r.answer}</response>`).join("\n")}
 </Student responses>
 
-Group these responses into approximately 2-5 groups based on their conceptual approach or common theme (e.g., similar idea, same misconception, same type of answer).
+Group these responses into approximately 2-8 groups based on their conceptual approach or common theme (e.g., similar idea, same misconception, same type of answer).
 Each group should have a very short description (<6 words) and a list of the response IDs that belong to it.
 Every response should appear in exactly one group, and it's okay if the last group is "miscellaneous".
+Note that for a given problem, there might be more than one solution -- if more than one approach is used, try to highlight that.
 
 Return your answer as a JSON array with no additional text. Each element should be an object with:
 - "description": a short string (a few words) describing what this group of responses has in common
