@@ -60,10 +60,13 @@ function scrollPollMarkerIntoView(view, id) {
 
 // MARK: Student Editor
 export class StudentCodeEditor {
-  // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, fileId, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
+  // Initialize CodeMirror and (if `socket` is given) listen for instructor updates. Pages with
+  // several files pass no socket and instead route each message to the right file's editor via
+  // handleSocketMessage (see workspace.js).
+  constructor({node, doc, docVersion, fileId, fileName = null, socket = null, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
     this.docVersion = docVersion;
     this.fileId = fileId;
+    this.fileName = fileName;
     this.sessionId = sessionId;
     this.activitiesManager = activitiesManager;
     this._reviewMode = reviewMode;
@@ -93,47 +96,88 @@ export class StudentCodeEditor {
     versionBlocks.forEach(v => this.addVersionBlock({...v, versionBlockId: v.id}));
 
     // Reconstruct any existing poll markers (persisted, position already resolved server-side).
+    this._managerListeners = [];
     if (activitiesManager) {
       activitiesManager.getExercises().forEach((ex) => this._maybeAddPollMarker(ex));
-      activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
-        this._maybeAddPollMarker(exercise);
-      });
-      activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-        this._maybeAddPollMarker(exercise);
-      });
+      const onExercise = ({ detail: { exercise } }) => this._maybeAddPollMarker(exercise);
+      for (const type of ["exerciseCreated", "exerciseFinished"]) {
+        activitiesManager.addEventListener(type, onExercise);
+        this._managerListeners.push([type, onExercise]);
+      }
     }
 
-    socket.on(
-      SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
-      this.handleInstructorEdit.bind(this)
-    );
-    socket.on(
-      SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR,
-      this.handleInstructorCursorChange.bind(this)
-    );
-    socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, ({ versionBlockId, from, to, variants }) => {
-      this.addVersionBlock({from, to, versionBlockId, variants});
-    });
-    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, ({ versionBlockId, variant }) => {
-      this.getVersionBlock(versionBlockId)?.addVariant(variant);
-    });
-    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, ({ versionBlockId, variantId, name }) => {
-      this.getVersionBlock(versionBlockId)?.renameVariant(variantId, name);
-    });
-    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, ({ versionBlockId, variantId }) => {
-      this.getVersionBlock(versionBlockId)?.removeVariant(variantId);
-    });
-    socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, ({ versionBlockId }) => {
-      this.removeVersionBlock(versionBlockId);
-      this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
-    });
-    // TODO: this is not right
-    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, ({ versionBlockId, variantId, changes, id }) => {
-      this.getVersionBlock(versionBlockId)?.getVariantEditor(variantId)?.handleInstructorEdit({changes, id});
-    });
-    socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, ({ versionBlockId, variantId, anchor, head }) => {
-      this.getVersionBlock(versionBlockId)?.getVariantEditor(variantId)?.handleInstructorCursorChange({anchor, head});
-    });
+    this._socket = null;
+    this._socketHandlers = [];
+    if (socket) this.attachSocket(socket);
+  }
+
+  // Subscribes this editor directly to every instructor message it handles. Only for single-file
+  // pages (e.g. the review page's no-op socket); multi-file pages route messages themselves.
+  attachSocket(socket) {
+    this._socket = socket;
+    for (const type of StudentCodeEditor.SOCKET_MESSAGE_TYPES) {
+      const handler = (msg) => this.handleSocketMessage(type, msg);
+      socket.on(type, handler);
+      this._socketHandlers.push([type, handler]);
+    }
+  }
+
+  static SOCKET_MESSAGE_TYPES = [
+    SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
+    SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR,
+    SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED,
+    SOCKET_MESSAGE_TYPE.VARIANT_ADDED,
+    SOCKET_MESSAGE_TYPE.VARIANT_RENAMED,
+    SOCKET_MESSAGE_TYPE.VARIANT_DELETED,
+    SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED,
+    SOCKET_MESSAGE_TYPE.VARIANT_EDIT,
+    SOCKET_MESSAGE_TYPE.VARIANT_CURSOR,
+  ];
+
+  // Applies one instructor socket message. Messages carrying a fileId for another file, or naming
+  // a version block this editor doesn't hold, are ignored.
+  handleSocketMessage(type, msg) {
+    switch (type) {
+      case SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT:
+        return this.handleInstructorEdit(msg);
+      case SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR:
+        if (msg.fileId != null && msg.fileId !== this.fileId) return;
+        return this.handleInstructorCursorChange(msg);
+      case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED: {
+        const { versionBlockId, from, to, variants, fileId } = msg;
+        if (fileId != null && fileId !== this.fileId) return;
+        return this.addVersionBlock({ from, to, versionBlockId, variants });
+      }
+      case SOCKET_MESSAGE_TYPE.VARIANT_ADDED:
+        return this.getVersionBlock(msg.versionBlockId)?.addVariant(msg.variant);
+      case SOCKET_MESSAGE_TYPE.VARIANT_RENAMED:
+        return this.getVersionBlock(msg.versionBlockId)?.renameVariant(msg.variantId, msg.name);
+      case SOCKET_MESSAGE_TYPE.VARIANT_DELETED:
+        return this.getVersionBlock(msg.versionBlockId)?.removeVariant(msg.variantId);
+      case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED:
+        if (!this.getVersionBlock(msg.versionBlockId)) return;
+        this.removeVersionBlock(msg.versionBlockId);
+        this.activitiesManager?.markVersionBlockDeleted(msg.versionBlockId);
+        return;
+      // TODO: this is not right
+      case SOCKET_MESSAGE_TYPE.VARIANT_EDIT:
+        return this.getVersionBlock(msg.versionBlockId)?.getVariantEditor(msg.variantId)?.handleInstructorEdit({ changes: msg.changes, id: msg.id });
+      case SOCKET_MESSAGE_TYPE.VARIANT_CURSOR:
+        return this.getVersionBlock(msg.versionBlockId)?.getVariantEditor(msg.variantId)?.handleInstructorCursorChange({ anchor: msg.anchor, head: msg.head });
+    }
+  }
+
+  // Tears the editor down for good (e.g. its file was deleted).
+  destroy() {
+    this.active = false;
+    for (const [type, handler] of this._socketHandlers) this._socket?.off(type, handler);
+    this._socketHandlers = [];
+    for (const [type, handler] of this._managerListeners) this.activitiesManager?.removeEventListener(type, handler);
+    this._managerListeners = [];
+    for (const widget of this.versionBlocks) {
+      for (const { editor } of widget.variants ?? []) editor?.view?.destroy();
+    }
+    this.view.destroy();
   }
 
   getDocVersion() {
@@ -157,6 +201,7 @@ export class StudentCodeEditor {
 
   _maybeAddPollMarker(ex) {
     if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
+    if (ex.DocumentId != null && ex.DocumentId !== this.fileId) return; // anchored in another file
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
     if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
@@ -368,9 +413,11 @@ export class InstructorCodeEditor {
     activitiesManager,
     onCreatePollRequested,
     onOpenPollMarker,
+    fileName = null,
   }) {
     this.docVersion = startVersion;
     this.fileId = fileId;
+    this.fileName = fileName;
     // Every change before this version has been durably written by the server.
     this.persistedVersion = persistedVersion;
     this.socket = socket;
@@ -399,9 +446,10 @@ export class InstructorCodeEditor {
     this.view = new EditorView({ state, parent: node });
     this.active = true;
 
-    socket.on(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, ({ docId, version }) => {
+    this._onPersisted = ({ docId, version }) => {
       if (docId === this.fileId) this.persistedVersion = Math.max(this.persistedVersion, version);
-    });
+    };
+    socket.on(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, this._onPersisted);
 
     // Reconstruct any existing version blocks from the server.
     for (const block of versionBlocks) {
@@ -427,13 +475,24 @@ export class InstructorCodeEditor {
     }
     // Refresh the marker (e.g. drop the "live" flash) once a poll is finished, whether by this
     // instructor or reflected in from another client.
-    activitiesManager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
-      this._maybeAddPollMarker(exercise);
-    });
+    this._onExerciseFinished = ({ detail: { exercise } }) => this._maybeAddPollMarker(exercise);
+    activitiesManager.addEventListener("exerciseFinished", this._onExerciseFinished);
+  }
+
+  // Tears the editor down for good (e.g. its file was deleted). Stops broadcasting first, so the
+  // teardown itself never emits edits.
+  destroy() {
+    this.active = false;
+    this.socket.off(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, this._onPersisted);
+    this.activitiesManager?.removeEventListener("exerciseFinished", this._onExerciseFinished);
+    for (const widget of Object.values(this.versionBlocks)) widget.disposeVariantEditors();
+    this.versionBlocks = {};
+    this.view.destroy();
   }
 
   _maybeAddPollMarker(ex) {
     if (ex.type !== "POLL" && ex.type !== "POLL_MCQ") return;
+    if (ex.DocumentId != null && ex.DocumentId !== this.fileId) return; // anchored in another file
     if (ex.code_anchor_from == null || ex.code_anchor_to == null) return;
     if (ex.code_anchor_to <= ex.code_anchor_from) return;
     this.view.dispatch({
@@ -792,6 +851,7 @@ export class InstructorCodeEditor {
       let { anchor, head } = viewUpdate.state.selection.main;
       this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, {
         sessionId: this.sessionNumber,
+        fileId: this.fileId,
         anchor,
         head,
       });
@@ -800,6 +860,7 @@ export class InstructorCodeEditor {
     if (viewUpdate.focusChanged && !viewUpdate.view.hasFocus) {
       this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, {
         sessionId: this.sessionNumber,
+        fileId: this.fileId,
         anchor: -1,
         head: -1,
       });

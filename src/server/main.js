@@ -22,7 +22,7 @@ import {
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { suggestMcqChoices } from "./suggest-mcq-choices.js";
 import { createGroupSummary } from "./group-responses.js";
-import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE, validateFilePath, isPathUnder } from "../shared-constants.js";
 import { eventsDb } from "./events-database.js";
 import { EventBuffer } from "./event-buffer.js";
 import {
@@ -188,6 +188,7 @@ app.post("/lecture-session", async (req, res) => {
         uuid: sesh.uuid,
         exercises,
         versionBlocks,
+        instructorView: instructorViews.get(sesh.id) ?? null,
       };
     });
     res.json(response);
@@ -287,6 +288,162 @@ app.delete("/version-block/:id", async (req, res) => {
   } catch (err) {
     console.error("Failed to soft-delete version block:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// MARK: File CRUD
+// Only the lecture's instructor can create/rename/delete files. Each route broadcasts its result to
+// the lecture room itself (rather than the client relaying it), since only the server knows the
+// new rows' ids. Paths are stored flat ("dir/name.py"); directories only exist implicitly.
+
+// Lectures in which the latest INSTRUCTOR_VIEW_STATE is remembered: lectureId -> {openFileIds,
+// activeFileId}. In memory only -- it just picks which tabs a (re)joining client starts on.
+const instructorViews = new Map();
+
+async function getInstructorLecture(lectureId, userId, transaction) {
+  const lecture = await LectureSession.findByPk(lectureId, { transaction });
+  if (!lecture) return { error: `Session #${lectureId} not found` };
+  if (!userId || lecture.instructor_id !== userId) return { error: "Unauthorized" };
+  if (lecture.isFinished) return { error: "This lecture has ended" };
+  return { lecture };
+}
+
+function liveFiles(lectureId, transaction) {
+  return Document.findAll({
+    where: { LectureSessionId: lectureId, kind: "file", deleted_at: null },
+    order: [["id", "ASC"]],
+    transaction,
+  });
+}
+
+// The files a create/rename/delete request refers to: either the one file at `path`, or (for a
+// directory) every file under it.
+function matchFiles(files, path, isDirectory) {
+  return isDirectory ? files.filter((f) => isPathUnder(f.name, path)) : files.filter((f) => f.name === path);
+}
+
+app.post("/file", async (req, res) => {
+  const { lectureId, userId, path } = req.body;
+  const invalid = validateFilePath(path);
+  if (invalid) return res.json({ error: invalid });
+  try {
+    const response = await db.transaction(async (t) => {
+      const { error } = await getInstructorLecture(lectureId, userId, t);
+      if (error) return { error };
+      const files = await liveFiles(lectureId, t);
+      if (files.some((f) => f.name === path)) return { error: `${path} already exists` };
+      // A file can't share its path with a directory (i.e. be a prefix of another file's path).
+      if (files.some((f) => isPathUnder(f.name, path) || isPathUnder(path, f.name))) {
+        return { error: `${path} conflicts with an existing file or folder` };
+      }
+      const doc = await createDocument({ lectureId, kind: "file", name: path }, t);
+      return { file: { id: doc.id, name: doc.name, doc: [""], docVersion: 0, persistedVersion: 0 } };
+    });
+    if (response.file) io.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.FILE_CREATED, response);
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to create file:", error);
+    res.json({ error: error.message });
+  }
+});
+
+app.post("/files/rename", async (req, res) => {
+  const { lectureId, userId, from, to, isDirectory = false } = req.body;
+  const invalid = validateFilePath(to, { isDirectory });
+  if (invalid) return res.json({ error: invalid });
+  if (from === to) return res.json({ renames: [] });
+  try {
+    const response = await db.transaction(async (t) => {
+      const { error } = await getInstructorLecture(lectureId, userId, t);
+      if (error) return { error };
+      const files = await liveFiles(lectureId, t);
+      const moving = matchFiles(files, from, isDirectory);
+      if (moving.length === 0) return { error: `${from} not found` };
+      if (isDirectory && isPathUnder(to, from)) return { error: "Can't move a folder into itself" };
+
+      const movingIds = new Set(moving.map((f) => f.id));
+      const others = files.filter((f) => !movingIds.has(f.id));
+      const renames = moving.map((f) => ({ id: f.id, name: isDirectory ? to + f.name.slice(from.length) : to }));
+      for (const { name } of renames) {
+        if (others.some((o) => isPathUnder(o.name, name) || isPathUnder(name, o.name))) {
+          return { error: `${name} conflicts with an existing file or folder` };
+        }
+      }
+
+      const ts = Date.now();
+      for (const f of moving) {
+        const name = renames.find((r) => r.id === f.id).name;
+        const history = JSON.parse(f.name_history ?? "[]");
+        history.push({ name, ts });
+        await f.update({ name, name_history: JSON.stringify(history) }, { transaction: t });
+      }
+      return { renames };
+    });
+    if (response.renames?.length) io.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.FILES_RENAMED, response);
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to rename file(s):", error);
+    res.json({ error: error.message });
+  }
+});
+
+// Soft-deletes the file (or every file under a directory). Any live Version Block in those files
+// is dissolved the same way DELETE /version-block does it -- snapshotting the file so its
+// historical view still works -- and its still-active exercise is finished. Polls anchored in a
+// deleted file just lose their anchor (see LectureSession._resolvePollAnchors).
+app.post("/files/delete", async (req, res) => {
+  const { lectureId, userId, path, isDirectory = false } = req.body;
+  if (!path) return res.json({ error: "path is required" });
+  try {
+    // Snapshot the doomed files from the doc store (in memory) before the write transaction.
+    const auth = await getInstructorLecture(lectureId, userId);
+    if (auth.error) return res.json(auth);
+    const files = await liveFiles(lectureId);
+    const doomed = matchFiles(files, path, isDirectory);
+    if (doomed.length === 0) return res.json({ error: `${path} not found` });
+    if (doomed.length === files.length) return res.json({ error: "A lecture must keep at least one file" });
+
+    const snapshots = new Map();
+    for (const f of doomed) {
+      const { text, version } = await getDocSnapshot(f.id);
+      const { versionBlocks } = await getAnchors(f.id);
+      snapshots.set(f.id, { doc: text.toString(), version, versionBlocks });
+    }
+
+    const fileIds = doomed.map((f) => f.id);
+    const response = await db.transaction(async (t) => {
+      const now = new Date();
+      await Document.update({ deleted_at: now }, { where: { id: fileIds }, transaction: t });
+
+      const blocks = await VersionBlock.findAll({ where: { DocumentId: fileIds, deleted: false }, transaction: t });
+      const finishedExerciseIds = [];
+      for (const block of blocks) {
+        const snap = snapshots.get(block.DocumentId);
+        await block.update(
+          {
+            deleted: true,
+            deleted_change_number: snap.version,
+            deleted_doc: snap.doc,
+            deleted_pos: snap.versionBlocks.get(block.id) ?? block.anchor_pos,
+          },
+          { transaction: t },
+        );
+        const exercise = await block.getClassExercise({ transaction: t });
+        if (exercise && exercise.end_ts === null) {
+          await exercise.finish(t);
+          finishedExerciseIds.push(exercise.id);
+        }
+      }
+      return { fileIds, versionBlockIds: blocks.map((b) => b.id), finishedExerciseIds };
+    });
+
+    // Persist any last edits, then stop holding the files in memory -- they can't be edited any more.
+    await Promise.all(fileIds.map((id) => evictDoc(id)));
+    io.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.FILES_DELETED, response);
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to delete file(s):", error);
+    res.json({ error: error.message });
   }
 });
 
@@ -399,6 +556,7 @@ app.post("/current-session-student", async (req, res) => {
           files,
           exercises,
           versionBlocks,
+          instructorView: instructorViews.get(lecture.id) ?? null,
         };
       });
     } else {
@@ -428,6 +586,7 @@ app.post("/current-session-student", async (req, res) => {
           files,
           exercises,
           versionBlocks,
+          instructorView: instructorViews.get(lecture.id) ?? null,
         };
       });
     }
@@ -877,6 +1036,13 @@ io.on("connection", async (socket) => {
     applyChange(msg.fileId, msg);
   });
 
+  // msg: {sessionId, openFileIds, activeFileId}
+  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, (msg) => {
+    const sessionId = Number(msg.sessionId);
+    instructorViews.set(sessionId, { openFileIds: msg.openFileIds ?? [], activeFileId: msg.activeFileId ?? null });
+    socket.to(lectureRoom(sessionId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, msg);
+  });
+
   // Forward info about code runs.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, (msg) => {
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
@@ -928,6 +1094,7 @@ io.on("connection", async (socket) => {
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately
     io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
+    instructorViews.delete(Number(msg.sessionNumber));
     // A finished lecture won't be edited again -- persist everything, then drop it from memory
     // (it'll cheaply re-hydrate from its snapshot if it's ever read again, e.g. the review page).
     await evictLecture(msg.sessionNumber);

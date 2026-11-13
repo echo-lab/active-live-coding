@@ -13,8 +13,9 @@ import {
   recordEvent,
   setupDropdownMenu,
 } from "./shared-interactions.js";
-import { InstructorCodeEditor } from "./code-editors.js";
-import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, getMainFile } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { LectureFileSystem } from "./file-system.js";
+import { InstructorWorkspace } from "./workspace.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
@@ -24,16 +25,17 @@ import { InstructorPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 import { createHistoricalViewController } from "./historical-view-controller.js";
 
-const codeContainer = document.querySelector("#code-container");
+const codeContainersHost = document.querySelector("#code-containers");
 // Assigned once initialize() runs (session start) -- declared up here so the historicalController
 // below can reach it via closure, since it's constructed before any session exists.
 let activitiesPanel;
 const historicalController = createHistoricalViewController({
-  liveTabEl: document.querySelector("#instructor-code-tab"),
+  // The whole file-tab strip acts as the "live" tab: clicking any file tab leaves the historical view.
+  liveTabEl: document.querySelector("#file-tabs"),
   historicalTabEl: document.querySelector("#historical-code-tab"),
   historicalTabTextEl: document.querySelector("#historical-code-tab-text"),
   historicalTabCloseBtn: document.querySelector("#historical-code-tab .historical-code-tab-close"),
-  liveContainerEl: document.querySelector("#code-container"),
+  liveContainerEl: codeContainersHost,
   historicalContainerEl: document.querySelector("#historical-code-container"),
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
@@ -136,8 +138,8 @@ function initialize({
   sessionNumber = null,
   exercises = [],
   versionBlocks = [],
+  instructorView = null,
 }) {
-  const mainFile = getMainFile(files);
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 
@@ -156,16 +158,16 @@ function initialize({
     userId,
   });
 
-  let codeEditor = new InstructorCodeEditor({
-    node: codeContainer,
-    socket,
-    doc: mainFile.doc,
-    startVersion: mainFile.docVersion,
-    persistedVersion: mainFile.persistedVersion,
-    fileId: mainFile.id,
+  const workspace = new InstructorWorkspace({
+    fs: new LectureFileSystem({ files, sessionNumber, userId }),
+    containersHostEl: codeContainersHost,
+    tabsEl: document.querySelector("#file-tabs"),
+    treePanelEl: document.querySelector("#file-tree-panel"),
     sessionNumber,
-    versionBlocks,
     activitiesManager,
+    versionBlocks,
+    instructorView,
+    socket,
     onCreatePollRequested: ({ from, to, code }) => {
       tryOpenCreatePopover({ from, to, code });
     },
@@ -174,31 +176,47 @@ function initialize({
       if (ex) activitiesPanel?.openExercise(ex);
     },
   });
+  // Opening a file tab leaves the historical view.
+  workspace.addEventListener("viewchange", ({ detail: { source } }) => {
+    if (source === "user") historicalController.returnToLive();
+  });
 
   const pollPopoverCoordinator = new PollPopoverCoordinator();
 
+  // The editor the current poll draft lives in -- the draft stays tied to it even if the
+  // instructor switches tabs while writing the question.
+  let draftEditor = null;
+
   const pollCreatePopover = new PollCreatePopover({
     manager: activitiesManager,
-    getCurrentCode: () => codeEditor.currentCode(),
-    onAbandonDraft: () => codeEditor.abandonPollDraft(),
-    getPollDraftAnchor: () => codeEditor.getPollDraftAnchor(),
-    onHighlightChange: (highlighted) => codeEditor.setPollDraftHighlighted(highlighted),
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    getCurrentCode: () => (draftEditor ?? workspace.activeEditor)?.currentCode() ?? "",
+    onAbandonDraft: () => draftEditor?.abandonPollDraft(),
+    getPollDraftAnchor: () => draftEditor?.getPollDraftAnchor() ?? null,
+    onHighlightChange: (highlighted) => draftEditor?.setPollDraftHighlighted(highlighted),
+    showPollPopover: (args) => (draftEditor ?? workspace.activeEditor)?.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
+  });
+
+  // A draft can't outlive its file.
+  workspace.addEventListener("filesdeleted", ({ detail: { fileIds } }) => {
+    if (draftEditor && fileIds.includes(draftEditor.fileId)) {
+      pollCreatePopover.close();
+      draftEditor = null;
+    }
   });
 
   const instructorActivePollPopover = new InstructorActivePollPopover({
     manager: activitiesManager,
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    showPollPopover: (args) => workspace.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyActivePopoverClosed(),
   });
 
   const instructorCompletePollPopover = new InstructorPollCompletePopover({
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    showPollPopover: (args) => workspace.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
   });
@@ -207,8 +225,10 @@ function initialize({
   function tryOpenCreatePopover({ from, to, code = "" }) {
     recordEvent(EVENT_TYPES.INSTRUCTOR_START_POLL_CREATION);
     pollCreatePopover.close(); // tear down any still-open draft popover (and its marker) before starting a new one
-    codeEditor.startPollDraft({ from, to });
-    const at = codeEditor.getPollDraftAnchor()?.from;
+    draftEditor = workspace.activeEditor;
+    if (!draftEditor) return;
+    draftEditor.startPollDraft({ from, to });
+    const at = draftEditor.getPollDraftAnchor()?.from;
     pollCreatePopover.openForSelection({ code, at });
   }
 
@@ -217,12 +237,13 @@ function initialize({
 
   let runInteractions = new RunInteractions({
     runButtonEl,
-    codeEditor,
+    codeEditor: workspace.activeEditor,
     codeRunner,
     consoleOutput,
     broadcastResult: (msg) =>
       socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, { ...msg, sessionId: sessionNumber }),
   });
+  workspace.addEventListener("activechange", ({ detail: { editor } }) => runInteractions.setEditor(editor));
 
   endButton.addEventListener("click", async () => {
     const confirmed = confirm(
@@ -232,7 +253,7 @@ function initialize({
     endButton.disabled = true;
     sessionDetails.textContent += " (Terminated)";
     sessionEndedWarning.hidden = false;
-    codeEditor.endSession();
+    workspace.endSession();
     activitiesManager.endSession();
     socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, { sessionNumber });
   });
@@ -249,7 +270,7 @@ function initialize({
   // Once a poll draft is actually submitted, swap its draft marker for a persisted one.
   activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {
     if (exercise.type === "POLL" || exercise.type === "POLL_MCQ") {
-      codeEditor.finalizePollDraft(exercise.id);
+      draftEditor?.finalizePollDraft(exercise.id);
     }
   });
 
@@ -257,35 +278,21 @@ function initialize({
     activitiesPanelEl: document.querySelector("#activities-container"),
     openPanel: openActivitiesPanel,
     closePanel: closeActivitiesPanel,
-    onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
+    onPollPanelOpenChange: (id) => workspace.setPollHighlightOpen(id),
     activePopover: instructorActivePollPopover,
     completePopover: instructorCompletePollPopover,
-    getAnchor: (ex) => {
-      if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
-        const at = codeEditor.getPollAnchorPosition(ex.id);
-        if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
-      }
-      // A poll's code anchor can still be nulled out post-creation if the anchored code is later
-      // entirely deleted (see LectureSession._resolvePollAnchors) -- pin the popover to a fixed
-      // point near the code editor pane in that case, same pattern as the student side.
-      const paneRect = codeContainer.getBoundingClientRect();
-      return {
-        kind: "standalone",
-        rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
-      };
-    },
+    // A poll's code anchor can still be nulled out post-creation if the anchored code is later
+    // entirely deleted (see LectureSession._resolvePollAnchors) -- the workspace then pins the
+    // popover to a fixed point near the code editor pane, same pattern as the student side.
+    getAnchor: (ex) => workspace.anchorForExercise(ex),
     scrollToExercise: (ex) => {
       historicalController.returnToLive();
-      if (ex.type === "CODE_VARIANT") {
-        codeEditor.scrollToVersionBlock(ex.VersionBlockId);
-      } else {
-        codeEditor.scrollToPollMarker(ex.id);
-      }
+      workspace.scrollToExercise(ex);
     },
     openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),
     addResponseAsVariant: (ex, code, label) =>
-      codeEditor.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label),
+      workspace.editorForVersionBlock(ex.VersionBlockId)?.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label),
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());

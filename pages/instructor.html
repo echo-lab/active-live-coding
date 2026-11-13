@@ -44,12 +44,12 @@
           </div>
         </div>
       </div>
+      <div id="workspace-row">
+      <aside id="file-tree-panel"></aside>
       <div class="parent-container">
         <div id="code-tabs">
           <div id="code-tabs-inner">
-            <div class="code-tab selected" id="instructor-code-tab">
-              <div class="code-tab-text">instructor.py</div>
-            </div>
+            <div id="file-tabs" class="selected"></div>
             <div class="code-tab historical-code-tab" id="historical-code-tab" hidden>
               <div class="code-tab-text" id="historical-code-tab-text"></div>
               <button class="historical-code-tab-close" aria-label="Close">×</button>
@@ -57,7 +57,7 @@
           </div>
           <button id="open-activities-panel">« Activities</button>
         </div>
-        <div id="code-container" class="code-container"></div>
+        <div id="code-containers"></div>
         <div id="historical-code-container" class="code-container historical-code-container" hidden>
           <div class="historical-banner">
             <span>Viewing a past version — read only</span>
@@ -86,6 +86,7 @@
           <div id="activities-poll" hidden></div>
           <div id="activities-code-exercise" hidden></div>
         </div>
+      </div>
       </div>
     </div>
     <div class="modal-background" id="start-session-modal">

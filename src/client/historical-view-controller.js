@@ -152,7 +152,7 @@ export function createHistoricalViewController({
     // Make the tab/container visible BEFORE constructing the editor below -- CodeMirror can't
     // measure real layout while mounted inside a `hidden` (display:none) container, which breaks
     // the animated scroll-into-view further down.
-    historicalTabTextEl.textContent = `instructor.py · ${formatRelativeTime(data.timestamp)}`;
+    historicalTabTextEl.textContent = `${data.fileName ?? "instructor.py"} · ${formatRelativeTime(data.timestamp)}`;
     historicalTabEl.hidden = false;
     currentExercise = ex;
     currentManager = manager;

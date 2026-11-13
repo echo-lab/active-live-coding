@@ -104,6 +104,7 @@ export class InstructorActivitiesManager extends EventTarget {
       instructor_code,
       code_anchor_from,
       code_anchor_to,
+      DocumentId: code_anchor_from != null ? fileId ?? null : null,
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -120,6 +121,7 @@ export class InstructorActivitiesManager extends EventTarget {
         instructor_code: newEx.instructor_code,
         code_anchor_from,
         code_anchor_to,
+        DocumentId: newEx.DocumentId,
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
@@ -155,6 +157,7 @@ export class InstructorActivitiesManager extends EventTarget {
       default_answer,
       code_anchor_from,
       code_anchor_to,
+      DocumentId: code_anchor_from != null ? fileId ?? null : null,
       start_ts: Date.now(),
       end_ts: null,
       ExerciseResponses: [],
@@ -172,6 +175,7 @@ export class InstructorActivitiesManager extends EventTarget {
         default_answer: newEx.default_answer,
         code_anchor_from,
         code_anchor_to,
+        DocumentId: newEx.DocumentId,
       },
     });
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
@@ -443,6 +447,7 @@ export class StudentActivitiesManager extends EventTarget {
         default_answer: ex.default_answer ?? null,
         code_anchor_from: ex.code_anchor_from ?? null,
         code_anchor_to: ex.code_anchor_to ?? null,
+        DocumentId: ex.DocumentId ?? null,
         start_ts: ex.start_ts,
         end_ts: null,
         ExerciseResponses: [],

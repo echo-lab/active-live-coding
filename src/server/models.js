@@ -38,7 +38,7 @@ export class LectureSession extends Model {
   // any not-yet-flushed changes), in the shape the clients consume.
   async getFilesWithContent(transaction) {
     const files = await this.getDocuments({
-      where: { kind: "file" },
+      where: { kind: "file", deleted_at: null },
       attributes: ["id", "name"],
       order: [["id", "ASC"]],
       transaction,
@@ -81,11 +81,18 @@ export class LectureSession extends Model {
   // persists it alongside the snapshot, so this never touches the change log.
   async _resolvePollAnchors(exercises) {
     const anchorsByDoc = new Map();
+    const deletedFileIds = new Set(
+      (await Document.findAll({ where: { LectureSessionId: this.id, kind: "file" }, attributes: ["id", "deleted_at"] }))
+        .filter((d) => d.deleted_at != null)
+        .map((d) => d.id),
+    );
     return Promise.all(
       exercises.map(async (ex) => {
         if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null || ex.DocumentId == null) {
           return ex;
         }
+        // The poll's file was deleted -- its anchor is gone (the historical view takes over).
+        if (deletedFileIds.has(ex.DocumentId)) return { ...ex.toJSON(), code_anchor_from: null, code_anchor_to: null };
         if (!anchorsByDoc.has(ex.DocumentId)) anchorsByDoc.set(ex.DocumentId, getAnchors(ex.DocumentId));
         const anchors = await anchorsByDoc.get(ex.DocumentId);
         const anchor = anchors.polls.get(ex.id);
@@ -146,12 +153,17 @@ export class LectureSession extends Model {
     });
     if (!exercise) return { error: `Exercise #${exerciseId} not found` };
 
+    // The name of the file the anchor lived in (its current name, even if it's since been deleted).
+    const fileNameOf = async (docId) =>
+      docId == null ? null : ((await Document.findByPk(docId, { attributes: ["name"], transaction }))?.name ?? null);
+
     const isPoll = exercise.type === "POLL" || exercise.type === "POLL_MCQ";
     if (isPoll) {
       if (exercise.context_doc == null || exercise.code_anchor_from == null) {
         return { error: "Exercise has no code anchor" };
       }
       return {
+        fileName: await fileNameOf(exercise.DocumentId),
         type: exercise.type,
         doc: exercise.context_doc.split("\n"),
         timestamp: exercise.start_ts,
@@ -184,6 +196,7 @@ export class LectureSession extends Model {
     }
 
     return {
+      fileName: await fileNameOf(block.DocumentId),
       type: "CODE_VARIANT",
       doc,
       timestamp,
@@ -631,12 +644,19 @@ Document.init(
     version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     // JSON: live anchor positions at `version` -- see doc-store.js serializeAnchors().
     anchors: { type: DataTypes.TEXT, allowNull: true },
+    // Files only: set when the instructor deletes the file. The row (and its change log) is kept
+    // so the lecture can still be replayed; live queries skip it.
+    deleted_at: { type: DataTypes.DATE, allowNull: true },
+    // Files only: JSON [{name, ts}] -- the name at creation, then one entry per rename (the new
+    // name and when), so replay can show a file's name at any point in time.
+    name_history: { type: DataTypes.TEXT, allowNull: true },
   },
   {
     sequelize,
     indexes: [
-      // A file path is unique within a lecture. Partial (files only): variants have name=NULL.
-      { unique: true, fields: ["LectureSessionId", "name"], where: { kind: "file" } },
+      // A live file path is unique within a lecture. Partial (live files only): variants have
+      // name=NULL, and a deleted file's name may be reused.
+      { unique: true, fields: ["LectureSessionId", "name"], where: { kind: "file", deleted_at: null } },
       { unique: true, fields: ["VariantId"] },
     ],
   },

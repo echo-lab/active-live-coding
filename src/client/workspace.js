@@ -1,0 +1,409 @@
+import { InstructorCodeEditor, StudentCodeEditor } from "./code-editors.js";
+import { versionBlocksField } from "./cm-version-widget.js";
+import { FileTabBar } from "./file-tabs.js";
+import { FileTreeView } from "./file-tree.js";
+import { recordEvent } from "./shared-interactions.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, getMainFile, pathBasename, pathDirname } from "../shared-constants.js";
+
+// MARK: Workspace
+// Controller for a lecture's files on one page: owns the file model (LectureFileSystem), the file
+// tree, the tab bar, and one code editor per file (each in its own container, only the active one
+// shown). Everything else on the page talks to "the editor" through this -- e.g. activeEditor, or
+// editorForExercise(ex) for whichever file an exercise lives in.
+//
+// Events:
+//   "viewchange"   {detail: {openIds, activeId, source}} -- tabs opened/closed/switched. `source` is
+//                  "user" (tree/tab click), "exercise" (revealing an exercise's file), or "program".
+//   "activechange" {detail: {editor}} -- the active editor changed (incl. to null: no tab open).
+export class Workspace extends EventTarget {
+  constructor({ fs, containersHostEl, tabsEl, treePanelEl, editableTree = false, sessionNumber, activitiesManager, versionBlocks = [] }) {
+    super();
+    this.fs = fs;
+    this.host = containersHostEl;
+    this.sessionNumber = sessionNumber;
+    this.activitiesManager = activitiesManager;
+    this.editors = new Map(); // fileId -> editor
+    this.containers = new Map(); // fileId -> container element
+    this.openIds = [];
+    this.activeId = null;
+    // Version blocks from the join payload, consumed when each file's editor is built.
+    this._initialBlocks = versionBlocks;
+
+    this.emptyEl = document.createElement("div");
+    this.emptyEl.className = "workspace-empty";
+    this.emptyEl.textContent = "No file open. Pick one from the file list.";
+    this.host.append(this.emptyEl);
+
+    this.tabs = new FileTabBar({
+      containerEl: tabsEl,
+      getLabel: (id) => this._tabLabel(id),
+      onActivate: (id) => this.openFile(id, { source: "user" }),
+      onClose: (id) => this.closeTab(id, { source: "user" }),
+    });
+
+    this.tree = new FileTreeView({
+      panelEl: treePanelEl,
+      fs,
+      editable: editableTree,
+      onOpenFile: (id) => this.openFile(id, { source: "user" }),
+      ...this._treeCallbacks(),
+    });
+
+    fs.addEventListener("changed", ({ detail: { kind, ids } }) => this._onFilesChanged(kind, ids));
+  }
+
+  // Builds every file's editor, then opens `view` ({openFileIds, activeFileId}) if it's usable,
+  // else just the main file. Separate from the constructor so subclasses finish setting up first.
+  _start(view) {
+    for (const file of this.fs.allFiles()) this.getOrCreateEditor(file.id);
+    if (view && view.openFileIds?.some((id) => this.fs.getFile(id))) {
+      this._setView({ openIds: view.openFileIds, activeId: view.activeFileId }, { source: "program" });
+    } else {
+      const main = getMainFile(this.fs.allFiles());
+      this._setView({ openIds: main ? [main.id] : [], activeId: main?.id ?? null }, { source: "program" });
+    }
+  }
+
+  // Overridden by subclasses that let the user edit the tree.
+  _treeCallbacks() {
+    return {};
+  }
+
+  // MARK: Editors
+
+  // Subclasses build the right kind of editor for `file` inside `node`.
+  _createEditor(/* file, node, versionBlocks */) {
+    throw new Error("not implemented");
+  }
+
+  // The single place editors get built. Today every file's editor is built up front; this is the
+  // seam for building (and loading) them lazily on first open instead.
+  getOrCreateEditor(fileId) {
+    if (this.editors.has(fileId)) return this.editors.get(fileId);
+    const file = this.fs.getFile(fileId);
+    if (!file) return null;
+    const node = document.createElement("div");
+    node.className = "code-container file-editor";
+    node.hidden = true;
+    this.host.append(node);
+    const blocks = this._initialBlocks.filter((b) => b.fileId === fileId);
+    const editor = this._createEditor(file, node, blocks);
+    this.containers.set(fileId, node);
+    this.editors.set(fileId, editor);
+    return editor;
+  }
+
+  editorFor(fileId) {
+    return this.editors.get(fileId) ?? null;
+  }
+
+  get activeEditor() {
+    return this.activeId != null ? this.editorFor(this.activeId) : null;
+  }
+
+  allEditors() {
+    return [...this.editors.values()];
+  }
+
+  // The editor holding the given (live) version block, if any.
+  editorForVersionBlock(versionBlockId) {
+    return this.allEditors().find((e) => e.getVersionBlock(versionBlockId)) ?? null;
+  }
+
+  // MARK: Tabs
+
+  _tabLabel(id) {
+    const file = this.fs.getFile(id);
+    if (!file) return { label: "?", title: "" };
+    const base = pathBasename(file.name);
+    const dir = pathDirname(file.name);
+    const clash = this.openIds.some((other) => other !== id && pathBasename(this.fs.getFile(other)?.name ?? "") === base);
+    return { label: clash && dir ? `${base} — ${dir}` : base, title: file.name };
+  }
+
+  // Opens `fileId` in a tab (or switches to its existing tab).
+  openFile(fileId, { source = "program" } = {}) {
+    if (!this.fs.getFile(fileId)) return;
+    const openIds = this.openIds.includes(fileId) ? this.openIds : [...this.openIds, fileId];
+    this._setView({ openIds, activeId: fileId }, { source });
+  }
+
+  closeTab(fileId, { source = "program" } = {}) {
+    const index = this.openIds.indexOf(fileId);
+    if (index < 0) return;
+    const openIds = this.openIds.filter((id) => id !== fileId);
+    let activeId = this.activeId;
+    if (activeId === fileId) activeId = openIds[Math.min(index, openIds.length - 1)] ?? null;
+    this._setView({ openIds, activeId }, { source });
+  }
+
+  // Applies a whole tab state at once, dropping ids that aren't (or are no longer) files.
+  _setView({ openIds, activeId }, { source = "program" } = {}) {
+    openIds = [...new Set(openIds)].filter((id) => this.fs.getFile(id));
+    if (!openIds.includes(activeId)) activeId = openIds[0] ?? null;
+    const sameTabs = openIds.length === this.openIds.length && openIds.every((id, i) => id === this.openIds[i]);
+    const prevActive = this.activeId;
+    if (sameTabs && activeId === prevActive) return;
+
+    this.openIds = openIds;
+    this.activeId = activeId;
+    this._render();
+    this.dispatchEvent(new CustomEvent("viewchange", { detail: { openIds, activeId, source } }));
+    if (activeId !== prevActive) {
+      this.dispatchEvent(new CustomEvent("activechange", { detail: { editor: this.activeEditor } }));
+    }
+  }
+
+  _render() {
+    this.tabs.setState({ openIds: this.openIds, activeId: this.activeId });
+    for (const [id, node] of this.containers) {
+      const show = id === this.activeId;
+      if (node.hidden === !show) continue;
+      node.hidden = !show;
+      // CodeMirror can't measure while hidden -- remeasure now that it's visible.
+      if (show) this.editors.get(id)?.view?.requestMeasure();
+    }
+    this.emptyEl.hidden = this.activeId != null;
+    this.tree.setActiveFile(this.activeId);
+  }
+
+  // MARK: File model changes
+
+  _onFilesChanged(kind, ids) {
+    if (kind === "created") {
+      for (const id of ids) this.getOrCreateEditor(id);
+    } else if (kind === "renamed") {
+      for (const id of ids) {
+        const editor = this.editorFor(id);
+        if (editor) editor.fileName = this.fs.getFile(id)?.name ?? editor.fileName;
+      }
+      this.tabs.refreshLabels();
+    } else if (kind === "deleted") {
+      for (const id of ids) this._destroyEditor(id);
+      this._setView({ openIds: this.openIds, activeId: this.activeId }, { source: "program" });
+    }
+  }
+
+  _destroyEditor(fileId) {
+    this.editors.get(fileId)?.destroy();
+    this.containers.get(fileId)?.remove();
+    this.editors.delete(fileId);
+    this.containers.delete(fileId);
+  }
+
+  // Applies a deletion ({fileIds, versionBlockIds, finishedExerciseIds}) -- from our own request or
+  // a socket broadcast. Idempotent: a deletion whose files are already gone is ignored.
+  applyFilesDeleted({ fileIds = [], versionBlockIds = [], finishedExerciseIds = [] }) {
+    const present = fileIds.filter((id) => this.fs.getFile(id));
+    if (present.length === 0) return;
+    const deleted = new Set(present);
+    // Any exercise anchored in those files loses its anchor; the historical view takes over.
+    for (const id of versionBlockIds) this.activitiesManager?.markVersionBlockDeleted(id);
+    for (const ex of this.activitiesManager?.getExercises() ?? []) {
+      if ((ex.type === "POLL" || ex.type === "POLL_MCQ") && deleted.has(ex.DocumentId)) {
+        this.activitiesManager.markPollAnchorDeleted(ex.id);
+      }
+    }
+    for (const id of finishedExerciseIds) this.activitiesManager?.markExerciseFinishedSilently?.(id);
+    this.fs.removeFiles(present);
+    this.dispatchEvent(new CustomEvent("filesdeleted", { detail: { fileIds: present } }));
+  }
+
+  // MARK: Exercises
+
+  // The file an exercise's code lives in: a code exercise's version block's file, or a poll's
+  // anchor file. Null if unknown (e.g. a standalone poll, or its version block was dissolved).
+  fileIdForExercise(ex) {
+    if (ex.type === "CODE_VARIANT") return this.editorForVersionBlock(ex.VersionBlockId)?.fileId ?? null;
+    if (ex.DocumentId != null) return this.fs.getFile(ex.DocumentId) ? ex.DocumentId : null;
+    return null;
+  }
+
+  editorForExercise(ex) {
+    const fileId = this.fileIdForExercise(ex);
+    return fileId != null ? this.editorFor(fileId) : null;
+  }
+
+  // Switches to the exercise's file (if it has one) and scrolls its code into view.
+  scrollToExercise(ex) {
+    const fileId = this.fileIdForExercise(ex);
+    if (fileId == null) return;
+    this.openFile(fileId, { source: "exercise" });
+    const editor = this.editorFor(fileId);
+    if (ex.type === "CODE_VARIANT") editor.scrollToVersionBlock(ex.VersionBlockId);
+    else editor.scrollToPollMarker(ex.id);
+  }
+
+  // Where to anchor an exercise's popover: on its code if that's in the visible file, else a fixed
+  // point near the top-right of the code pane.
+  anchorForExercise(ex) {
+    const editor = this.editorForExercise(ex);
+    if (editor && editor === this.activeEditor && ex.code_anchor_from != null && ex.code_anchor_to != null) {
+      const at = editor.getPollAnchorPosition(ex.id);
+      if (at != null) return { kind: "code", at, getRange: () => editor.getPollAnchorRange(ex.id) };
+    }
+    const paneRect = this.host.getBoundingClientRect();
+    return {
+      kind: "standalone",
+      rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
+    };
+  }
+
+  // Popovers are mounted in the visible editor (callers reveal the right file first); hiding is
+  // idempotent, so it's sent to every editor.
+  showPollPopover(args) {
+    this.activeEditor?.showPollPopover(args);
+  }
+
+  hidePollPopover(key) {
+    for (const editor of this.editors.values()) editor.hidePollPopover(key);
+  }
+
+  setPollHighlightOpen(id) {
+    for (const editor of this.editors.values()) editor.setPollHighlightOpen(id);
+  }
+}
+
+// MARK: InstructorWorkspace
+export class InstructorWorkspace extends Workspace {
+  constructor({ socket, instructorView = null, onCreatePollRequested, onOpenPollMarker, ...rest }) {
+    super({ ...rest, editableTree: true });
+    this.socket = socket;
+    this.onCreatePollRequested = onCreatePollRequested;
+    this.onOpenPollMarker = onOpenPollMarker;
+    this.ended = false;
+
+    // Tell students (and the server, for late joiners) which tabs are open, and log it for replay.
+    this.addEventListener("viewchange", () => this._broadcastView());
+
+    socket.on(SOCKET_MESSAGE_TYPE.FILE_CREATED, ({ file }) => this.fs.upsertFile(file));
+    socket.on(SOCKET_MESSAGE_TYPE.FILES_RENAMED, ({ renames }) => this.fs.applyRenames(renames));
+    socket.on(SOCKET_MESSAGE_TYPE.FILES_DELETED, (msg) => this.applyFilesDeleted(msg));
+    // After a reconnect, re-announce our tabs (the server's copy may be stale).
+    socket.on("connect", () => this._broadcastView());
+
+    this._start(instructorView);
+    this._broadcastView();
+  }
+
+  _broadcastView() {
+    if (this.ended) return;
+    const view = { openFileIds: this.openIds, activeFileId: this.activeId };
+    this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, { sessionId: this.sessionNumber, ...view });
+    recordEvent(EVENT_TYPES.INSTRUCTOR_VIEW_FILES, view);
+  }
+
+  _createEditor(file, node, versionBlocks) {
+    return new InstructorCodeEditor({
+      node,
+      socket: this.socket,
+      doc: file.doc,
+      startVersion: file.docVersion,
+      persistedVersion: file.persistedVersion,
+      fileId: file.id,
+      fileName: file.name,
+      sessionNumber: this.sessionNumber,
+      versionBlocks,
+      activitiesManager: this.activitiesManager,
+      onCreatePollRequested: this.onCreatePollRequested,
+      onOpenPollMarker: this.onOpenPollMarker,
+    });
+  }
+
+  _treeCallbacks() {
+    return {
+      onCreateFile: async (path) => {
+        const error = await this.fs.createFile(path);
+        if (!error) this.openFile(this.fs.getFileByName(path).id, { source: "user" });
+        return error;
+      },
+      onCreateDir: (path) => this.fs.createDir(path),
+      onRename: (from, to, isDirectory) => this.fs.rename(from, to, { isDirectory }),
+      onDelete: async (path, isDirectory) => {
+        const what = isDirectory ? `the folder "${path}" and every file in it` : `"${path}"`;
+        const ok = confirm(`Delete ${what}? Students will no longer see it, and any exercise in it will end.`);
+        if (!ok) return;
+        const result = await this.fs.delete(path, { isDirectory });
+        if (result.error) {
+          alert(`Couldn't delete ${path}: ${result.error}`);
+          return;
+        }
+        this.applyFilesDeleted(result);
+      },
+    };
+  }
+
+  endSession() {
+    this.ended = true;
+    for (const editor of this.editors.values()) editor.endSession();
+    this.tree.lock();
+  }
+}
+
+// MARK: StudentWorkspace
+// Read-only view of the instructor's files. In "live" mode it owns all socket routing for the
+// instructor's edits: each message goes to the one editor it concerns (by fileId, or by the
+// version block it names). In "review" mode (socket: null) it's static.
+export class StudentWorkspace extends Workspace {
+  constructor({ socket = null, mode = "live", instructorView = null, onOpenPollMarker, makeVersionBlockWidget = null, ...rest }) {
+    super({ ...rest, editableTree: false });
+    this.socket = socket;
+    this.mode = mode;
+    this.onOpenPollMarker = onOpenPollMarker;
+    this.makeVersionBlockWidget = makeVersionBlockWidget;
+    this.lastInstructorView = instructorView;
+
+    if (socket) {
+      for (const type of StudentCodeEditor.SOCKET_MESSAGE_TYPES) {
+        socket.on(type, (msg) => this._routeInstructorMessage(type, msg));
+      }
+      socket.on(SOCKET_MESSAGE_TYPE.FILE_CREATED, ({ file }) => this.fs.upsertFile(file));
+      socket.on(SOCKET_MESSAGE_TYPE.FILES_RENAMED, ({ renames }) => this.fs.applyRenames(renames));
+      socket.on(SOCKET_MESSAGE_TYPE.FILES_DELETED, (msg) => this.applyFilesDeleted(msg));
+      socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, (msg) => this._onInstructorView(msg));
+    }
+
+    this._start(instructorView);
+  }
+
+  _routeInstructorMessage(type, msg) {
+    switch (type) {
+      case SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT:
+      case SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR:
+      case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED:
+        if (msg.fileId == null) return;
+        return this.editorFor(msg.fileId)?.handleSocketMessage(type, msg);
+      default:
+        // Variant messages and VERSION_BLOCK_DELETED name a version block, not a file.
+        return this.editorForVersionBlock(msg.versionBlockId)?.handleSocketMessage(type, msg);
+    }
+  }
+
+  _onInstructorView({ openFileIds, activeFileId }) {
+    this.lastInstructorView = { openFileIds, activeFileId };
+    this._setView({ openIds: openFileIds, activeId: activeFileId }, { source: "instructor" });
+  }
+
+  _createEditor(file, node, versionBlocks) {
+    if (this.mode === "live") node.classList.add("uneditable");
+    return new StudentCodeEditor({
+      node,
+      doc: file.doc,
+      docVersion: file.docVersion,
+      fileId: file.id,
+      fileName: file.name,
+      sessionId: this.sessionNumber,
+      extraExtensions: [versionBlocksField],
+      versionBlocks,
+      activitiesManager: this.activitiesManager,
+      onOpenPollMarker: this.onOpenPollMarker,
+      reviewMode: this.mode === "review",
+      makeVersionBlockWidget: this.makeVersionBlockWidget,
+    });
+  }
+
+  // The session ended: stop applying instructor edits.
+  stopFollowing() {
+    for (const editor of this.editors.values()) editor.stopFollowing();
+  }
+}

@@ -54,6 +54,11 @@ other event here, this is delivered immediately via `navigator.sendBeacon` inste
 normal batched/gzipped flush, since the page may be gone before an async flush could finish --
 so this row (and any other events still queued at the time) is stored uncompressed rather than
 gzipped. The payload is just a timestamp.
+
+INSTRUCTOR_VIEW_FILES: happens whenever the instructor's open tabs or active tab change (opening,
+switching, or closing a file tab). The payload is a timestamp, `openFileIds` (in tab order), and
+`activeFileId` (null if no tab is open). Used by the replay page to show which file the instructor
+was looking at.
 */
 export const EVENT_TYPES = Object.freeze({
   CODE_RUN: 0,
@@ -68,22 +73,59 @@ export const EVENT_TYPES = Object.freeze({
   STUDENT_JOIN_LECTURE: 9,
   INSTRUCTOR_LEAVE_LECTURE: 10,
   STUDENT_LEAVE_LECTURE: 11,
+  INSTRUCTOR_VIEW_FILES: 12,
 });
 
 export const ANONYMOUS_STUDENT_MODE = true;
 
-// Every lecture starts with this one file. The backend supports multiple files per lecture, but
-// the front end only uses this one for now.
+// Every lecture starts with this one file.
 export const DEFAULT_FILE_NAME = "main.py";
 
-// Picks the file the (single-file) front end shows out of a lecture's `files` list.
+// Picks a lecture's "main" file out of a `files` list -- the default tab when nothing else says
+// which file to show.
 export function getMainFile(files = []) {
   return files.find((f) => f.name === DEFAULT_FILE_NAME) ?? files[0] ?? null;
+}
+
+// MARK: File paths
+// Files are stored flat, by path ("dir/sub/name.py"); directories are implied by those paths.
+export const MAX_FILE_PATH_LENGTH = 200;
+const PATH_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
+
+// Returns null if `path` is a valid file (or, with isDirectory, directory) path, else a short
+// human-readable reason it isn't. Shared by the client (inline validation) and server (enforcement).
+export function validateFilePath(path, { isDirectory = false } = {}) {
+  if (typeof path !== "string" || path.length === 0) return "Name can't be empty.";
+  if (path.length > MAX_FILE_PATH_LENGTH) return `Path is too long (max ${MAX_FILE_PATH_LENGTH} characters).`;
+  if (path.startsWith("/") || path.endsWith("/")) return "Path can't start or end with '/'.";
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === "." || segment === "..") return "Path has an empty, '.', or '..' segment.";
+    if (!PATH_SEGMENT_RE.test(segment)) return "Names may only use letters, digits, '_', '-', and '.'.";
+  }
+  if (!isDirectory && !path.endsWith(".py")) return "Only .py files are supported.";
+  if (!isDirectory && path.split("/").pop() === ".py") return "File name can't be empty.";
+  return null;
+}
+
+export function pathBasename(path) {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+// "" for top-level paths.
+export function pathDirname(path) {
+  const i = path.lastIndexOf("/");
+  return i < 0 ? "" : path.slice(0, i);
+}
+
+// True if `path` is `dir` itself or lives anywhere under it.
+export function isPathUnder(path, dir) {
+  return path === dir || path.startsWith(dir + "/");
 }
 
 export const SOCKET_MESSAGE_TYPE = Object.freeze({
   JOIN_SESSION: "JOIN_SESSION",
   INSTRUCTOR_EDIT: "INSTRUCTOR_EDIT",
+  // {sessionId, fileId, anchor, head}
   INSTRUCTOR_CURSOR: "INSTRUCTOR_CURSOR",
   // Payload always carries {runId, sessionId, phase}, where phase is one of:
   // "start" | "output" | "awaiting-input" | "input-text" | "input-submitted" | "end".
@@ -108,4 +150,14 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   VARIANT_EDIT: "VARIANT_EDIT",
   VARIANT_CURSOR: "VARIANT_CURSOR",
   VERSION_BLOCK_DELETED: "VERSION_BLOCK_DELETED",
+  // Server -> lecture room, after the corresponding HTTP request succeeds:
+  //   FILE_CREATED  {file: {id, name, doc, docVersion, persistedVersion}}
+  //   FILES_RENAMED {renames: [{id, name}]}
+  //   FILES_DELETED {fileIds, versionBlockIds, finishedExerciseIds}
+  FILE_CREATED: "FILE_CREATED",
+  FILES_RENAMED: "FILES_RENAMED",
+  FILES_DELETED: "FILES_DELETED",
+  // Instructor -> lecture room: {sessionId, openFileIds, activeFileId}. The server also remembers
+  // the latest one per lecture so late joiners start on the instructor's tabs.
+  INSTRUCTOR_VIEW_STATE: "INSTRUCTOR_VIEW_STATE",
 });

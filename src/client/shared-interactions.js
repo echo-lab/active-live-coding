@@ -162,6 +162,7 @@ export class RunInteractions {
       this.runner.cancel();
       return;
     }
+    if (!this.editor) return; // no file open
     this.running = true;
     this.el.classList.add("in-progress");
     this.el.textContent = STOP_LABEL;

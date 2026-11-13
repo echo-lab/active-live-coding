@@ -4,11 +4,7 @@ import "./style-student-page.css";
 import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
-import { StudentCodeEditor } from "./code-editors.js";
-import {
-  versionBlocksField,
-  setVersionBlockReadOnly,
-} from "./cm-version-widget.js";
+import { setVersionBlockReadOnly } from "./cm-version-widget.js";
 import { PythonCodeRunner } from "./code-runner.js";
 import {
   Console,
@@ -22,10 +18,9 @@ import {
   setupDropdownMenu,
   setupJoinLectureModalV2,
 } from "./shared-interactions.js";
-import {
-  SOCKET_MESSAGE_TYPE,
-  getMainFile,
-} from "../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { LectureFileSystem } from "./file-system.js";
+import { StudentWorkspace } from "./workspace.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
 import { StudentActivePollPopover } from "./poll-active-popover.js";
@@ -33,17 +28,14 @@ import { StudentPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 import { createHistoricalViewController } from "./historical-view-controller.js";
 
-const instructorCodeContainer = document.querySelector(
-  "#instructor-code-container"
-);
-const instructorCodeTab = document.querySelector("#instructor-code-tab");
+const codeContainersHost = document.querySelector("#code-containers");
+const fileTabsEl = document.querySelector("#file-tabs");
 const runButtonEl = document.querySelector("#run-button");
 const codeOutputsEl = document.querySelector("#all-code-outputs");
 const codeOutputsContainer = document.querySelector("#output-container");
 const consoleResizer = document.querySelector("#resize-console");
 makeConsoleResizable(codeOutputsContainer, consoleResizer);
 setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));
-let instructorTabActive = true;
 
 const activitiesResizer = document.querySelector("#resize-activities");
 const activitiesContainer = document.querySelector("#activities-container");
@@ -80,11 +72,12 @@ let currentSessionNumber = null;
 setUpSurveyModal({ userId, getSessionNumber: () => currentSessionNumber });
 
 const historicalController = createHistoricalViewController({
-  liveTabEl: instructorCodeTab,
+  // The whole file-tab strip acts as the "live" tab: clicking any file tab leaves the historical view.
+  liveTabEl: fileTabsEl,
   historicalTabEl: document.querySelector("#historical-code-tab"),
   historicalTabTextEl: document.querySelector("#historical-code-tab-text"),
   historicalTabCloseBtn: document.querySelector("#historical-code-tab .historical-code-tab-close"),
-  liveContainerEl: instructorCodeContainer,
+  liveContainerEl: codeContainersHost,
   historicalContainerEl: document.querySelector("#historical-code-container"),
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
@@ -106,9 +99,9 @@ async function initialize({
   exercises = [],
   studentSessionId,
   versionBlocks = [],
+  instructorView = null,
 }) {
   currentSessionNumber = sessionNumber;
-  const mainFile = getMainFile(files);
   socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
   // Socket.IO reconnects (e.g. a wifi blip) get a new server-side socket id that isn't
   // automatically re-joined to the lecture room -- without this, a reconnected student would
@@ -131,17 +124,21 @@ async function initialize({
 
   let activitiesPanel;
 
-  let codeEditor = new StudentCodeEditor({
-    node: instructorCodeContainer,
-    doc: mainFile.doc,
-    docVersion: mainFile.docVersion,
-    fileId: mainFile.id,
-    socket,
-    sessionId: sessionNumber,
-    extraExtensions: [versionBlocksField],
-    versionBlocks,
+  const workspace = new StudentWorkspace({
+    fs: new LectureFileSystem({ files, sessionNumber, userId }),
+    containersHostEl: codeContainersHost,
+    tabsEl: fileTabsEl,
+    treePanelEl: document.querySelector("#file-tree-panel"),
+    sessionNumber,
     activitiesManager,
+    versionBlocks,
+    instructorView,
+    socket,
     onOpenPollMarker: (exerciseId) => activitiesPanel?.showExerciseById(exerciseId),
+  });
+  // Opening a file tab leaves the historical view.
+  workspace.addEventListener("viewchange", ({ detail: { source } }) => {
+    if (source === "user") historicalController.returnToLive();
   });
 
   let codeRunner = new PythonCodeRunner();
@@ -149,10 +146,11 @@ async function initialize({
 
   let runInteractions = new RunInteractions({
     runButtonEl,
-    codeEditor,
+    codeEditor: workspace.activeEditor,
     codeRunner,
     consoleOutput,
   });
+  workspace.addEventListener("activechange", ({ detail: { editor } }) => runInteractions.setEditor(editor));
 
   function syncRunButtonVisibility() {
     runButtonEl.hidden = !activitiesManager.getActiveExercises()
@@ -192,7 +190,7 @@ async function initialize({
 
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, () => {
     console.log("SESSION IS ENDED!");
-    codeEditor.stopFollowing();
+    workspace.stopFollowing();
     sessionActive = false;
   });
 
@@ -201,8 +199,8 @@ async function initialize({
   const studentActivePollPopover = new StudentActivePollPopover({
     manager: activitiesManager,
     student_id: userId,
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    showPollPopover: (args) => workspace.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyActivePopoverClosed(),
   });
@@ -210,37 +208,23 @@ async function initialize({
   const studentCompletePollPopover = new StudentPollCompletePopover({
     student_id: userId,
     manager: activitiesManager,
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    showPollPopover: (args) => workspace.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
   });
 
   activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: userId,
-    onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
+    onPollPanelOpenChange: (id) => workspace.setPollHighlightOpen(id),
     activePopover: studentActivePollPopover,
     completePopover: studentCompletePollPopover,
-    getAnchor: (ex) => {
-      if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
-        const at = codeEditor.getPollAnchorPosition(ex.id);
-        if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
-      }
-      // Standalone polls (no code anchor) have no dedicated element to anchor to on the
-      // student side -- pin the popover to the editor pane's top-right corner instead.
-      const paneRect = instructorCodeContainer.getBoundingClientRect();
-      return {
-        kind: "standalone",
-        rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
-      };
-    },
+    // Standalone polls (no code anchor) have no dedicated element to anchor to on the student
+    // side -- the workspace pins the popover to the editor pane's top-right corner instead.
+    getAnchor: (ex) => workspace.anchorForExercise(ex),
     scrollToExercise: (ex) => {
       historicalController.returnToLive();
-      if (ex.type === "CODE_VARIANT") {
-        codeEditor.scrollToVersionBlock(ex.VersionBlockId);
-      } else {
-        codeEditor.scrollToPollMarker(ex.id);
-      }
+      workspace.scrollToExercise(ex);
     },
     openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),

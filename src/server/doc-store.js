@@ -359,6 +359,7 @@ export async function createDocument({ lectureId, kind, name = null, variantId =
       VariantId: variantId,
       content: isVariant ? initialContent : "",
       version: isVariant ? 1 : 0,
+      name_history: isVariant ? null : JSON.stringify([{ name, ts: Date.now() }]),
     },
     { transaction },
   );
