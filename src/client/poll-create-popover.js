@@ -174,6 +174,8 @@ export class PollCreatePopover {
       code_anchor_from: anchor.from,
       code_anchor_to: anchor.to,
       code_anchor_doc_version: anchor.docVersion,
+      fileId: anchor.fileId,
+      context_doc: anchor.doc,
     };
 
     submitBtn.disabled = true;

@@ -8,14 +8,14 @@
 import { Op } from "sequelize";
 import {
   LectureSession,
-  InstructorChange,
+  Document,
+  DocumentChangeBatch,
   ClassExercise,
   ExerciseResponse,
   SimulatedExerciseResponse,
   StudentSession,
   VersionBlock,
   Variant,
-  VariantChange,
 } from "../../server/models.js";
 import { parseArgs } from "./lib/cli-args.js";
 
@@ -32,17 +32,19 @@ async function deleteLecture(lecture) {
   }
   await ClassExercise.destroy({ where: { LectureSessionId: lecture.id } });
 
+  // Every Document (files AND variants) carries LectureSessionId, so this covers all change logs.
+  const docs = await Document.findAll({ where: { LectureSessionId: lecture.id }, attributes: ["id"] });
+  const docIds = docs.map((d) => d.id);
+  await DocumentChangeBatch.destroy({ where: { DocumentId: docIds } });
+  await Document.destroy({ where: { id: docIds } });
+
   const versionBlocks = await VersionBlock.findAll({ where: { LectureSessionId: lecture.id } });
   for (const vb of versionBlocks) {
-    const variants = await Variant.findAll({ where: { VersionBlockId: vb.id } });
-    for (const v of variants) {
-      await VariantChange.destroy({ where: { VariantId: v.id } });
-    }
-    await Variant.destroy({ where: { VersionBlockId: vb.id } });
+    // force: Variant is paranoid -- actually delete, don't just soft-delete.
+    await Variant.destroy({ where: { VersionBlockId: vb.id }, force: true });
   }
   await VersionBlock.destroy({ where: { LectureSessionId: lecture.id } });
 
-  await InstructorChange.destroy({ where: { LectureSessionId: lecture.id } });
   await StudentSession.destroy({ where: { LectureSessionId: lecture.id } });
   await lecture.destroy();
 }

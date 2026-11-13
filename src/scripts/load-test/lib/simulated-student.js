@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { io } from "socket.io-client";
 import { Text, ChangeSet } from "@codemirror/state";
-import { SOCKET_MESSAGE_TYPE } from "../../../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE, getMainFile } from "../../../shared-constants.js";
 import { timedPost } from "./rest-client.js";
 
 const TRACKED_EVENTS = [
@@ -52,14 +52,16 @@ export class SimulatedStudent extends EventEmitter {
       return { ok: false, error: restResult.json?.error ?? restResult.error, restLatencyMs: restResult.latencyMs };
     }
 
-    const { sessionNumber, studentSessionId, lectureDoc, lectureDocVersion } = restResult.json;
+    const { sessionNumber, studentSessionId, files } = restResult.json;
+    const mainFile = getMainFile(files);
     if (sessionNumber == null) {
       return { ok: false, error: "No active lecture with that sessionName", restLatencyMs: restResult.latencyMs };
     }
     this.sessionNumber = sessionNumber;
     this.studentSessionId = studentSessionId;
-    this.doc = Text.of(lectureDoc);
-    this.docVersion = lectureDocVersion ?? 0;
+    this.fileId = mainFile?.id ?? null;
+    this.doc = Text.of(mainFile?.doc ?? [""]);
+    this.docVersion = mainFile?.docVersion ?? 0;
 
     const connectT0 = performance.now();
     this.socket = io(this.serverUrl, { forceNew: true });
@@ -101,8 +103,9 @@ export class SimulatedStudent extends EventEmitter {
 
   // Exact port of StudentCodeEditor.handleInstructorEdit (code-editors.js:235-277), applying to
   // a plain CodeMirror Text rather than dispatching to an EditorView.
-  async #handleInstructorEdit({ changes, id }) {
+  async #handleInstructorEdit({ changes, id, fileId }) {
     if (!this.active) return;
+    if (fileId !== this.fileId) return;
 
     if (id !== this.docVersion) {
       this.pendingQueue.push({ changes, id });
@@ -130,16 +133,13 @@ export class SimulatedStudent extends EventEmitter {
     this.docVersion++;
   }
 
-  // Exact port of StudentCodeEditor.catchUpOnChanges (code-editors.js:279-301).
+  // Port of StudentCodeEditor.catchUpOnChanges: re-fetch the whole latest doc.
   async #catchUpOnChanges() {
-    const res = await fetch(`${this.serverUrl}/instructor-changes/${this.sessionNumber}/${this.docVersion}`);
+    const res = await fetch(`${this.serverUrl}/doc/${this.fileId}`);
     const json = await res.json();
-    if (!json.changes) return;
-    for (const { change, changeNumber } of json.changes) {
-      if (changeNumber !== this.docVersion) continue;
-      this.docVersion++;
-      this.doc = ChangeSet.fromJSON(change).apply(this.doc);
-    }
+    if (json.error || json.docVersion == null || json.docVersion < this.docVersion) return;
+    this.doc = Text.of(json.doc);
+    this.docVersion = json.docVersion;
   }
 
   getDocText() {

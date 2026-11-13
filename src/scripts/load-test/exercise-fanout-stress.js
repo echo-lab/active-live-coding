@@ -44,10 +44,11 @@ async function createPollExercise({ serverUrl, sessionNumber }) {
 // Mirrors the two-step flow in code-editors.js (createNewVersionBlock) + activities-manager.js
 // (createCodeVariantExercise): POST /version-block, emit VERSION_BLOCK_CREATED, then
 // POST /exercise with type: CODE_VARIANT, emit EXERCISE_CREATED.
-async function createCodeExercise({ serverUrl, sessionNumber, instructorSocket }) {
+async function createCodeExercise({ serverUrl, sessionNumber, fileId, instructorSocket }) {
   const seedCode = "def solve(x):\n    pass  # TODO";
   const vb = await timedPost(`${serverUrl}/version-block`, {
     lectureId: sessionNumber,
+    fileId,
     anchor_pos: 0,
     docVersion: 0,
     variantCode: seedCode,
@@ -112,7 +113,7 @@ async function main() {
   const { exerciseId, exercise, versionBlockId } =
     exerciseType === "poll"
       ? await createPollExercise({ serverUrl, sessionNumber: lecture.sessionNumber })
-      : await createCodeExercise({ serverUrl, sessionNumber: lecture.sessionNumber, instructorSocket });
+      : await createCodeExercise({ serverUrl, sessionNumber: lecture.sessionNumber, fileId: lecture.fileId, instructorSocket });
 
   const creationSentAt = performance.now();
   instructorSocket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, { sessionNumber: lecture.sessionNumber, exercise });

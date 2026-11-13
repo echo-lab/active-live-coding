@@ -14,7 +14,7 @@ import {
   setupDropdownMenu,
 } from "./shared-interactions.js";
 import { InstructorCodeEditor } from "./code-editors.js";
-import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, getMainFile } from "../shared-constants.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
@@ -132,12 +132,12 @@ sessionNameInput.addEventListener("keypress", (ev) => {
 
 // Start up the editor and hook up the end session button.
 function initialize({
-  doc = null,
-  docVersion = null,
+  files = [],
   sessionNumber = null,
   exercises = [],
   versionBlocks = [],
 }) {
+  const mainFile = getMainFile(files);
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
 
@@ -159,8 +159,10 @@ function initialize({
   let codeEditor = new InstructorCodeEditor({
     node: codeContainer,
     socket,
-    doc,
-    startVersion: docVersion,
+    doc: mainFile.doc,
+    startVersion: mainFile.docVersion,
+    persistedVersion: mainFile.persistedVersion,
+    fileId: mainFile.id,
     sessionNumber,
     versionBlocks,
     activitiesManager,

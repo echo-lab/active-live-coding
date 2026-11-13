@@ -1,5 +1,5 @@
 import { io } from "socket.io-client";
-import { SOCKET_MESSAGE_TYPE } from "../../../shared-constants.js";
+import { SOCKET_MESSAGE_TYPE, getMainFile } from "../../../shared-constants.js";
 import { timedPost } from "./rest-client.js";
 
 // Mirrors POST /lecture-session's find-or-create-by-name semantics (main.js:109-146).
@@ -12,6 +12,7 @@ export async function createFreshLecture({ serverUrl, sessionName, userId = "loa
   }
   return {
     sessionNumber: result.json.sessionNumber,
+    fileId: getMainFile(result.json.files)?.id,
     uuid: result.json.uuid,
     sessionName,
     userId,
@@ -31,12 +32,11 @@ function delayForPace(pace, deltaMs) {
 }
 
 // Connects one socket.io-client as "the instructor" and emits INSTRUCTOR_EDIT for each fixture
-// edit in order, over the real socket + server-side ChangeBuffer path (not a raw DB insert) --
-// this exercises the exact code path flagged by change-buffer.js's
-// "// FIXME: these might not get executed in order!" comment. Edit ids are renumbered
-// sequentially by array index (fixture-io.js already enforces this at load time), matching a
-// fresh lecture's docVersion starting at 0.
-export async function replayInstructorEdits({ serverUrl, sessionNumber, edits, pace = "max", onEditSent }) {
+// edit in order, over the real socket + server-side doc store path (not a raw DB insert). Edit ids
+// are renumbered sequentially by array index (fixture-io.js already enforces this at load time),
+// matching a fresh file's docVersion starting at 0. `fileId` is the lecture's main file (from
+// createFreshLecture).
+export async function replayInstructorEdits({ serverUrl, sessionNumber, fileId, edits, pace = "max", onEditSent }) {
   const socket = io(serverUrl, { forceNew: true });
   await new Promise((resolve, reject) => {
     socket.once("connect", resolve);
@@ -61,6 +61,7 @@ export async function replayInstructorEdits({ serverUrl, sessionNumber, edits, p
     const sentAt = performance.now();
     socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, {
       sessionId: sessionNumber,
+      fileId,
       id: i,
       changes: edit.changes,
       ts: Date.now(),

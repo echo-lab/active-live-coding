@@ -2,13 +2,12 @@ import { ChangeSet, Text } from "@codemirror/state";
 import { EVENT_TYPES } from "../../shared-constants.js";
 
 // Pure, DOM-free reconstruction of "what did this lecture look like at wall-clock time T",
-// computed entirely from the one-shot payload fetched from /api/admin/lecture/:id/replay. Mirrors
-// the server's reconstructUpTo (src/server/models.js's reconstructCMDoc) and the bounded-replay
-// anchor techniques in src/server/lecture-doc-cache.js, just bounded by a timestamp instead of
-// "now" -- keep this in sync with those if the underlying schema/algorithm ever changes.
+// computed entirely from the one-shot payload fetched from /api/admin/lecture/:id/replay (which
+// flattens the server's DocumentChangeBatch log). Anchors are mapped forward the same way the
+// server's doc store (src/server/doc-store.js) tracks them live -- keep the two in sync if the
+// algorithm ever changes.
 
-// Folds an ordered prefix of {change} entries into a doc -- same fold as the server's
-// reconstructCMDoc (src/server/models.js:23-33), bounded to `count` entries instead of all of them.
+// Folds an ordered prefix of {change} entries into a doc, bounded to `count` entries.
 export function reconstructDocUpTo(changes, count) {
   let doc = Text.empty;
   for (let i = 0; i < count; i++) {
@@ -77,7 +76,7 @@ export function computeSnapshotAtTime(data, T) {
   const versionBlocksAtT = visibleBlocks.map((block) => {
     const from = mapPosThrough(instructorChanges, block.anchor_change_number, changeCountAtT, block.anchor_pos);
     const variants = block.variants
-      .filter((v) => v.createdAt <= T)
+      .filter((v) => v.createdAt <= T && (v.deletedAt == null || v.deletedAt > T))
       .map((v) => {
         const n = countUpTo(v.changes, T);
         return { id: v.id, name: v.name, code: reconstructDocUpTo(v.changes, n).toString(), docVersion: n };

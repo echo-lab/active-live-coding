@@ -8,14 +8,16 @@ import {
   StudentSession,
   VersionBlock,
   Variant,
-  VariantChange,
+  Document,
+  loadChangeLog,
+  DEFAULT_FILE_NAME,
 } from "./models.js";
 
 // Dev-only routes for offline analysis: listing every lecture, and dumping everything needed to
 // replay one lecture's whole history client-side (raw ordered rows, not pre-reconstructed state --
 // the client does all the "what did it look like at time T" work itself, once, in memory). Gated
 // out of production entirely by the ADMIN_PATH_PREFIXES middleware in main.js.
-export function registerAdminRoutes(app, { flushInstructorChanges, flushEvents }) {
+export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
   // MARK: List lectures
   app.get("/api/admin/lectures", async (req, res) => {
     try {
@@ -37,7 +39,8 @@ export function registerAdminRoutes(app, { flushInstructorChanges, flushEvents }
 
   // MARK: Lecture replay data
   // Returns every raw row needed to reconstruct this lecture's entire history client-side: the
-  // full InstructorChange log, every VersionBlock (including dissolved ones) with all Variants and
+  // full change log of the main file (`instructorChanges`; every file's log is under `files`), every
+  // VersionBlock (including dissolved ones) with all Variants (including soft-deleted ones) and
   // their own change logs, every ClassExercise with every response, and the offline events log's
   // instructor-side events (for timeline annotations). Sent once, in full -- the replay page never
   // queries the backend again after this.
@@ -45,26 +48,39 @@ export function registerAdminRoutes(app, { flushInstructorChanges, flushEvents }
     const lectureId = Number(req.params.id);
     if (!Number.isInteger(lectureId)) return res.json({ error: "Invalid lecture id" });
 
-    await Promise.all([flushInstructorChanges(), flushEvents()]);
+    await Promise.all([flushLecture(lectureId), flushEvents()]);
 
     try {
       const mainDbWork = db.transaction(async (t) => {
         const lecture = await LectureSession.findByPk(lectureId, { transaction: t });
         if (!lecture) return { error: "Lecture not found" };
 
-        const instructorChanges = await lecture.getInstructorChanges({
-          attributes: ["change_number", "change", "change_ts"],
-          order: ["change_number"],
-          transaction: t,
-        });
+        const toReplayChanges = (log) => log.map((c) => ({ changeNumber: c.id, change: c.changes, ts: c.ts }));
+
+        const fileRows = await lecture.getDocuments({ where: { kind: "file" }, order: [["id", "ASC"]], transaction: t });
+        const files = await Promise.all(
+          fileRows.map(async (f) => ({
+            id: f.id,
+            name: f.name,
+            changes: toReplayChanges(await loadChangeLog(f.id, t)),
+          })),
+        );
+        // The replay UI only shows one file for now.
+        const mainFile = files.find((f) => f.name === DEFAULT_FILE_NAME) ?? files[0];
 
         const versionBlocks = await lecture.getVersionBlocks({
           // No deleted:false filter -- dissolved blocks are needed too, so the replay can show
-          // them present, then gone, exactly as they were.
-          include: [{ model: Variant, include: [VariantChange] }],
+          // them present, then gone, exactly as they were. Same for soft-deleted variants.
+          include: [{ model: Variant, paranoid: false, include: [Document] }],
           order: [["createdAt", "ASC"]],
           transaction: t,
         });
+        const variantChanges = new Map();
+        for (const b of versionBlocks) {
+          for (const v of b.Variants) {
+            variantChanges.set(v.id, v.Document ? toReplayChanges(await loadChangeLog(v.Document.id, t)) : []);
+          }
+        }
 
         const exercises = await lecture.getClassExercises({
           include: [
@@ -85,14 +101,12 @@ export function registerAdminRoutes(app, { flushInstructorChanges, flushEvents }
           instructor_id: lecture.instructor_id,
           isFinished: lecture.isFinished,
           createdAt: lecture.createdAt.getTime(),
-          instructorChanges: instructorChanges.map((c) => ({
-            changeNumber: c.change_number,
-            change: JSON.parse(c.change),
-            ts: c.change_ts,
-          })),
+          files,
+          instructorChanges: mainFile?.changes ?? [],
           versionBlocks: versionBlocks.map((b) => ({
             id: b.id,
             anchor_pos: b.anchor_pos,
+            fileId: b.DocumentId,
             anchor_change_number: b.anchor_change_number,
             deleted: b.deleted,
             deleted_change_number: b.deleted_change_number,
@@ -103,9 +117,8 @@ export function registerAdminRoutes(app, { flushInstructorChanges, flushEvents }
                 id: v.id,
                 name: v.name,
                 createdAt: v.createdAt.getTime(),
-                changes: [...v.VariantChanges]
-                  .sort((a, c) => a.change_number - c.change_number)
-                  .map((c) => ({ changeNumber: c.change_number, change: JSON.parse(c.change), ts: c.change_ts })),
+                deletedAt: v.deletedAt ? v.deletedAt.getTime() : null,
+                changes: variantChanges.get(v.id),
               })),
           })),
           exercises: exercises.map((ex) => ({

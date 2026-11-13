@@ -61,8 +61,9 @@ function scrollPollMarkerIntoView(view, id) {
 // MARK: Student Editor
 export class StudentCodeEditor {
   // Initialize CodeMirror and listen for instructor updates.
-  constructor({node, doc, docVersion, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
+  constructor({node, doc, docVersion, fileId, socket, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
     this.docVersion = docVersion;
+    this.fileId = fileId;
     this.sessionId = sessionId;
     this.activitiesManager = activitiesManager;
     this._reviewMode = reviewMode;
@@ -239,8 +240,9 @@ export class StudentCodeEditor {
     });
   }
 
-  async handleInstructorEdit({ changes, id }) {
+  async handleInstructorEdit({ changes, id, fileId }) {
     if (!this.active) return;
+    if (fileId !== this.fileId) return; // an edit to a different file
 
     // ONLY FOR TESTING!
     // if (id === 3) {
@@ -283,27 +285,49 @@ export class StudentCodeEditor {
     this.view.dispatch({ changes });
   }
 
+  // Re-syncs with the server's latest copy of this file. The server doesn't serve individual past
+  // changes -- instead we replace the region that differs (trimming the prefix/suffix both
+  // versions share, so version-block widgets and poll markers outside it stay put), then move any
+  // version blocks the server says have drifted.
   async catchUpOnChanges() {
-    const response = await fetch(
-      `/instructor-changes/${this.sessionId}/${this.docVersion}`,
-      GET_JSON_REQUEST
-    );
-    // // ONLY FOR TESTING
-    // let twoSeconds = new Promise((resolve) => setTimeout(resolve, 2000));
-    // await twoSeconds;
-
-    let res = await response.json();
-    if (!res.changes) return;
+    const res = await fetch(`/doc/${this.fileId}`, GET_JSON_REQUEST).then((r) => r.json());
+    if (res.error || res.docVersion == null) {
+      console.warn("Failed to catch up:", res.error);
+      return;
+    }
+    if (res.docVersion < this.docVersion) return; // we're somehow ahead -- nothing to do
 
     // IMPORTANT: reset the instructor's cursor selection or else the editor gets sad.
     this.view.dispatch({
       effects: setInstructorSelection.of({ anchor: 0, head: 0 }),
     });
-    for (let { change, changeNumber } of res.changes) {
-      if (changeNumber !== this.docVersion) continue;
-      console.log("Catching up on change: ", changeNumber);
-      this.docVersion++;
-      this.view.dispatch({ changes: ChangeSet.fromJSON(change) });
+
+    const current = this.view.state.doc.toString();
+    const latest = Text.of(res.doc).toString();
+    if (current !== latest) {
+      let start = 0;
+      const maxPrefix = Math.min(current.length, latest.length);
+      while (start < maxPrefix && current.charCodeAt(start) === latest.charCodeAt(start)) start++;
+      let endCur = current.length;
+      let endNew = latest.length;
+      while (endCur > start && endNew > start && current.charCodeAt(endCur - 1) === latest.charCodeAt(endNew - 1)) {
+        endCur--;
+        endNew--;
+      }
+      this.view.dispatch({ changes: { from: start, to: endCur, insert: latest.slice(start, endNew) } });
+    }
+    console.log(`Caught up from version ${this.docVersion} to ${res.docVersion}`);
+    this.docVersion = res.docVersion;
+
+    // Correct any version block whose position drifted.
+    for (const { id, from } of res.versionBlocks ?? []) {
+      const widget = this.getVersionBlock(id);
+      if (!widget) continue;
+      const pos = widget.getPosition(this.view.state);
+      const currentFrom = pos?.from ?? pos;
+      if (currentFrom === from) continue;
+      this.view.dispatch({ effects: removeVersionBlockEffect.of({ versionBlockId: id }) });
+      this.view.dispatch({ effects: addVersionBlockEffect.of({ from, to: from, widget }) });
     }
   }
 
@@ -337,6 +361,8 @@ export class InstructorCodeEditor {
     socket,
     doc,
     startVersion,
+    persistedVersion = startVersion,
+    fileId,
     sessionNumber,
     versionBlocks,
     activitiesManager,
@@ -344,6 +370,9 @@ export class InstructorCodeEditor {
     onOpenPollMarker,
   }) {
     this.docVersion = startVersion;
+    this.fileId = fileId;
+    // Every change before this version has been durably written by the server.
+    this.persistedVersion = persistedVersion;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.activitiesManager = activitiesManager;
@@ -369,6 +398,10 @@ export class InstructorCodeEditor {
 
     this.view = new EditorView({ state, parent: node });
     this.active = true;
+
+    socket.on(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, ({ docId, version }) => {
+      if (docId === this.fileId) this.persistedVersion = Math.max(this.persistedVersion, version);
+    });
 
     // Reconstruct any existing version blocks from the server.
     for (const block of versionBlocks) {
@@ -478,7 +511,9 @@ export class InstructorCodeEditor {
   getPollDraftAnchor() {
     const { from, to } = getPollMarkerPosition(this.view.state, DRAFT_POLL_ID);
     if (from == null) return null;
-    return { from, to, docVersion: this.getDocVersion() };
+    // `doc` (the file's text these positions refer to) is stored with the poll so its historical
+    // view can be shown later without replaying any history.
+    return { from, to, docVersion: this.getDocVersion(), fileId: this.fileId, doc: this.view.state.doc.toString() };
   }
 
   // Live doc position of an already-created poll's marker, looked up by id (so it reflects any
@@ -551,13 +586,19 @@ export class InstructorCodeEditor {
 
   async dissolveVersionBlock(versionBlockId) {
     if (!this.active) return;
-    const finishedExerciseId = await this._destroyVersionBlockBackend(versionBlockId);
+    const widget = this.versionBlocks[versionBlockId];
+    // Snapshot the file + the widget's position BEFORE anything changes, for the historical view.
+    const before = {
+      doc: this.view.state.doc.toString(),
+      pos: widget?.getPosition(this.view.state)?.from ?? null,
+      docVersion: this.getDocVersion(),
+    };
+    const finishedExerciseId = await this._destroyVersionBlockBackend(versionBlockId, before);
     this.activitiesManager?.markVersionBlockDeleted(versionBlockId);
     if (finishedExerciseId != null) {
       this.activitiesManager?.markExerciseFinishedSilently(finishedExerciseId);
     }
 
-    const widget = this.versionBlocks[versionBlockId];
     delete this.versionBlocks[versionBlockId];
 
     let {from, to} = widget.getPosition(this.view.state);
@@ -668,7 +709,7 @@ export class InstructorCodeEditor {
       const lineTo = state.doc.lineAt(Math.min(to, state.doc.length - 1)).to;
       const currentDocVersion = this.getDocVersion();
       const res = await fetch("/version-block", {
-        body: JSON.stringify({ lectureId: this.sessionNumber, anchor_pos: from, docVersion: currentDocVersion, variantCode }),
+        body: JSON.stringify({ lectureId: this.sessionNumber, fileId: this.fileId, anchor_pos: from, docVersion: currentDocVersion, variantCode }),
         ...POST_JSON_REQUEST,
       });
       const { versionBlockId, variantId, error } = await res.json();
@@ -694,7 +735,7 @@ export class InstructorCodeEditor {
       });
 
       // Step 3: Broadcast out to the students
-      this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: this.sessionNumber, versionBlockId, from: lineFrom, to: lineFrom, variants });
+      this.socket.emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, { sessionId: this.sessionNumber, fileId: this.fileId, versionBlockId, from: lineFrom, to: lineFrom, variants });
 
       if (autoStartExercise) widget._askStudents();
     } catch (err) {
@@ -702,10 +743,15 @@ export class InstructorCodeEditor {
     }
   }
 
-  async _destroyVersionBlockBackend(versionBlockId) {
+  // `before`: {doc, pos, docVersion} -- the file as it looked right before dissolving.
+  async _destroyVersionBlockBackend(versionBlockId, before) {
     let finishedExerciseId = null;
     try {
-      const res = await fetch(`/version-block/${versionBlockId}`, { method: "DELETE" });
+      const res = await fetch(`/version-block/${versionBlockId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(before ?? {}),
+      });
       const { ok, error, finishedExerciseId: id } = await res.json();
       if (!ok || error) { console.error("Failed to dissolve version block:", error); return null; }
       finishedExerciseId = id ?? null;
@@ -730,6 +776,7 @@ export class InstructorCodeEditor {
         // let userEvent = tr.annotation(Transaction.userEvent);
         this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, {
           sessionId: this.sessionNumber,
+          fileId: this.fileId,
           id: this.docVersion,
           changes: tr.changes.toJSON(),
           ts: Date.now(),
@@ -768,6 +815,12 @@ export class VariantCodeEditor {
     this.versionBlockId = versionBlockId;
     this.variantId = variantId;
     this.docVersion = docVersion;
+    // Every change before this version has been durably written by the server.
+    this.persistedVersion = docVersion;
+    this._onPersisted = ({ variantId: persistedVariantId, version }) => {
+      if (persistedVariantId === this.variantId) this.persistedVersion = Math.max(this.persistedVersion, version);
+    };
+    socket.on(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, this._onPersisted);
 
     const state = EditorState.create({
       doc: doc ?? "",
@@ -837,6 +890,7 @@ export class VariantCodeEditor {
 
   destroy() {
     clearTimeout(this._saveTimer);
+    this.socket.off(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, this._onPersisted);
     this.view.destroy();
   }
 }

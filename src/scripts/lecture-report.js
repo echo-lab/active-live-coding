@@ -15,8 +15,9 @@ import {
   ExerciseResponse,
   SimulatedExerciseResponse,
   StudentSession,
-  InstructorChange,
+  Document,
   VersionBlock,
+  loadChangeLog,
 } from "../server/models.js";
 import { Event } from "../server/events-database.js";
 import { EVENT_TYPES } from "../shared-constants.js";
@@ -124,9 +125,9 @@ const exercises = await ClassExercise.findAll({
   order: [["start_ts", "ASC"]],
 });
 
-const changeTimestamps = (
-  await InstructorChange.findAll({ where: { LectureSessionId: lectureId }, attributes: ["change_ts"], raw: true })
-).map((r) => r.change_ts);
+// Instructor edit timestamps across all of the lecture's files.
+const fileDocs = await Document.findAll({ where: { LectureSessionId: lectureId, kind: "file" }, attributes: ["id"] });
+const changeTimestamps = (await Promise.all(fileDocs.map((d) => loadChangeLog(d.id)))).flat().map((c) => c.ts);
 
 const studentSessions = await StudentSession.findAll({ where: { LectureSessionId: lectureId }, raw: true });
 

@@ -39,9 +39,9 @@ function makeSyntheticEdits(count, startId, startLength) {
   return edits;
 }
 
-function sendEdits(socket, sessionNumber, edits) {
+function sendEdits(socket, { sessionNumber, fileId }, edits) {
   for (const edit of edits) {
-    socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, { sessionId: sessionNumber, id: edit.id, changes: edit.changes, ts: Date.now() });
+    socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, { sessionId: sessionNumber, fileId, id: edit.id, changes: edit.changes, ts: Date.now() });
   }
 }
 
@@ -80,7 +80,7 @@ async function main() {
 
   // Baseline: everyone should receive this -- a harness sanity check, not the bug under test.
   console.log("Sending baseline batch (5 edits)...");
-  sendEdits(instructorSocket, lecture.sessionNumber, makeSyntheticEdits(5, 0, 0));
+  sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 0, 0));
   await sleep(1000);
 
   const baselineMisses = students.filter((s) => receivedIds(s).length !== 5);
@@ -98,7 +98,7 @@ async function main() {
   await sleep(300);
 
   console.log("Sending after-batch (5 more edits, continuing docVersion)...");
-  sendEdits(instructorSocket, lecture.sessionNumber, makeSyntheticEdits(5, 5, 5));
+  sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 5, 5));
   await sleep(1500);
 
   const afterIdsExpected = [5, 6, 7, 8, 9];

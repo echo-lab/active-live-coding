@@ -4,6 +4,7 @@ import "./style-review-lecture.css";
 
 import { createNoopSocket, GET_JSON_REQUEST } from "./utils.js";
 import { StudentCodeEditor } from "./code-editors.js";
+import { getMainFile } from "../shared-constants.js";
 import {
   versionBlocksField,
   setVersionBlockReadOnly,
@@ -68,7 +69,8 @@ function showError(message) {
   reviewErrorEl.hidden = false;
 }
 
-function initialize({ name, isFinished, sessionNumber, lectureDoc, lectureDocVersion, exercises = [], versionBlocks = [] }) {
+function initialize({ name, isFinished, sessionNumber, files = [], exercises = [], versionBlocks = [] }) {
+  const mainFile = getMainFile(files);
   document.querySelector("#session-name-display").innerText = `Lecture ID: ${name}`;
   reviewBannerEl.hidden = isFinished;
 
@@ -88,8 +90,9 @@ function initialize({ name, isFinished, sessionNumber, lectureDoc, lectureDocVer
 
   const codeEditor = new StudentCodeEditor({
     node: instructorCodeContainer,
-    doc: lectureDoc,
-    docVersion: lectureDocVersion,
+    doc: mainFile.doc,
+    docVersion: mainFile.docVersion,
+    fileId: mainFile.id,
     socket: noopSocket,
     sessionId: sessionNumber,
     extraExtensions: [versionBlocksField],

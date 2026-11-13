@@ -1,4 +1,4 @@
-// Extracts a recorded lecture's InstructorChange log into a reusable JSON fixture for the
+// Extracts a recorded lecture's main-file change log into a reusable JSON fixture for the
 // load-test scripts. Reads db.sqlite directly -- the dev server does not need to be running.
 //
 // Usage:
@@ -6,7 +6,7 @@
 //   node src/scripts/load-test/capture-lecture-fixture.js --lecture-id 42 --out fixtures/realistic-10min.json
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LectureSession } from "../../server/models.js";
+import { LectureSession, loadChangeLog, DEFAULT_FILE_NAME } from "../../server/models.js";
 import { parseArgs } from "./lib/cli-args.js";
 import { saveFixture } from "./lib/fixture-io.js";
 import { replayToText } from "./lib/cm-replay.js";
@@ -43,22 +43,20 @@ async function main() {
   const lecture = await findLecture({ lectureName: args["lecture-name"], lectureId: args["lecture-id"] });
   console.log(`Found lecture #${lecture.id} "${lecture.name}" (isFinished=${lecture.isFinished})`);
 
-  const changes = await lecture.getInstructorChanges({ order: [["change_number", "ASC"]] });
+  const [file] = await lecture.getDocuments({ where: { kind: "file", name: DEFAULT_FILE_NAME } });
+  if (!file) throw new Error(`Lecture #${lecture.id} has no ${DEFAULT_FILE_NAME} -- nothing to capture`);
+  const changes = await loadChangeLog(file.id);
   if (changes.length === 0) {
-    throw new Error(`Lecture #${lecture.id} has no InstructorChange rows -- nothing to capture`);
+    throw new Error(`Lecture #${lecture.id} has no recorded changes -- nothing to capture`);
   }
 
   const edits = changes.map((c, i) => {
-    if (c.change_number !== i) {
-      throw new Error(`Gap in change_number sequence: expected ${i}, got ${c.change_number} (row id ${c.id})`);
-    }
-    return { id: i, changes: JSON.parse(c.change), ts: c.change_ts };
+    if (c.id !== i) throw new Error(`Gap in change sequence: expected ${i}, got ${c.id}`);
+    return { id: i, changes: c.changes, ts: c.ts };
   });
 
   // Locally sanity-replays the captured changes, to catch a corrupt/out-of-order capture
-  // immediately -- probing the same risk flagged by change-buffer.js's
-  // "FIXME: might not get executed in order!" comment, but at capture time rather than
-  // discovering it deep into a later stress-test run.
+  // immediately rather than deep into a later stress-test run.
   const finalDocText = replayToText(edits);
 
   const fixture = {

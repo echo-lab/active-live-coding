@@ -24,6 +24,7 @@ import {
 } from "./shared-interactions.js";
 import {
   SOCKET_MESSAGE_TYPE,
+  getMainFile,
 } from "../shared-constants.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
@@ -100,14 +101,14 @@ const socket = io();
 
 async function initialize({
   sessionNumber,
-  lectureDoc,
-  lectureDocVersion,
+  files = [],
   playgroundCodeInfo,
   exercises = [],
   studentSessionId,
   versionBlocks = [],
 }) {
   currentSessionNumber = sessionNumber;
+  const mainFile = getMainFile(files);
   socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
   // Socket.IO reconnects (e.g. a wifi blip) get a new server-side socket id that isn't
   // automatically re-joined to the lecture room -- without this, a reconnected student would
@@ -132,8 +133,9 @@ async function initialize({
 
   let codeEditor = new StudentCodeEditor({
     node: instructorCodeContainer,
-    doc: lectureDoc,
-    docVersion: lectureDocVersion,
+    doc: mainFile.doc,
+    docVersion: mainFile.docVersion,
+    fileId: mainFile.id,
     socket,
     sessionId: sessionNumber,
     extraExtensions: [versionBlocksField],

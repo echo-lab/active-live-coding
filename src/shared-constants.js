@@ -72,6 +72,15 @@ export const EVENT_TYPES = Object.freeze({
 
 export const ANONYMOUS_STUDENT_MODE = true;
 
+// Every lecture starts with this one file. The backend supports multiple files per lecture, but
+// the front end only uses this one for now.
+export const DEFAULT_FILE_NAME = "main.py";
+
+// Picks the file the (single-file) front end shows out of a lecture's `files` list.
+export function getMainFile(files = []) {
+  return files.find((f) => f.name === DEFAULT_FILE_NAME) ?? files[0] ?? null;
+}
+
 export const SOCKET_MESSAGE_TYPE = Object.freeze({
   JOIN_SESSION: "JOIN_SESSION",
   INSTRUCTOR_EDIT: "INSTRUCTOR_EDIT",
@@ -85,6 +94,9 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   STUDENT_CODE_EDIT: "STUDENT_CODE_EDIT",
   STUDENT_NOTES_EDIT: "STUDENT_NOTES_EDIT",
   INSTRUCTOR_OUT_OF_SYNC: "INSTRUCTOR_OUT_OF_SYNC",
+  // Server -> lecture room: {docId, variantId (null for files), version} -- every change to that
+  // document before `version` has been durably written to the DB.
+  DOC_PERSISTED: "DOC_PERSISTED",
   STUDENT_OUT_OF_SYNC: "STUDENT_OUT_OF_SYNC",
   EXERCISE_CREATED: "EXERCISE_CREATED",
   EXERCISE_FINISHED: "EXERCISE_FINISHED",

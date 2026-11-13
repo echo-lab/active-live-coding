@@ -77,7 +77,7 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseUpdated", { detail: { exercise: ex } }));
   }
 
-  async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
+  async createPollExercise({ instructions, instructor_code, full_instructor_code, code_anchor_from, code_anchor_to, code_anchor_doc_version, fileId, context_doc }) {
     if (!this.active) return;
     const res = await fetch("/exercise", {
       body: JSON.stringify({
@@ -88,6 +88,8 @@ export class InstructorActivitiesManager extends EventTarget {
         code_anchor_from,
         code_anchor_to,
         code_anchor_doc_version,
+        fileId,
+        context_doc,
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());
@@ -123,7 +125,7 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseCreated", { detail: { exercise: newEx } }));
   }
 
-  async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices, code_anchor_from, code_anchor_to, code_anchor_doc_version }) {
+  async createPollMcqExercise({ instructions, instructor_code, full_instructor_code, choices, code_anchor_from, code_anchor_to, code_anchor_doc_version, fileId, context_doc }) {
     if (!this.active) return;
     const default_answer = JSON.stringify(choices);
     const res = await fetch("/exercise", {
@@ -136,6 +138,8 @@ export class InstructorActivitiesManager extends EventTarget {
         code_anchor_from,
         code_anchor_to,
         code_anchor_doc_version,
+        fileId,
+        context_doc,
       }),
       ...POST_JSON_REQUEST,
     }).then((r) => r.json());

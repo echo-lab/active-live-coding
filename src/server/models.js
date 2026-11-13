@@ -1,36 +1,24 @@
-import { DataTypes, Model, Op } from "sequelize";
-import { Text, ChangeSet } from "@codemirror/state";
+import zlib from "node:zlib";
+import { DataTypes, Model } from "sequelize";
 import { db as sequelize } from "./database.js";
-import { getCachedVersionBlockAnchor, getCachedPollAnchor } from "./lecture-doc-cache.js";
+import { getDocSnapshot, getAnchors, currentContent } from "./doc-store.js";
+import { DEFAULT_FILE_NAME } from "../shared-constants.js";
 
 /*
 LectureSession
-  InstructorChange
+  Document (kind="file")          one row per file, e.g. "main.py" -- latest snapshot only
+    DocumentChangeBatch           append-only, gzipped log of the raw changes (never read while serving)
   ClassExercise
     ExerciseResponse
     SimulatedExerciseResponse
   StudentSession          (new student interface: student-page.html)
     ExerciseResponse
+  VersionBlock            lives in one file Document
+    Variant               (paranoid: soft-deleted via deletedAt)
+      Document (kind="variant")
 */
 
-const CODE_CHANGE_SCHEMA = {
-  file_name: DataTypes.STRING, // Only for Typealong Changes :)
-  change_number: DataTypes.INTEGER,
-  change: DataTypes.TEXT,
-  change_ts: DataTypes.INTEGER,
-};
-
-export function reconstructCMDoc(changes) {
-  let doc = Text.empty;
-  let docVersion = 0;
-
-  changes.forEach(({ change }) => {
-    doc = ChangeSet.fromJSON(JSON.parse(change)).apply(doc);
-    docVersion++;
-  });
-
-  return { doc, docVersion };
-}
+export { DEFAULT_FILE_NAME };
 
 // MARK: LectureSession
 // NOTE: this class is written for a SINGLE THREADED SERVER!!! Consider rewriting :)
@@ -46,32 +34,21 @@ export class LectureSession extends Model {
     return sesh.length > 0 ? sesh[0] : null;
   }
 
-  async changesSinceVersion(docVersion, transaction) {
-    // Compose all the changes; return the resulting change and the latest version number
-    let changes = await this.getInstructorChanges(
-      {
-        where: {
-          change_number: {
-            [Op.gte]: docVersion,
-          },
-        },
-        order: ["change_number"],
-      },
-      { transaction },
-    );
-    return changes.map(({ change, change_number }) => ({
-      change: JSON.parse(change),
-      changeNumber: change_number,
-    }));
-  }
-
-  async getDoc(transaction) {
-    let changes = await this.getInstructorChanges({
-      attributes: ["change", "change_number"],
-      order: ["change_number"],
+  // Every file in this lecture with its latest content (from the doc store, i.e. snapshot +
+  // any not-yet-flushed changes), in the shape the clients consume.
+  async getFilesWithContent(transaction) {
+    const files = await this.getDocuments({
+      where: { kind: "file" },
+      attributes: ["id", "name"],
+      order: [["id", "ASC"]],
       transaction,
     });
-    return reconstructCMDoc(changes);
+    return Promise.all(
+      files.map(async (f) => {
+        const { text, version, persistedVersion } = await getDocSnapshot(f.id);
+        return { id: f.id, name: f.name, doc: text.toJSON(), docVersion: version, persistedVersion };
+      }),
+    );
   }
 
   // Returns all exercises for this lecture with every student's responses.
@@ -96,37 +73,22 @@ export class LectureSession extends Model {
       },
       { transaction },
     );
-    return this._resolvePollAnchors(exercises, transaction);
+    return this._resolvePollAnchors(exercises);
   }
 
-  // Given exercises belonging to this lecture, resolves each POLL/POLL_MCQ's
-  // code_anchor_from/code_anchor_to to their CURRENT positions by replaying
-  // InstructorChanges since code_anchor_doc_version -- same technique as
-  // getVersionBlocksWithPositions, just for a [from, to) range instead of a point.
-  async _resolvePollAnchors(exercises, transaction) {
-    const needsResolution = exercises.some(
-      (ex) => (ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.code_anchor_from != null,
-    );
-    if (!needsResolution) return exercises;
-
-    // Position resolution now comes from the in-memory anchor cache (bounded replay from the
-    // anchor's own recorded version, not the whole lecture) instead of replaying every
-    // InstructorChange here -- see lecture-doc-cache.js. `transaction` is no longer used by this
-    // method (kept in the signature so callers don't need to change).
+  // Resolves each POLL/POLL_MCQ's code_anchor_from/code_anchor_to to its CURRENT position. The
+  // doc store tracks every registered anchor live (mapping it through each applied change) and
+  // persists it alongside the snapshot, so this never touches the change log.
+  async _resolvePollAnchors(exercises) {
+    const anchorsByDoc = new Map();
     return Promise.all(
       exercises.map(async (ex) => {
-        if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null) return ex;
-
-        // assoc=1 for from / -1 for to inside the cache: edits landing exactly on a boundary are
-        // excluded from the range, matching CodeMirror's own non-inclusive Decoration.mark
-        // semantics (the same convention used by the live client-side marker in cm-poll-marker.js).
-        const anchor = await getCachedPollAnchor(
-          this,
-          ex.id,
-          ex.code_anchor_from,
-          ex.code_anchor_to,
-          ex.code_anchor_doc_version,
-        );
+        if ((ex.type !== "POLL" && ex.type !== "POLL_MCQ") || ex.code_anchor_from == null || ex.DocumentId == null) {
+          return ex;
+        }
+        if (!anchorsByDoc.has(ex.DocumentId)) anchorsByDoc.set(ex.DocumentId, getAnchors(ex.DocumentId));
+        const anchors = await anchorsByDoc.get(ex.DocumentId);
+        const anchor = anchors.polls.get(ex.id);
         // The anchored code was entirely deleted -- report no anchor rather than a collapsed range.
         if (!anchor) return { ...ex.toJSON(), code_anchor_from: null, code_anchor_to: null };
         return { ...ex.toJSON(), code_anchor_from: anchor.from, code_anchor_to: anchor.to };
@@ -137,108 +99,77 @@ export class LectureSession extends Model {
   async getVersionBlocksWithPositions(transaction) {
     const blocks = await this.getVersionBlocks({
       where: { deleted: false },
-      include: [{ model: Variant, include: [VariantChange] }],
+      include: [{ model: Variant, include: [Document] }],
       order: [["createdAt", "ASC"]],
       transaction,
     });
 
     if (blocks.length === 0) return [];
 
-    // Position resolution now comes from the in-memory anchor cache (bounded replay from the
-    // block's own anchor_change_number, not the whole lecture) instead of replaying every
-    // InstructorChange here -- see lecture-doc-cache.js.
+    const anchorsByDoc = new Map();
     return Promise.all(
       blocks.map(async (block) => {
-        const v0 = block.Variants.find((v) => v.name === "v0") ?? block.Variants[0];
-        const variantChanges = v0
-          ? [...v0.VariantChanges].sort((a, b) => a.change_number - b.change_number)
-          : [];
-        const { doc: variantDoc } = reconstructCMDoc(variantChanges);
-        const variantCode = variantDoc.toString();
+        if (!anchorsByDoc.has(block.DocumentId)) anchorsByDoc.set(block.DocumentId, getAnchors(block.DocumentId));
+        const anchors = await anchorsByDoc.get(block.DocumentId);
+        let from = anchors.versionBlocks.get(block.id);
+        if (from == null) {
+          console.warn(`Version block #${block.id} has no tracked anchor; falling back to its creation position.`);
+          from = block.anchor_pos;
+        }
 
-        const { from, to } = await getCachedVersionBlockAnchor(this, block.id, block.anchor_pos, block.anchor_change_number);
-
-        let sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        const sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         return {
           id: block.id,
+          fileId: block.DocumentId,
           from,
-          to,
-          variants: sortedVariants.map((v) => {
-            const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
-            return {
-              id: v.id,
-              name: v.name,
-              code: reconstructCMDoc(vChanges).doc.toString(),
-              docVersion: vChanges.length,
-            };
-          }),
+          to: from,
+          variants: await Promise.all(
+            sortedVariants.map(async (v) => {
+              const { content, version } = await currentContent(v.Document);
+              return { id: v.id, name: v.name, code: content, docVersion: version };
+            }),
+          ),
         };
       }),
     );
   }
 
-  // Reconstructs the main doc + the ONE given exercise's anchor exactly as they looked at the
-  // moment that exercise's anchor was captured -- for a poll, when it was asked
-  // (code_anchor_doc_version); for a code exercise, when its Version Block was dissolved
-  // (deleted_change_number). Used to render a read-only "historical view" once an activity's
-  // live anchor is gone. Same bounded ChangeSet-replay technique as getVersionBlocksWithPositions
-  // above, just stopping at a fixed past point instead of walking forward to "now".
+  // Returns the main doc + the ONE given exercise's anchor exactly as they looked at the moment
+  // that exercise's anchor was captured -- for a poll, when it was asked; for a code exercise,
+  // when its Version Block was dissolved. Both are captured (by the instructor client) at that
+  // moment and stored on the row, so this is a plain read -- no change-log replay. Used to render
+  // a read-only "historical view" once an activity's live anchor is gone.
   async getHistoricalContextForExercise(exerciseId, transaction, studentId = null) {
     const exercise = await ClassExercise.findByPk(exerciseId, {
-      include: [{ model: VersionBlock, required: false, include: [{ model: Variant, include: [VariantChange] }] }],
+      include: [{ model: VersionBlock, required: false, include: [{ model: Variant, include: [Document] }] }],
       transaction,
     });
     if (!exercise) return { error: `Exercise #${exerciseId} not found` };
 
     const isPoll = exercise.type === "POLL" || exercise.type === "POLL_MCQ";
-    let targetChangeNumber, timestamp;
     if (isPoll) {
-      if (exercise.code_anchor_doc_version == null) return { error: "Exercise has no code anchor" };
-      targetChangeNumber = exercise.code_anchor_doc_version;
-      timestamp = exercise.start_ts;
-    } else if (exercise.type === "CODE_VARIANT") {
-      const block = exercise.VersionBlock;
-      if (!block || block.deleted_change_number == null) return { error: "Version block is not dissolved" };
-      targetChangeNumber = block.deleted_change_number;
-      timestamp = block.updatedAt.getTime();
-    } else {
-      return { error: `Unsupported exercise type: ${exercise.type}` };
-    }
-
-    const priorChanges = await this.getInstructorChanges(
-      {
-        attributes: ["change_number", "change"],
-        where: { change_number: { [Op.lt]: targetChangeNumber } },
-        order: ["change_number"],
-      },
-      { transaction },
-    );
-    const { doc } = reconstructCMDoc(priorChanges);
-
-    if (isPoll) {
+      if (exercise.context_doc == null || exercise.code_anchor_from == null) {
+        return { error: "Exercise has no code anchor" };
+      }
       return {
         type: exercise.type,
-        doc: doc.toJSON(),
-        timestamp,
+        doc: exercise.context_doc.split("\n"),
+        timestamp: exercise.start_ts,
         anchor: { from: exercise.code_anchor_from, to: exercise.code_anchor_to },
       };
     }
+    if (exercise.type !== "CODE_VARIANT") return { error: `Unsupported exercise type: ${exercise.type}` };
 
-    // CODE_VARIANT: map the block's creation-time anchor forward, but only up through the
-    // moment of deletion (not all the way to "now", unlike getVersionBlocksWithPositions).
     const block = exercise.VersionBlock;
-    let from = block.anchor_pos;
-    for (const { change_number, change } of priorChanges) {
-      if (change_number >= block.anchor_change_number) {
-        from = ChangeSet.fromJSON(JSON.parse(change)).mapPos(from);
-      }
-    }
+    if (!block || !block.deleted || block.deleted_doc == null) return { error: "Version block is not dissolved" };
+    const doc = block.deleted_doc.split("\n");
+    const timestamp = block.updatedAt.getTime();
+    const from = block.deleted_pos;
 
     const sortedVariants = [...block.Variants].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    const variants = sortedVariants.map((v) => {
-      const vChanges = [...v.VariantChanges].sort((a, b) => a.change_number - b.change_number);
-      return { id: v.id, name: v.name, code: reconstructCMDoc(vChanges).doc.toString() };
-    });
+    const variants = await Promise.all(
+      sortedVariants.map(async (v) => ({ id: v.id, name: v.name, code: (await currentContent(v.Document)).content })),
+    );
 
     // Append the viewing student's own submitted answer (if any) as a trailing pseudo-variant,
     // mirroring the "My Answer" tab pinned last in the live StudentVersionBlockWidget.
@@ -254,7 +185,7 @@ export class LectureSession extends Model {
 
     return {
       type: "CODE_VARIANT",
-      doc: doc.toJSON(),
+      doc,
       timestamp,
       versionBlock: { from, variants },
     };
@@ -277,7 +208,7 @@ export class LectureSession extends Model {
       order: [["start_ts", "ASC"]],
       transaction,
     });
-    return this._resolvePollAnchors(exercises, transaction);
+    return this._resolvePollAnchors(exercises);
   }
 }
 
@@ -441,6 +372,8 @@ export class ClassExercise extends Model {
       code_anchor_to,
       code_anchor_doc_version,
       version_block_id,
+      document_id,
+      context_doc,
     } = {},
     transaction,
   ) {
@@ -448,6 +381,8 @@ export class ClassExercise extends Model {
       {
         LectureSessionId: lectureId,
         VersionBlockId: version_block_id ?? null,
+        DocumentId: document_id ?? null,
+        context_doc: context_doc ?? null,
         type,
         instructions,
         instructor_code,
@@ -525,6 +460,18 @@ ClassExercise.init(
     },
     VersionBlockId: {
       type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    // The file a poll's code anchor lives in. Null for exercises with no code anchor.
+    DocumentId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    // Full text of the anchor's file at the moment the poll was asked (captured client-side), so
+    // the "historical view" is a plain read instead of a change-log replay. code_anchor_* are
+    // positions in THIS text; their live positions are tracked by the doc store.
+    context_doc: {
+      type: DataTypes.TEXT,
       allowNull: true,
     },
   },
@@ -634,64 +581,127 @@ SimulatedExerciseResponse.init(
 ClassExercise.hasMany(SimulatedExerciseResponse, { foreignKey: "ClassExerciseId" });
 SimulatedExerciseResponse.belongsTo(ClassExercise);
 
-// MARK: Code Changes
-export class InstructorChange extends Model {}
-InstructorChange.init(CODE_CHANGE_SCHEMA, { sequelize });
-LectureSession.hasMany(InstructorChange, { foreignKey: "LectureSessionId" });
-InstructorChange.belongsTo(LectureSession);
-
 // MARK: VersionBlock
-export class VersionBlock extends Model {
-  static async createWithVariant(lectureId, { anchor_pos, anchor_change_number, variantCode }, transaction) {
-    const block = await VersionBlock.create(
-      { LectureSessionId: lectureId, anchor_pos, anchor_change_number },
-      { transaction },
-    );
-    const variant = await Variant.create({ VersionBlockId: block.id, name: "v0" }, { transaction });
-    const insertCs = ChangeSet.of([{ from: 0, insert: variantCode }], 0);
-    await VariantChange.create(
-      { VariantId: variant.id, change_number: 0, change: JSON.stringify(insertCs.toJSON()), change_ts: Date.now() },
-      { transaction },
-    );
-    return { block, variant };
-  }
-}
+export class VersionBlock extends Model {}
 VersionBlock.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    // Immutable creation record (used by the offline replay): position in the file at version
+    // anchor_change_number. The LIVE position is tracked by the doc store, not stored here.
     anchor_pos: { type: DataTypes.INTEGER, allowNull: false },
     anchor_change_number: { type: DataTypes.INTEGER, allowNull: false },
     deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
-    // InstructorChange.change_number the lecture was at right when this block was dissolved --
-    // i.e. reconstructing the main doc from changes strictly before this value shows the widget
-    // still present (not yet flattened into literal text). Null until dissolved.
+    // The file's version right when this block was dissolved -- i.e. the doc at this version
+    // shows the widget still present (not yet flattened into literal text). Null until dissolved.
     deleted_change_number: { type: DataTypes.INTEGER, allowNull: true },
+    // The file's full text + the widget's position in it right before dissolving (captured
+    // client-side), for the "historical view". Null until dissolved.
+    deleted_doc: { type: DataTypes.TEXT, allowNull: true },
+    deleted_pos: { type: DataTypes.INTEGER, allowNull: true },
   },
   { sequelize },
 );
 
 // MARK: Variant
+// Metadata only -- the code lives in this variant's Document (kind="variant"). Paranoid: destroy()
+// just sets deletedAt, so a variant's creation/edits/deletion can all be replayed later. Normal
+// queries/includes skip soft-deleted variants; pass `paranoid: false` to see them.
 export class Variant extends Model {}
 Variant.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     name: { type: DataTypes.STRING, allowNull: false },
   },
-  { sequelize },
+  { sequelize, paranoid: true },
 );
 
-// MARK: VariantChange
-export class VariantChange extends Model {}
-VariantChange.init(CODE_CHANGE_SCHEMA, { sequelize });
+// MARK: Document
+// One row per editable text buffer: a lecture file (kind="file", e.g. "main.py") or a variant's
+// code (kind="variant"). Holds only the LATEST snapshot; written by the doc store's periodic flush
+// (see doc-store.js), together with the DocumentChangeBatch that got it there, in one transaction.
+export class Document extends Model {}
+Document.init(
+  {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    kind: { type: DataTypes.STRING, allowNull: false },
+    // File path for kind="file"; null for variants.
+    name: { type: DataTypes.STRING, allowNull: true },
+    content: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    // Number of changes applied to reach `content` (the next change's id).
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // JSON: live anchor positions at `version` -- see doc-store.js serializeAnchors().
+    anchors: { type: DataTypes.TEXT, allowNull: true },
+  },
+  {
+    sequelize,
+    indexes: [
+      // A file path is unique within a lecture. Partial (files only): variants have name=NULL.
+      { unique: true, fields: ["LectureSessionId", "name"], where: { kind: "file" } },
+      { unique: true, fields: ["VariantId"] },
+    ],
+  },
+);
+
+// MARK: DocumentChangeBatch
+// Append-only log of every change applied to a Document: one row per document per flush, the raw
+// changes gzipped together (like the events table). Covers versions [from_version, to_version).
+// Never read while serving -- only for offline analysis / replay.
+export class DocumentChangeBatch extends Model {}
+DocumentChangeBatch.init(
+  {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    from_version: { type: DataTypes.INTEGER, allowNull: false },
+    to_version: { type: DataTypes.INTEGER, allowNull: false },
+    first_ts: { type: DataTypes.INTEGER, allowNull: false },
+    last_ts: { type: DataTypes.INTEGER, allowNull: false },
+    payload: { type: DataTypes.BLOB, allowNull: false },
+  },
+  {
+    sequelize,
+    timestamps: false,
+    indexes: [{ unique: true, fields: ["DocumentId", "from_version"] }],
+  },
+);
+
+// changes: [{id, changes (ChangeSet JSON), ts}]
+export function encodeChangeBatch(changes) {
+  return zlib.gzipSync(JSON.stringify(changes));
+}
+
+export function decodeChangeBatch(payload) {
+  return JSON.parse(zlib.gunzipSync(payload).toString("utf-8"));
+}
+
+// Offline-only: every change ever applied to a document, in order: [{id, changes, ts}].
+export async function loadChangeLog(documentId, transaction) {
+  const batches = await DocumentChangeBatch.findAll({
+    where: { DocumentId: documentId },
+    order: [["from_version", "ASC"]],
+    transaction,
+  });
+  return batches.flatMap((b) => decodeChangeBatch(b.payload));
+}
+
+LectureSession.hasMany(Document, { foreignKey: "LectureSessionId" });
+Document.belongsTo(LectureSession);
+
+Document.hasMany(DocumentChangeBatch, { foreignKey: "DocumentId" });
+DocumentChangeBatch.belongsTo(Document);
 
 LectureSession.hasMany(VersionBlock, { foreignKey: "LectureSessionId" });
 VersionBlock.belongsTo(LectureSession);
 
+Document.hasMany(VersionBlock, { foreignKey: "DocumentId" });
+VersionBlock.belongsTo(Document);
+
 VersionBlock.hasMany(Variant, { foreignKey: "VersionBlockId" });
 Variant.belongsTo(VersionBlock);
 
-Variant.hasMany(VariantChange, { foreignKey: "VariantId" });
-VariantChange.belongsTo(Variant);
+Variant.hasOne(Document, { foreignKey: "VariantId" });
+Document.belongsTo(Variant);
 
 VersionBlock.hasOne(ClassExercise, { foreignKey: "VersionBlockId" });
 ClassExercise.belongsTo(VersionBlock);
+
+Document.hasMany(ClassExercise, { foreignKey: "DocumentId" });
+ClassExercise.belongsTo(Document);

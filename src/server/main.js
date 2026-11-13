@@ -16,19 +16,34 @@ import {
   SurveyResponse,
   VersionBlock,
   Variant,
-  VariantChange,
-  InstructorChange,
-  reconstructCMDoc,
+  Document,
+  DEFAULT_FILE_NAME,
 } from "./models.js";
-import { ChangeSet } from "@codemirror/state";
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { suggestMcqChoices } from "./suggest-mcq-choices.js";
 import { createGroupSummary } from "./group-responses.js";
 import { SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { ChangeBuffer } from "./change-buffer.js";
 import { eventsDb } from "./events-database.js";
 import { EventBuffer } from "./event-buffer.js";
-import { getCachedDoc, applyChangeToCache, invalidateCachedDoc, unregisterVersionBlockAnchor } from "./lecture-doc-cache.js";
+import {
+  initDocStore,
+  lectureRoom,
+  applyChange,
+  applyVariantChange,
+  createDocument,
+  getDocSnapshot,
+  getAnchors,
+  setContent,
+  flushDoc,
+  flushAll,
+  flushLecture,
+  evictLecture,
+  evictDoc,
+  registerVersionBlockAnchor,
+  registerPollAnchor,
+  unregisterVersionBlockAnchor,
+  resolveVariantDoc,
+} from "./doc-store.js";
 import { registerAdminRoutes } from "./admin-routes.js";
 
 const app = express();
@@ -61,23 +76,7 @@ app.use(ADMIN_PATH_PREFIXES, (req, res, next) => {
 
 app.use(express.json({ limit: "50mb" }));
 
-let instructorChangeBuffer = new ChangeBuffer(5000, db);
 let eventBuffer = new EventBuffer(30000);
-let flushInstructorChanges = async () => {
-  // Skip opening a transaction (an IMMEDIATE write-lock acquisition) entirely when there's
-  // nothing queued -- this endpoint is called before nearly every read, so an empty flush was
-  // otherwise taking a wasted lock on every single request.
-  if (!instructorChangeBuffer.hasPending()) return true;
-  try {
-    await db.transaction(async (t) => {
-      await instructorChangeBuffer.flush(t);
-    });
-    return true;
-  } catch (error) {
-    console.error("Error flushing changes:", error);
-    return false;
-  }
-};
 let flushEvents = async () => {
   try {
     await eventBuffer.flush();
@@ -88,7 +87,7 @@ let flushEvents = async () => {
   }
 };
 
-registerAdminRoutes(app, { flushInstructorChanges, flushEvents });
+registerAdminRoutes(app, { flushLecture, flushEvents });
 
 // MARK: list lectures
 // Return a list of all the lectures.
@@ -155,28 +154,36 @@ app.post("/lecture-session", async (req, res) => {
   let { sessionName, userId } = req.body;
   if (!userId) return res.json({ error: "userId is required" });
 
-  await flushInstructorChanges();
-
   try {
     let response = await db.transaction(async (t) => {
-      let sesh =
-        (await LectureSession.current(sessionName, t)) ??
-        (await LectureSession.create(
+      let sesh = await LectureSession.current(sessionName, t);
+      if (!sesh) {
+        sesh = await LectureSession.create(
           { name: sessionName, instructor_id: userId, uuid: randomUUID() },
           { transaction: t },
-        ));
+        );
+        // Every lecture starts with one file. (Multiple files are supported by the data model;
+        // the front end doesn't create any others yet.)
+        await createDocument({ lectureId: sesh.id, kind: "file", name: DEFAULT_FILE_NAME }, t);
+      }
       if (sesh.instructor_id !== userId) {
         return {
           error: "Lecture name not available.",
         };
       }
+      return sesh;
+    });
+    if (response.error) return res.json(response);
 
-      let { doc, docVersion } = await getCachedDoc(sesh);
+    // Reads go through the doc store (in memory), outside the write transaction above -- the new
+    // file row must be committed before the doc store can hydrate it.
+    const sesh = response;
+    response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
+      let files = await sesh.getFilesWithContent(t);
       let exercises = await sesh.getExercisesForInstructor(t);
       let versionBlocks = await sesh.getVersionBlocksWithPositions(t);
       return {
-        doc: doc.toJSON(),
-        docVersion,
+        files,
         sessionNumber: sesh.id,
         uuid: sesh.uuid,
         exercises,
@@ -190,51 +197,53 @@ app.post("/lecture-session", async (req, res) => {
   }
 });
 
-// MARK: Get instructor changes
-app.get("/instructor-changes/:sessionId/:docversion", async (req, res) => {
-  let sessionId = req.params?.sessionId;
-  let docVersion = parseInt(req.params?.docversion);
-  if (isNaN(docVersion) || docVersion < 0) {
-    res.json({ error: `invalid doc version: ${req.params.docversion}` });
-    return;
-  }
-
-  await flushInstructorChanges();
-
+// MARK: Get latest doc
+// Catch-up for clients that fell behind (missed a socket message): just the latest content, plus
+// (for files) the current version-block positions. Served from memory -- see doc-store.js.
+app.get("/doc/:docId", async (req, res) => {
+  const docId = parseInt(req.params.docId);
+  if (isNaN(docId)) return res.json({ error: `invalid doc id: ${req.params.docId}` });
   try {
-    let response = await db.transaction(async (t) => {
-      let sesh = await LectureSession.findByPk(sessionId, { transaction: t });
-      if (!sesh) return { error: `Session w/ id=${sessionId} not found` };
-      return { changes: await sesh.changesSinceVersion(docVersion, t) };
+    const { text, version, persistedVersion } = await getDocSnapshot(docId);
+    const { versionBlocks } = await getAnchors(docId);
+    res.json({
+      docId,
+      doc: text.toJSON(),
+      docVersion: version,
+      persistedVersion,
+      versionBlocks: [...versionBlocks].map(([id, pos]) => ({ id, from: pos, to: pos })),
     });
-    res.json(response);
   } catch (error) {
-    console.error("Error retrieving changes: ", error);
+    console.error("Error retrieving doc: ", error);
     res.json({ error: error.message });
   }
 });
 
-
 // MARK: Create version block
 app.post("/version-block", async (req, res) => {
-  const { lectureId, anchor_pos, docVersion, variantCode } = req.body;
-  if (lectureId == null || anchor_pos == null || docVersion == null || variantCode == null) {
-    return res.json({ error: "lectureId, anchor_pos, docVersion, and variantCode are required" });
+  const { lectureId, fileId, anchor_pos, docVersion, variantCode } = req.body;
+  if (lectureId == null || fileId == null || anchor_pos == null || docVersion == null || variantCode == null) {
+    return res.json({ error: "lectureId, fileId, anchor_pos, docVersion, and variantCode are required" });
   }
-
-  await flushInstructorChanges();
 
   try {
     let response = await db.transaction(async (t) => {
-      let lecture = await LectureSession.findByPk(lectureId, { transaction: t });
-      if (!lecture) return { error: `Session #${lectureId} not found` };
-      const { block, variant } = await VersionBlock.createWithVariant(
-        lectureId,
-        { anchor_pos, anchor_change_number: docVersion, variantCode },
-        t,
+      const file = await Document.findOne({ where: { id: fileId, LectureSessionId: lectureId, kind: "file" }, transaction: t });
+      if (!file) return { error: `File #${fileId} not found in session #${lectureId}` };
+      const block = await VersionBlock.create(
+        { LectureSessionId: lectureId, DocumentId: fileId, anchor_pos, anchor_change_number: docVersion },
+        { transaction: t },
       );
+      const variant = await Variant.create({ VersionBlockId: block.id, name: "v0" }, { transaction: t });
+      await createDocument({ lectureId, kind: "variant", variantId: variant.id, initialContent: variantCode }, t);
       return { versionBlockId: block.id, variantId: variant.id };
     });
+    if (!response.error) {
+      // Start tracking its live position, and persist that right away so the block can never
+      // exist in the DB without a tracked anchor in its file's snapshot.
+      await registerVersionBlockAnchor(fileId, response.versionBlockId, anchor_pos, docVersion);
+      await flushDoc(fileId);
+    }
     res.json(response);
   } catch (error) {
     console.error("Failed to create version block:", error);
@@ -244,23 +253,23 @@ app.post("/version-block", async (req, res) => {
 
 // MARK: VersionBlock delete
 
+// Body (all captured by the instructor client right before dissolving, i.e. before its
+// flatten-insert edit): {doc, pos, docVersion} -- the file's text, the widget's position in it,
+// and the file's version. Stored so the "historical view" can show the block exactly as it looked
+// right before deletion without replaying any history.
 app.delete("/version-block/:id", async (req, res) => {
-  await flushInstructorChanges();
+  const { doc, pos, docVersion } = req.body ?? {};
 
   try {
     const result = await db.transaction(async (t) => {
       const block = await VersionBlock.findByPk(req.params.id, { transaction: t });
-      if (!block) return res.status(404).json({ error: "Not found" });
+      if (!block) return { error: "Not found" };
 
-      // Record how many InstructorChanges existed right now, before this dissolve's own
-      // flatten-insert edit lands -- lets a later "historical view" reconstruct the doc with
-      // this block's widget still present, exactly as it looked right before deletion.
-      const deleted_change_number = await InstructorChange.count({
-        where: { LectureSessionId: block.LectureSessionId },
-        transaction: t,
-      });
-      await block.update({ deleted: true, deleted_change_number }, { transaction: t });
-      unregisterVersionBlockAnchor(block.LectureSessionId, block.id);
+      const deleted_change_number = docVersion ?? (await getDocSnapshot(block.DocumentId)).version;
+      await block.update(
+        { deleted: true, deleted_change_number, deleted_doc: doc ?? null, deleted_pos: pos ?? null },
+        { transaction: t },
+      );
 
       // Dissolving a still-active exercise should behave like finishing it (minus the
       // summary step) so it doesn't linger as "Active" in the activities panel.
@@ -271,8 +280,9 @@ app.delete("/version-block/:id", async (req, res) => {
         finishedExerciseId = exercise.id;
       }
 
-      return { ok: true, finishedExerciseId };
+      return { ok: true, finishedExerciseId, fileId: block.DocumentId, blockId: block.id };
     });
+    if (result.ok) await unregisterVersionBlockAnchor(result.fileId, result.blockId);
     res.json(result);
   } catch (err) {
     console.error("Failed to soft-delete version block:", err);
@@ -290,12 +300,11 @@ app.post("/variant", async (req, res) => {
       const block = await VersionBlock.findByPk(versionBlockId, { transaction: t });
       if (!block) return { error: `VersionBlock #${versionBlockId} not found` };
       const variant = await Variant.create({ VersionBlockId: versionBlockId, name }, { transaction: t });
-      const insertCs = ChangeSet.of([{ from: 0, insert: "" }], 0);
-      await VariantChange.create(
-        { VariantId: variant.id, change_number: 0, change: JSON.stringify(insertCs.toJSON()), change_ts: Date.now() },
-        { transaction: t },
+      const doc = await createDocument(
+        { lectureId: block.LectureSessionId, kind: "variant", variantId: variant.id, initialContent: "" },
+        t,
       );
-      return { variantId: variant.id, name, docVersion: 1};
+      return { variantId: variant.id, docId: doc.id, name, docVersion: doc.version };
     });
     res.json(result);
   } catch (error) {
@@ -323,39 +332,30 @@ app.delete("/variant/:id", async (req, res) => {
       if (!variant) return { error: "Variant not found" };
       const siblings = await Variant.count({ where: { VersionBlockId: variant.VersionBlockId }, transaction: t });
       if (siblings <= 1) return { error: "Cannot delete the last variant" };
-      await VariantChange.destroy({ where: { VariantId: variant.id }, transaction: t });
+      // Soft delete (paranoid) -- the Variant row, its Document, and its change log are all kept
+      // so the variant's whole lifetime can be replayed later.
       await variant.destroy({ transaction: t });
       return { ok: true };
     });
+    if (result.ok) {
+      // Persist any last edits, then stop holding it in memory -- it can't be edited any more.
+      await evictDoc(await resolveVariantDoc(req.params.id));
+    }
     res.json(result);
   } catch (error) {
     res.json({ error: error.message });
   }
 });
 
-// TODO: this probably shouldn't exist?
+// Server-side full replace of a variant's code (e.g. seeding a new variant with a student's answer).
 app.put("/variant/:id/code", async (req, res) => {
   const { code } = req.body;
   if (code == null) return res.json({ error: "code is required" });
   try {
-    await db.transaction(async (t) => {
-      const variant = await Variant.findByPk(req.params.id, { transaction: t });
-      if (!variant) throw new Error("Variant not found");
-      const changes = await VariantChange.findAll({
-        where: { VariantId: variant.id },
-        order: [["change_number", "ASC"]],
-        transaction: t,
-      });
-      const { doc: currentDoc } = reconstructCMDoc(changes);
-      const currentCode = currentDoc.toString();
-      const nextNumber = changes.length;
-      const cs = ChangeSet.of([{ from: 0, to: currentCode.length, insert: code }], currentCode.length);
-      await VariantChange.create(
-        { VariantId: variant.id, change_number: nextNumber, change: JSON.stringify(cs.toJSON()), change_ts: Date.now() },
-        { transaction: t },
-      );
-    });
-    res.json({ ok: true });
+    const variant = await Variant.findByPk(req.params.id);
+    if (!variant) return res.json({ error: "Variant not found" });
+    const docVersion = await setContent(await resolveVariantDoc(variant.id), code);
+    res.json({ ok: true, docVersion });
   } catch (error) {
     res.json({ error: error.message });
   }
@@ -374,8 +374,6 @@ app.post("/current-session-student", async (req, res) => {
     return res.json({ error: "student_id is required" });
   }
 
-  await flushInstructorChanges();
-
   try {
     // Cheap read-only pre-check, no transaction -- lets the common case (a student reloading,
     // who already has a StudentSession) skip the IMMEDIATE write-lock entirely below. This is
@@ -392,14 +390,13 @@ app.post("/current-session-student", async (req, res) => {
       // never hit the SHARED->RESERVED lock-upgrade race that IMMEDIATE exists to avoid.
       let sesh = existing[0];
       response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
-        let { doc: lectureDoc, docVersion: lectureDocVersion } = await getCachedDoc(lecture);
+        let files = await lecture.getFilesWithContent(t);
         let exercises = await lecture.getExercisesForStudent(student_id, t);
         let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
         return {
           sessionNumber: lecture.id,
           studentSessionId: sesh.id,
-          lectureDoc: lectureDoc.toJSON(),
-          lectureDocVersion,
+          files,
           exercises,
           versionBlocks,
         };
@@ -416,15 +413,19 @@ app.post("/current-session-student", async (req, res) => {
             ? existingInner[0]
             : await lecture.createStudentSession({ student_id, student_identifier }, { transaction: t });
 
-        let { doc: lectureDoc, docVersion: lectureDocVersion } = await getCachedDoc(lecture);
+        return { sesh };
+      });
+      // Doc-store reads happen after the write transaction commits (see /lecture-session).
+      const sesh = response.sesh;
+      response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
+        let files = await lecture.getFilesWithContent(t);
         let exercises = await lecture.getExercisesForStudent(student_id, t);
         let versionBlocks = await lecture.getVersionBlocksWithPositions(t);
 
         return {
           sessionNumber: lecture.id,
           studentSessionId: sesh.id,
-          lectureDoc: lectureDoc.toJSON(),
-          lectureDocVersion,
+          files,
           exercises,
           versionBlocks,
         };
@@ -450,14 +451,12 @@ app.get("/review-lecture", async (req, res) => {
   const { id, studentId } = req.query;
   if (!id) return res.json({ error: "id is required" });
 
-  await flushInstructorChanges();
-
   try {
-    const response = await db.transaction(async (t) => {
+    const response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
       const lecture = await LectureSession.findOne({ where: { uuid: id }, transaction: t });
       if (!lecture) return { error: "Lecture not found" };
 
-      const { doc: lectureDoc, docVersion: lectureDocVersion } = await lecture.getDoc(t);
+      const files = await lecture.getFilesWithContent(t);
       const exercises = await lecture.getExercisesForStudent(studentId ?? "", t);
       const versionBlocks = await lecture.getVersionBlocksWithPositions(t);
 
@@ -465,8 +464,7 @@ app.get("/review-lecture", async (req, res) => {
         name: lecture.name,
         isFinished: lecture.isFinished,
         sessionNumber: lecture.id,
-        lectureDoc,
-        lectureDocVersion,
+        files,
         exercises,
         versionBlocks,
       };
@@ -573,6 +571,8 @@ app.post("/exercise", async (req, res) => {
     code_anchor_to,
     code_anchor_doc_version,
     version_block_id,
+    fileId,
+    context_doc,
   } = req.body;
   if (!lectureId || !type)
     return res.json({ error: "lectureId and type are required" });
@@ -603,11 +603,18 @@ app.post("/exercise", async (req, res) => {
           code_anchor_to,
           code_anchor_doc_version,
           version_block_id,
+          document_id: code_anchor_from != null ? fileId ?? null : null,
+          context_doc: code_anchor_from != null ? context_doc ?? null : null,
         },
         t,
       );
       return { exerciseId: exercise.id, exercise };
     });
+    const ex = response.exercise;
+    if (ex?.DocumentId != null && ex.code_anchor_from != null) {
+      await registerPollAnchor(ex.DocumentId, ex.id, ex.code_anchor_from, ex.code_anchor_to, ex.code_anchor_doc_version);
+      await flushDoc(ex.DocumentId);
+    }
 
     res.json(response);
   } catch (error) {
@@ -659,8 +666,6 @@ app.post("/suggest-mcq-choices", async (req, res) => {
 // activity's live anchor is gone (poll's code fully deleted, or its Version Block dissolved).
 app.get("/exercise/:id/historical-context", async (req, res) => {
   const exerciseId = req.params.id;
-
-  await flushInstructorChanges();
 
   try {
     const response = await db.transaction(async (t) => {
@@ -813,22 +818,41 @@ app.post("/exercise/response", async (req, res) => {
 await db.sync();
 await eventsDb.sync();
 
-const server = http.createServer(app).listen(3000, () => {
-  console.log("Server is listening!");
+const PORT = Number(process.env.PORT ?? 3000);
+const server = http.createServer(app).listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}!`);
 });
 
 
 // MARK: Sockets
 
 const io = new Server(server);
-instructorChangeBuffer.initSocket(io);
+initDocStore(io);
 
-// io.listen(3000);
-// All lecture-scoped broadcasts are sent only to sockets that have joined this room,
-// so concurrent lectures on the same server don't see each other's traffic.
-function lectureRoom(sessionId) {
-  return `lecture-${sessionId}`;
+// Flush unpersisted edits before exiting. SIGUSR2 is what nodemon sends on every dev restart --
+// without this, each restart would lose up to FLUSH_INTERVAL_MS of edits.
+// NOTE: deliberately process.on (not .once) until the flush is done: a dependency installs a
+// `signal-exit` listener that re-raises the signal (killing us mid-flush) if, when the signal
+// arrives, it's the only listener left -- and .once removes ours before calling it.
+for (const signal of ["SIGINT", "SIGTERM", "SIGUSR2"]) {
+  let shuttingDown = false;
+  const onSignal = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal}: flushing documents and events before exit...`);
+    try {
+      await Promise.all([flushAll(), flushEvents()]);
+    } catch (error) {
+      console.error("Final flush failed:", error);
+    }
+    process.removeListener(signal, onSignal);
+    process.kill(process.pid, signal);
+  };
+  process.on(signal, onSignal);
 }
+
+// All lecture-scoped broadcasts are sent only to sockets that have joined this room (lectureRoom,
+// from doc-store.js), so concurrent lectures on the same server don't see each other's traffic.
 
 io.on("connection", async (socket) => {
   console.log("a user connected");
@@ -841,16 +865,16 @@ io.on("connection", async (socket) => {
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, msg);
   });
 
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, async (msg) => {
+  // msg: {sessionId, fileId, id, changes, ts}
+  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, (msg) => {
     // Forward proactively!
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
-    // FIXME: these might not get executed in order!
-
-    // Synchronous, no await above or below this line -- required for the doc cache's
-    // correctness invariant (see lecture-doc-cache.js).
-    applyChangeToCache(msg.sessionId ?? msg.sessionNumber, msg);
-
-    instructorChangeBuffer.enqueue(msg);
+    if (msg.fileId == null) {
+      console.warn("INSTRUCTOR_EDIT without a fileId -- dropping:", msg.id);
+      return;
+    }
+    // Synchronous (no await) so edits are applied in exactly the order they arrived.
+    applyChange(msg.fileId, msg);
   });
 
   // Forward info about code runs.
@@ -893,7 +917,7 @@ io.on("connection", async (socket) => {
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
-    instructorChangeBuffer.enqueueVariant(msg);
+    applyVariantChange(msg.variantId, msg);
   });
 
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, (msg) => {
@@ -904,10 +928,9 @@ io.on("connection", async (socket) => {
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
     // Forward immediately
     io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
-    // A finished lecture won't be read live again -- drop its cache entry so it doesn't sit in
-    // memory indefinitely (it'll cheaply re-hydrate from the DB if it's ever read again, e.g.
-    // the read-only lecture review page).
-    invalidateCachedDoc(msg.sessionNumber);
+    // A finished lecture won't be edited again -- persist everything, then drop it from memory
+    // (it'll cheaply re-hydrate from its snapshot if it's ever read again, e.g. the review page).
+    await evictLecture(msg.sessionNumber);
 
     try {
       await db.transaction(async (t) => {
