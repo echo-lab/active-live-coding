@@ -162,15 +162,19 @@ export class RunInteractions {
       this.runner.cancel();
       return;
     }
-    if (!this.editor) return; // no file open
+    // `this.editor` is anything with currentCode() + fileName -- usually a Workspace's runTarget,
+    // whose getProjectFiles() also hands over every other file so imports between them work.
+    let code = this.editor?.currentCode();
+    if (code == null) return; // no file open
+    let fileName = this.editor.fileName;
+    let files = this.editor.getProjectFiles?.() ?? null;
+
     this.running = true;
     this.el.classList.add("in-progress");
     this.el.textContent = STOP_LABEL;
 
-    let code = this.editor.currentCode();
-    recordEvent(EVENT_TYPES.CODE_RUN, { code });
+    recordEvent(EVENT_TYPES.CODE_RUN, { code, fileName });
 
-    let fileName = this.editor.fileName;
     let ts = Date.now();
     let runId;
 
@@ -197,6 +201,8 @@ export class RunInteractions {
     };
 
     runId = this.runner.startRun(code, {
+      files,
+      entryPath: fileName,
       onOutput: ({ stdout, stderr }) => {
         this.console.appendOutput(runId, { stdout, stderr });
         this.broadcastResult({ phase: "output", runId, stdout, stderr });

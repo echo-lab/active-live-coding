@@ -50,6 +50,19 @@ export class Workspace extends EventTarget {
     });
 
     fs.addEventListener("changed", ({ detail: { kind, ids } }) => this._onFilesChanged(kind, ids));
+
+    // What the Run button runs: the active file as __main__, with every file available to import.
+    const workspace = this;
+    this.runTarget = {
+      currentCode: () => workspace.activeEditor?.currentCode() ?? null,
+      get fileName() {
+        return workspace.activeEditor?.fileName ?? null;
+      },
+      // [{path, content}] for every file. currentCode() resolves version blocks to the code shown
+      // (the instructor's selected variant, or the student's own answer).
+      getProjectFiles: () =>
+        workspace.fs.allFiles().map((f) => ({ path: f.name, content: workspace.editorFor(f.id)?.currentCode() ?? (f.doc ?? []).join("\n") })),
+    };
   }
 
   // Builds every file's editor, then opens `view` ({openFileIds, activeFileId}) if it's usable,

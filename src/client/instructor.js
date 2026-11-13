@@ -237,13 +237,12 @@ function initialize({
 
   let runInteractions = new RunInteractions({
     runButtonEl,
-    codeEditor: workspace.activeEditor,
+    codeEditor: workspace.runTarget,
     codeRunner,
     consoleOutput,
     broadcastResult: (msg) =>
       socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, { ...msg, sessionId: sessionNumber }),
   });
-  workspace.addEventListener("activechange", ({ detail: { editor } }) => runInteractions.setEditor(editor));
 
   endButton.addEventListener("click", async () => {
     const confirmed = confirm(

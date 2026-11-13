@@ -96,15 +96,65 @@ async function loadPyodideAndPackages() {
   self.pyodide.setStderr({ raw: (byte) => { stderrText += stderrDecoder.decode(new Uint8Array([byte]), { stream: true }); scheduleFlush(); } });
   self.pyodide.setStdout({ raw: (byte) => { stdoutText += stdoutDecoder.decode(new Uint8Array([byte]), { stream: true }); scheduleFlush(); } });
   self.pyodide.setStdin({ stdin: blockingStdin });
+  // Remember the pristine import path once, so each run can reset it (see prepareProjectFiles).
+  self.pyodide.runPython("import sys\n_ORIGINAL_SYS_PATH = list(sys.path)");
   self.postMessage({ type: "ready" });
 }
+
+// MARK: Lecture files
+// Every run gets a fresh copy of all the lecture's files under PROJECT_ROOT, laid out by path, so the
+// file being run can `import` the others. Mirrors `cd PROJECT_ROOT && python <entryPath>`: the
+// working directory is the project root, and sys.path[0] is the entry file's own directory.
+const PROJECT_ROOT = "/home/pyodide/lecture";
+
+function prepareProjectFiles(files, entryPath) {
+  const py = self.pyodide;
+  // Start from scratch so deleted/renamed files don't linger between runs.
+  py.runPython(`import shutil\nshutil.rmtree(${JSON.stringify(PROJECT_ROOT)}, ignore_errors=True)`);
+  py.FS.mkdirTree(PROJECT_ROOT);
+  for (const { path, content } of files) {
+    const fullPath = `${PROJECT_ROOT}/${path}`;
+    py.FS.mkdirTree(fullPath.slice(0, fullPath.lastIndexOf("/")));
+    py.FS.writeFile(fullPath, content ?? "");
+  }
+  const entryDir = entryPath.includes("/") ? `${PROJECT_ROOT}/${entryPath.slice(0, entryPath.lastIndexOf("/"))}` : PROJECT_ROOT;
+  // Drop modules imported from the project by earlier runs (so edits are picked up), then reset
+  // the import path and working directory.
+  py.runPython(`
+import importlib, os, sys
+_root = ${JSON.stringify(PROJECT_ROOT)} + "/"
+for _name, _mod in list(sys.modules.items()):
+    _locations = [getattr(_mod, "__file__", None) or ""] + list(getattr(_mod, "__path__", None) or [])
+    if any(str(_loc).startswith(_root) for _loc in _locations):
+        del sys.modules[_name]
+sys.path[:] = [${JSON.stringify(entryDir)}] + _ORIGINAL_SYS_PATH
+os.chdir(${JSON.stringify(PROJECT_ROOT)})
+importlib.invalidate_caches()
+`);
+  return `${PROJECT_ROOT}/${entryPath}`;
+}
 let pyodideReadyPromise = loadPyodideAndPackages();
+
+// Makes a Python traceback read like one from `python main.py`: drops the frames from Pyodide's
+// own runner (which every traceback starts with), and shows project files by their path in the
+// lecture ("helpers.py" rather than "/home/pyodide/lecture/helpers.py").
+function cleanTraceback(message) {
+  const lines = message.split("\n");
+  const kept = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (line.startsWith('  File "')) skipping = line.startsWith('  File "/lib/python');
+    else if (!line.startsWith("    ")) skipping = false; // left the frame (e.g. the error line)
+    if (!skipping) kept.push(line);
+  }
+  return kept.join("\n").replaceAll(`"${PROJECT_ROOT}/`, '"');
+}
 
 self.onmessage = async (event) => {
   // make sure loading is done
   await pyodideReadyPromise;
 
-  const { runId, python, sab } = event.data;
+  const { runId, python, files, entryPath, sab } = event.data;
   currentRunId = runId;
   if (sab) {
     control = new Int32Array(sab, 0, 2);
@@ -124,17 +174,26 @@ self.onmessage = async (event) => {
   const globals = dict();
   globals.set("__name__", "__main__");
   try {
+    let filename;
+    if (files && entryPath) {
+      filename = prepareProjectFiles(files, entryPath);
+      globals.set("__file__", filename);
+    }
     self.postMessage({ type: "status", runId, message: "Loading packages…" });
-    await self.pyodide.loadPackagesFromImports(python);
+    // Any file might be imported, so look for third-party packages across all of them.
+    const allSource = files ? [python, ...files.map((f) => f.content ?? "")].join("\n") : python;
+    await self.pyodide.loadPackagesFromImports(allSource);
     let results = await self.pyodide.runPythonAsync(python, {
       globals,
       locals: globals,
+      // Real file names in tracebacks (see cleanTraceback).
+      ...(filename ? { filename } : {}),
     });
     flushOutput(/* forcePartial */ true);
     self.postMessage({ type: "end", runId, results });
   } catch (error) {
     flushOutput(/* forcePartial */ true);
-    self.postMessage({ type: "end", runId, error: error.message });
+    self.postMessage({ type: "end", runId, error: cleanTraceback(error.message ?? String(error)) });
   }
   globals.destroy();
   dict.destroy();

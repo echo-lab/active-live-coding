@@ -146,11 +146,10 @@ async function initialize({
 
   let runInteractions = new RunInteractions({
     runButtonEl,
-    codeEditor: workspace.activeEditor,
+    codeEditor: workspace.runTarget,
     codeRunner,
     consoleOutput,
   });
-  workspace.addEventListener("activechange", ({ detail: { editor } }) => runInteractions.setEditor(editor));
 
   function syncRunButtonVisibility() {
     runButtonEl.hidden = !activitiesManager.getActiveExercises()

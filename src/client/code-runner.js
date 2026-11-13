@@ -77,12 +77,14 @@ export class PythonCodeRunner {
 
   // Starts a run and returns its runId immediately. Callbacks fire as the worker streams events:
   // onOutput({stdout, stderr}), onStatus(message), onAwaitingInput(), onEnd({results, error}).
-  startRun(code, { onOutput, onStatus, onAwaitingInput, onEnd }) {
+  // `files` ([{path, content}], optional) are written to Pyodide's file system first, so `code`
+  // (the file at `entryPath`) can import them.
+  startRun(code, { files = null, entryPath = null, onOutput, onStatus, onAwaitingInput, onEnd }) {
     const runId = crypto.randomUUID();
     this.currentRunId = runId;
     this.currentCallbacks = { onOutput, onStatus, onAwaitingInput, onEnd };
     this._startRuntimeTimeout();
-    this.worker.postMessage({ runId, python: code, sab: this.sab });
+    this.worker.postMessage({ runId, python: code, files, entryPath, sab: this.sab });
     return runId;
   }
 
