@@ -63,8 +63,9 @@ export class StudentCodeEditor {
   // Initialize CodeMirror and (if `socket` is given) listen for instructor updates. Pages with
   // several files pass no socket and instead route each message to the right file's editor via
   // handleSocketMessage (see workspace.js).
-  constructor({node, doc, docVersion, fileId, fileName = null, socket = null, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null}) {
+  constructor({node, doc, docVersion, fileId, fileName = null, socket = null, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null, onAnswerEdit = null}) {
     this.docVersion = docVersion;
+    this._onAnswerEdit = onAnswerEdit;
     this.fileId = fileId;
     this.fileName = fileName;
     this.sessionId = sessionId;
@@ -188,7 +189,7 @@ export class StudentCodeEditor {
     // console.log("adding version block: ", {from, to, versionBlockId, variants});
     const widget = this._makeVersionBlockWidget
       ? this._makeVersionBlockWidget({ versionBlockId, variants, view: this.view })
-      : new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode});
+      : new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode, onAnswerEdit: this._onAnswerEdit});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),

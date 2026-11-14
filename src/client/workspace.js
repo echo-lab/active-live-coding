@@ -357,6 +357,12 @@ export class InstructorWorkspace extends Workspace {
 // Read-only view of the instructor's files. In "live" mode it owns all socket routing for the
 // instructor's edits: each message goes to the one editor it concerns (by fileId, or by the
 // version block it names). In "review" mode (socket: null) it's static.
+//
+// Following: by default the student's tabs mirror the instructor's (INSTRUCTOR_VIEW_STATE). The
+// student stops following as soon as they pick a file or tab themselves, open an exercise in a file
+// the instructor isn't showing, or edit their own answer to a code exercise -- from then on,
+// instructor edits still stream in, but tab changes no longer move the student. setFollowing(true)
+// snaps back to the instructor's current tabs. Dispatches "followchange" ({detail: {following}}).
 export class StudentWorkspace extends Workspace {
   constructor({ socket = null, mode = "live", instructorView = null, onOpenPollMarker, makeVersionBlockWidget = null, ...rest }) {
     super({ ...rest, editableTree: false });
@@ -365,6 +371,13 @@ export class StudentWorkspace extends Workspace {
     this.onOpenPollMarker = onOpenPollMarker;
     this.makeVersionBlockWidget = makeVersionBlockWidget;
     this.lastInstructorView = instructorView;
+    this.following = true;
+
+    this.addEventListener("viewchange", ({ detail: { source, activeId } }) => {
+      if (source === "user") this.setFollowing(false);
+      // Revealing an exercise only breaks away if it lands somewhere the instructor isn't.
+      else if (source === "exercise" && activeId !== this.lastInstructorView?.activeFileId) this.setFollowing(false);
+    });
 
     if (socket) {
       for (const type of StudentCodeEditor.SOCKET_MESSAGE_TYPES) {
@@ -394,7 +407,20 @@ export class StudentWorkspace extends Workspace {
 
   _onInstructorView({ openFileIds, activeFileId }) {
     this.lastInstructorView = { openFileIds, activeFileId };
-    this._setView({ openIds: openFileIds, activeId: activeFileId }, { source: "instructor" });
+    if (this.following) this._applyInstructorView();
+  }
+
+  _applyInstructorView() {
+    const view = this.lastInstructorView;
+    if (!view) return;
+    this._setView({ openIds: view.openFileIds ?? [], activeId: view.activeFileId }, { source: "instructor" });
+  }
+
+  setFollowing(following) {
+    if (this.following === following) return;
+    this.following = following;
+    if (following) this._applyInstructorView();
+    this.dispatchEvent(new CustomEvent("followchange", { detail: { following } }));
   }
 
   _createEditor(file, node, versionBlocks) {
@@ -412,6 +438,7 @@ export class StudentWorkspace extends Workspace {
       onOpenPollMarker: this.onOpenPollMarker,
       reviewMode: this.mode === "review",
       makeVersionBlockWidget: this.makeVersionBlockWidget,
+      onAnswerEdit: () => this.setFollowing(false),
     });
   }
 

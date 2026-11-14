@@ -141,6 +141,16 @@ async function initialize({
     if (source === "user") historicalController.returnToLive();
   });
 
+  // Shown whenever the student has stopped following the instructor's tabs.
+  const followBtn = document.querySelector("#follow-instructor-btn");
+  workspace.addEventListener("followchange", ({ detail: { following } }) => {
+    followBtn.hidden = following || !sessionActive;
+  });
+  followBtn.addEventListener("click", () => {
+    historicalController.returnToLive();
+    workspace.setFollowing(true);
+  });
+
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(codeOutputsEl, { authorLabels: true });
 
@@ -191,6 +201,7 @@ async function initialize({
     console.log("SESSION IS ENDED!");
     workspace.stopFollowing();
     sessionActive = false;
+    followBtn.hidden = true; // nothing left to follow
   });
 
   const pollPopoverCoordinator = new PollPopoverCoordinator();
