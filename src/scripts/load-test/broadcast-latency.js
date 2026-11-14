@@ -12,8 +12,8 @@ import { SOCKET_MESSAGE_TYPE } from "../../shared-constants.js";
 import { parseArgs, DEFAULT_SERVER_URL } from "./lib/cli-args.js";
 import { loadFixture } from "./lib/fixture-io.js";
 import { SimulatedStudent } from "./lib/simulated-student.js";
-import { createFreshLecture, replayInstructorEdits } from "./lib/replay-engine.js";
-import { replayToText } from "./lib/cm-replay.js";
+import { createFreshLecture, createFixtureFiles, replayInstructorEdits } from "./lib/replay-engine.js";
+import { replayFixtureFiles } from "./lib/cm-replay.js";
 import { summarize, printSummary, printVerdict } from "./lib/stats.js";
 import { writeResults } from "./lib/results.js";
 
@@ -53,7 +53,9 @@ async function main() {
   console.log(`Loaded fixture: ${fixture.editCount} edits, ${(fixture.durationMs / 1000 / 60).toFixed(1)} min recorded`);
 
   const lecture = await createFreshLecture({ serverUrl, sessionName });
-  console.log(`Created fresh (empty) lecture #${lecture.sessionNumber} "${sessionName}"`);
+  // Before the students join, so each one gets every file in its join payload.
+  await createFixtureFiles({ serverUrl, lecture, fileNames: fixture.files.map((f) => f.name) });
+  console.log(`Created fresh (empty) lecture #${lecture.sessionNumber} "${sessionName}" with ${fixture.files.length} file(s)`);
 
   const studentIds = Array.from({ length: studentCount }, () => crypto.randomUUID());
   const students = studentIds.map((id) => new SimulatedStudent({ serverUrl, sessionName, studentId: id }));
@@ -69,24 +71,28 @@ async function main() {
   // to have processed every student's room-join before the instructor starts sending edits.
   await sleep(settleMs);
 
-  const receiptsByEditId = studentIds.map(() => []);
-  students.forEach((student, studentIdx) => {
+  // Edits are keyed by "fileId:id" -- ids are per-file doc versions, so they repeat across files.
+  const editKey = (fileId, id) => `${fileId}:${id}`;
+  const receiptsByEdit = new Map();
+  students.forEach((student) => {
     student.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, (msg, receivedAt) => {
-      receiptsByEditId[msg.id] ??= [];
-      receiptsByEditId[msg.id].push(receivedAt);
+      const key = editKey(msg.fileId, msg.id);
+      if (!receiptsByEdit.has(key)) receiptsByEdit.set(key, []);
+      receiptsByEdit.get(key).push(receivedAt);
     });
   });
 
-  const sentAtByEditId = [];
+  const sentEdits = []; // [{key, sentAt}] in send order
   console.log(`Replaying ${fixture.editCount} edits at pace="${pace}"...`);
   const { elapsedMs } = await replayInstructorEdits({
     serverUrl,
     sessionNumber: lecture.sessionNumber,
     fileId: lecture.fileId,
+    fileIds: lecture.fileIds,
     edits: fixture.edits,
     pace,
-    onEditSent: (edit, idx, sentAt) => {
-      sentAtByEditId[idx] = sentAt;
+    onEditSent: (edit, idx, sentAt, fileId) => {
+      sentEdits[idx] = { key: editKey(fileId, edit.id ?? idx), sentAt };
     },
   });
   console.log(`Replay finished in ${(elapsedMs / 1000).toFixed(1)}s`);
@@ -97,14 +103,14 @@ async function main() {
   const skews = [];
   const dispatchLatencies = [];
   const missingDeliveries = [];
-  for (let i = 0; i < fixture.editCount; i++) {
-    const receipts = receiptsByEditId[i] ?? [];
+  for (const { key, sentAt } of sentEdits) {
+    const receipts = receiptsByEdit.get(key) ?? [];
     if (receipts.length !== studentCount) {
-      missingDeliveries.push({ editId: i, receivedBy: receipts.length, expected: studentCount });
+      missingDeliveries.push({ edit: key, receivedBy: receipts.length, expected: studentCount });
       continue;
     }
     skews.push(Math.max(...receipts) - Math.min(...receipts));
-    dispatchLatencies.push(Math.min(...receipts) - sentAtByEditId[i]);
+    dispatchLatencies.push(Math.min(...receipts) - sentAt);
   }
 
   const skewSummary = summarize(skews);
@@ -116,8 +122,12 @@ async function main() {
   const totalOutOfSync = students.reduce((sum, s) => sum + s.outOfSyncCount, 0);
   console.log(`Total INSTRUCTOR_OUT_OF_SYNC events: ${totalOutOfSync}`);
 
-  const expectedText = replayToText(fixture.edits);
-  const convergenceMismatches = students.filter((s) => s.getDocText() !== expectedText);
+  // Every file of every student must match the fixture's replay.
+  const expectedFiles = replayFixtureFiles(fixture);
+  const convergenceMismatches = students.filter((s) => {
+    const texts = s.getFileTexts();
+    return [...expectedFiles].some(([name, { text }]) => texts.get(name) !== text);
+  });
   console.log(`Convergence mismatches: ${convergenceMismatches.length}/${studentCount}`);
 
   const replayTimingPct = pace === "realtime" ? (Math.abs(elapsedMs - fixture.durationMs) / fixture.durationMs) * 100 : null;

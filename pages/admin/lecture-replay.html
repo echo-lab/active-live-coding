@@ -12,6 +12,9 @@
       <div class="topbar">
         <div class="topbar-left">
           <span id="replay-session-name-display"></span>
+          <button id="follow-instructor-btn" class="follow-instructor-btn" hidden title="Show whichever file the instructor had open at this point, and keep doing so while scrubbing">
+            <span aria-hidden="true">⟳</span> Follow instructor
+          </button>
         </div>
         <div class="topbar-right">
           <span class="review-mode-label">Admin replay — read-only</span>
@@ -19,7 +22,15 @@
       </div>
       <div id="replay-error" hidden></div>
       <div id="replay-main">
-        <div id="replay-code-container" class="code-container uneditable"></div>
+        <aside id="file-tree-panel"></aside>
+        <div id="replay-code-column">
+          <div id="code-tabs">
+            <div id="code-tabs-inner">
+              <div id="file-tabs" class="selected"></div>
+            </div>
+          </div>
+          <div id="code-containers"></div>
+        </div>
         <div id="activities-container">
           <div id="activities-list">
             <div id="activities-list-header" class="poll-activity-header">

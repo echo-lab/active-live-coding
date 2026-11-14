@@ -15,9 +15,10 @@ const TRACKED_EVENTS = [
 
 // A single simulated "browser tab": joins a lecture the same way student-page.js does
 // (REST POST /current-session-student, then socket connect + JOIN_SESSION), and mirrors
-// StudentCodeEditor's exact INSTRUCTOR_EDIT / catch-up logic (code-editors.js:235-301) against
-// a local CodeMirror Text instead of a real EditorView, so document convergence can be checked
-// without a browser.
+// StudentCodeEditor's exact INSTRUCTOR_EDIT / catch-up logic (code-editors.js) against a local
+// CodeMirror Text per file instead of a real EditorView, so document convergence can be checked
+// without a browser. Like StudentWorkspace, it routes each edit to its file by fileId and picks up
+// files the instructor creates mid-lecture (FILE_CREATED).
 export class SimulatedStudent extends EventEmitter {
   constructor({ serverUrl, sessionName, studentId = crypto.randomUUID(), studentIdentifier = null }) {
     super();
@@ -26,12 +27,10 @@ export class SimulatedStudent extends EventEmitter {
     this.studentId = studentId;
     this.studentIdentifier = studentIdentifier;
 
-    this.doc = Text.empty;
-    this.docVersion = 0;
-    this.pendingQueue = [];
-    this.catchupPending = false;
-    this.active = true;
-    this.desynced = null; // set if catch-up ever fails to reach the target version
+    // fileId -> {name, doc, docVersion, pendingQueue, catchupPending, active}
+    this.files = new Map();
+    this.fileId = null; // the main file
+    this.desynced = null; // set if catch-up ever fails to reach the target version (in any file)
 
     this.receivedEvents = [];
     this.outOfSyncCount = 0;
@@ -60,8 +59,7 @@ export class SimulatedStudent extends EventEmitter {
     this.sessionNumber = sessionNumber;
     this.studentSessionId = studentSessionId;
     this.fileId = mainFile?.id ?? null;
-    this.doc = Text.of(mainFile?.doc ?? [""]);
-    this.docVersion = mainFile?.docVersion ?? 0;
+    for (const file of files ?? []) this.#addFile(file);
 
     const connectT0 = performance.now();
     this.socket = io(this.serverUrl, { forceNew: true });
@@ -84,6 +82,13 @@ export class SimulatedStudent extends EventEmitter {
   }
 
   #registerListeners() {
+    this.socket.on(SOCKET_MESSAGE_TYPE.FILE_CREATED, ({ file }) => this.#addFile(file));
+    this.socket.on(SOCKET_MESSAGE_TYPE.FILES_RENAMED, ({ renames }) => {
+      for (const { id, name } of renames) if (this.files.has(id)) this.files.get(id).name = name;
+    });
+    this.socket.on(SOCKET_MESSAGE_TYPE.FILES_DELETED, ({ fileIds }) => {
+      for (const id of fileIds) this.files.delete(id);
+    });
     this.socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, (msg) => {
       const receivedAt = performance.now();
       this.receivedEvents.push({ type: SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, payload: msg, receivedAt });
@@ -101,49 +106,73 @@ export class SimulatedStudent extends EventEmitter {
     }
   }
 
-  // Exact port of StudentCodeEditor.handleInstructorEdit (code-editors.js:235-277), applying to
-  // a plain CodeMirror Text rather than dispatching to an EditorView.
+  // Idempotent: FILE_CREATED may arrive for a file the join payload already had.
+  #addFile({ id, name, doc, docVersion }) {
+    if (this.files.has(id)) return;
+    this.files.set(id, {
+      name,
+      doc: Text.of(doc ?? [""]),
+      docVersion: docVersion ?? 0,
+      pendingQueue: [],
+      catchupPending: false,
+      active: true,
+    });
+  }
+
+  // The main file's version (what the single-file scripts check).
+  get docVersion() {
+    return this.files.get(this.fileId)?.docVersion ?? 0;
+  }
+
+  // Exact port of StudentCodeEditor.handleInstructorEdit (code-editors.js), applying to the
+  // file's plain CodeMirror Text rather than dispatching to an EditorView.
   async #handleInstructorEdit({ changes, id, fileId }) {
-    if (!this.active) return;
-    if (fileId !== this.fileId) return;
+    const file = this.files.get(fileId);
+    if (!file?.active) return;
 
-    if (id !== this.docVersion) {
-      this.pendingQueue.push({ changes, id });
-      if (this.catchupPending) return;
-      this.catchupPending = true;
-      await this.#catchUpOnChanges();
-      this.catchupPending = false;
+    if (id !== file.docVersion) {
+      file.pendingQueue.push({ changes, id });
+      if (file.catchupPending) return;
+      file.catchupPending = true;
+      await this.#catchUpOnChanges(fileId, file);
+      file.catchupPending = false;
 
-      if (id > this.docVersion) {
-        this.active = false;
-        this.desynced = { expectedAtLeast: id, stuckAt: this.docVersion };
+      if (id > file.docVersion) {
+        file.active = false;
+        this.desynced = { fileId, expectedAtLeast: id, stuckAt: file.docVersion };
         return;
       }
 
-      this.pendingQueue.forEach(({ changes, id }) => {
-        if (id !== this.docVersion) return;
-        this.docVersion++;
-        this.doc = ChangeSet.fromJSON(changes).apply(this.doc);
+      file.pendingQueue.forEach(({ changes, id }) => {
+        if (id !== file.docVersion) return;
+        file.docVersion++;
+        file.doc = ChangeSet.fromJSON(changes).apply(file.doc);
       });
-      this.pendingQueue = [];
+      file.pendingQueue = [];
       return;
     }
 
-    this.doc = ChangeSet.fromJSON(changes).apply(this.doc);
-    this.docVersion++;
+    file.doc = ChangeSet.fromJSON(changes).apply(file.doc);
+    file.docVersion++;
   }
 
-  // Port of StudentCodeEditor.catchUpOnChanges: re-fetch the whole latest doc.
-  async #catchUpOnChanges() {
-    const res = await fetch(`${this.serverUrl}/doc/${this.fileId}`);
+  // Port of StudentCodeEditor.catchUpOnChanges: re-fetch the file's whole latest doc.
+  async #catchUpOnChanges(fileId, file) {
+    const res = await fetch(`${this.serverUrl}/doc/${fileId}`);
     const json = await res.json();
-    if (json.error || json.docVersion == null || json.docVersion < this.docVersion) return;
-    this.doc = Text.of(json.doc);
-    this.docVersion = json.docVersion;
+    if (json.error || json.docVersion == null || json.docVersion < file.docVersion) return;
+    file.doc = Text.of(json.doc);
+    file.docVersion = json.docVersion;
   }
 
-  getDocText() {
-    return this.doc.toString();
+  // The given file's text (default: the main file), or null if this student doesn't have it.
+  getDocText(fileId = this.fileId) {
+    return this.files.get(fileId)?.doc.toString() ?? null;
+  }
+
+  // name -> text for every file this student has.
+  getFileTexts() {
+    return new Map([...this.files.values()].map((f) => [f.name, f.doc.toString()]));
   }
 
   // Mirrors StudentActivitiesManager.submitResponse (activities-manager.js:371-386).

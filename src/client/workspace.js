@@ -69,12 +69,35 @@ export class Workspace extends EventTarget {
   // else just the main file. Separate from the constructor so subclasses finish setting up first.
   _start(view) {
     for (const file of this.fs.allFiles()) this.getOrCreateEditor(file.id);
+    this._setView(this._usableView(view), { source: "program" });
+  }
+
+  // `view` ({openFileIds, activeFileId}) as a tab state, or just the main file if none of its
+  // files exist.
+  _usableView(view) {
     if (view && view.openFileIds?.some((id) => this.fs.getFile(id))) {
-      this._setView({ openIds: view.openFileIds, activeId: view.activeFileId }, { source: "program" });
-    } else {
-      const main = getMainFile(this.fs.allFiles());
-      this._setView({ openIds: main ? [main.id] : [], activeId: main?.id ?? null }, { source: "program" });
+      return { openIds: view.openFileIds, activeId: view.activeFileId };
     }
+    const main = getMainFile(this.fs.allFiles());
+    return { openIds: main ? [main.id] : [], activeId: main?.id ?? null };
+  }
+
+  // Throws away every editor and rebuilds from a complete snapshot ({files, versionBlocks}) -- the
+  // admin replay does this on every scrub. Opens `view` if given, else keeps whichever open tabs
+  // still exist (falling back to the main file).
+  load({ files, versionBlocks = [], activitiesManager = this.activitiesManager, view = null }) {
+    for (const id of [...this.editors.keys()]) this._destroyEditor(id);
+    this.activitiesManager = activitiesManager;
+    this._initialBlocks = versionBlocks;
+    this.fs.replaceAll(files);
+    for (const file of this.fs.allFiles()) this.getOrCreateEditor(file.id);
+
+    const kept = { openFileIds: this.openIds, activeFileId: this.activeId };
+    // Every editor is new, even where the tab ids are the same -- reset so _setView re-renders
+    // and announces the new active editor.
+    this.openIds = [];
+    this.activeId = null;
+    this._setView(this._usableView(view ?? kept), { source: "program" });
   }
 
   // Overridden by subclasses that let the user edit the tree.
@@ -356,7 +379,8 @@ export class InstructorWorkspace extends Workspace {
 // MARK: StudentWorkspace
 // Read-only view of the instructor's files. In "live" mode it owns all socket routing for the
 // instructor's edits: each message goes to the one editor it concerns (by fileId, or by the
-// version block it names). In "review" mode (socket: null) it's static.
+// version block it names). In "review" mode (socket: null) it's static -- apart from load(), which
+// swaps in a whole new snapshot (the admin replay).
 //
 // Following: by default the student's tabs mirror the instructor's (INSTRUCTOR_VIEW_STATE). The
 // student stops following as soon as they pick a file or tab themselves, open an exercise in a file
@@ -414,6 +438,12 @@ export class StudentWorkspace extends Workspace {
     const view = this.lastInstructorView;
     if (!view) return;
     this._setView({ openIds: view.openFileIds ?? [], activeId: view.activeFileId }, { source: "instructor" });
+  }
+
+  // See Workspace.load. While following, opens the instructor's tabs as of the snapshot.
+  load({ instructorView = null, ...rest }) {
+    this.lastInstructorView = instructorView;
+    super.load({ ...rest, view: this.following ? instructorView : null });
   }
 
   setFollowing(following) {

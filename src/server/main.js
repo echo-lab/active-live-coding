@@ -626,6 +626,9 @@ app.get("/review-lecture", async (req, res) => {
         files,
         exercises,
         versionBlocks,
+        // Only known while the lecture is live (cleared when it ends); otherwise the review page
+        // opens the main file.
+        instructorView: instructorViews.get(lecture.id) ?? null,
       };
     });
     res.json(response);

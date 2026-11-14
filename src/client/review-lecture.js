@@ -3,12 +3,9 @@ import "./style-student-page.css";
 import "./style-review-lecture.css";
 
 import { createNoopSocket, GET_JSON_REQUEST } from "./utils.js";
-import { StudentCodeEditor } from "./code-editors.js";
-import { getMainFile } from "../shared-constants.js";
-import {
-  versionBlocksField,
-  setVersionBlockReadOnly,
-} from "./cm-version-widget.js";
+import { setVersionBlockReadOnly } from "./cm-version-widget.js";
+import { LectureFileSystem } from "./file-system.js";
+import { StudentWorkspace } from "./workspace.js";
 import { makeActivitiesPanelResizable } from "./shared-interactions.js";
 import { StudentActivitiesPanel } from "./activities-panel.js";
 import { StudentActivitiesManager } from "./activities-manager.js";
@@ -16,8 +13,9 @@ import { StudentPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 import { createHistoricalViewController } from "./historical-view-controller.js";
 
-const instructorCodeContainer = document.querySelector("#instructor-code-container");
-const instructorCodeTab = document.querySelector("#instructor-code-tab");
+const codeContainersHost = document.querySelector("#code-containers");
+const fileTabsEl = document.querySelector("#file-tabs");
+const workspaceRow = document.querySelector("#workspace-row");
 const parentContainer = document.querySelector(".parent-container");
 const reviewErrorEl = document.querySelector("#review-error");
 const reviewBannerEl = document.querySelector("#review-banner");
@@ -49,11 +47,11 @@ document.querySelector("#student-activities-list-close").addEventListener("click
 const studentId = localStorage.getItem("user_id");
 
 const historicalController = createHistoricalViewController({
-  liveTabEl: instructorCodeTab,
+  liveTabEl: fileTabsEl,
   historicalTabEl: document.querySelector("#historical-code-tab"),
   historicalTabTextEl: document.querySelector("#historical-code-tab-text"),
   historicalTabCloseBtn: document.querySelector("#historical-code-tab .historical-code-tab-close"),
-  liveContainerEl: instructorCodeContainer,
+  liveContainerEl: codeContainersHost,
   historicalContainerEl: document.querySelector("#historical-code-container"),
   historicalMountEl: document.querySelector("#historical-code-container .historical-editor-mount"),
   returnToLiveBtn: document.querySelector("#return-to-live-btn"),
@@ -64,13 +62,12 @@ const historicalController = createHistoricalViewController({
 });
 
 function showError(message) {
-  parentContainer.hidden = true;
+  workspaceRow.hidden = true;
   reviewErrorEl.textContent = message;
   reviewErrorEl.hidden = false;
 }
 
-function initialize({ name, isFinished, sessionNumber, files = [], exercises = [], versionBlocks = [] }) {
-  const mainFile = getMainFile(files);
+function initialize({ name, isFinished, sessionNumber, files = [], exercises = [], versionBlocks = [], instructorView = null }) {
   document.querySelector("#session-name-display").innerText = `Lecture ID: ${name}`;
   reviewBannerEl.hidden = isFinished;
 
@@ -88,18 +85,22 @@ function initialize({ name, isFinished, sessionNumber, files = [], exercises = [
 
   let activitiesPanel;
 
-  const codeEditor = new StudentCodeEditor({
-    node: instructorCodeContainer,
-    doc: mainFile.doc,
-    docVersion: mainFile.docVersion,
-    fileId: mainFile.id,
-    socket: noopSocket,
-    sessionId: sessionNumber,
-    extraExtensions: [versionBlocksField],
-    versionBlocks,
+  // Read-only and static: the reader browses the files freely (there's no instructor to follow).
+  const workspace = new StudentWorkspace({
+    fs: new LectureFileSystem({ files, sessionNumber }),
+    containersHostEl: codeContainersHost,
+    tabsEl: fileTabsEl,
+    treePanelEl: document.querySelector("#file-tree-panel"),
+    sessionNumber,
     activitiesManager,
-    reviewMode: true,
+    versionBlocks,
+    instructorView,
+    mode: "review",
     onOpenPollMarker: (exerciseId) => activitiesPanel?.showExerciseById(exerciseId),
+  });
+  // Opening a file tab leaves the historical view.
+  workspace.addEventListener("viewchange", ({ detail: { source } }) => {
+    if (source === "user") historicalController.returnToLive();
   });
 
   const pollPopoverCoordinator = new PollPopoverCoordinator();
@@ -107,8 +108,8 @@ function initialize({ name, isFinished, sessionNumber, files = [], exercises = [
   const studentCompletePollPopover = new StudentPollCompletePopover({
     student_id: studentId,
     manager: activitiesManager,
-    showPollPopover: (args) => codeEditor.showPollPopover(args),
-    hidePollPopover: (key) => codeEditor.hidePollPopover(key),
+    showPollPopover: (args) => workspace.showPollPopover(args),
+    hidePollPopover: (key) => workspace.hidePollPopover(key),
     coordinator: pollPopoverCoordinator,
     onClose: () => activitiesPanel?.notifyCompletePopoverClosed(),
   });
@@ -116,26 +117,12 @@ function initialize({ name, isFinished, sessionNumber, files = [], exercises = [
   activitiesPanel = new StudentActivitiesPanel(activitiesManager, {
     student_id: studentId,
     reviewMode: true,
-    onPollPanelOpenChange: (id) => codeEditor.setPollHighlightOpen(id),
+    onPollPanelOpenChange: (id) => workspace.setPollHighlightOpen(id),
     completePopover: studentCompletePollPopover,
-    getAnchor: (ex) => {
-      if (ex.code_anchor_from != null && ex.code_anchor_to != null) {
-        const at = codeEditor.getPollAnchorPosition(ex.id);
-        if (at != null) return { kind: "code", at, getRange: () => codeEditor.getPollAnchorRange(ex.id) };
-      }
-      const paneRect = instructorCodeContainer.getBoundingClientRect();
-      return {
-        kind: "standalone",
-        rect: { top: paneRect.top + 8, bottom: paneRect.top + 8, left: paneRect.right - 8, right: paneRect.right - 8, width: 0, height: 0 },
-      };
-    },
+    getAnchor: (ex) => workspace.anchorForExercise(ex),
     scrollToExercise: (ex) => {
       historicalController.returnToLive();
-      if (ex.type === "CODE_VARIANT") {
-        codeEditor.scrollToVersionBlock(ex.VersionBlockId);
-      } else {
-        codeEditor.scrollToPollMarker(ex.id);
-      }
+      workspace.scrollToExercise(ex);
     },
     openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),

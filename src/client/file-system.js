@@ -9,7 +9,7 @@ import { isPathUnder, pathBasename, pathDirname } from "../shared-constants.js";
 // Each file: {id, name, doc (array of lines, or null if not loaded yet), docVersion, persistedVersion}.
 //
 // Dispatches "changed" ({detail: {kind, ids}}) after every mutation, where kind is one of
-// "created" | "renamed" | "deleted" | "dirs".
+// "created" | "renamed" | "deleted" | "dirs" | "reset".
 export class LectureFileSystem extends EventTarget {
   constructor({ files = [], sessionNumber = null, userId = null } = {}) {
     super();
@@ -120,6 +120,13 @@ export class LectureFileSystem extends EventTarget {
   removeFiles(ids) {
     const removed = ids.filter((id) => this.files.delete(id));
     if (removed.length > 0) this._emit("deleted", removed);
+  }
+
+  // Replaces every file at once (e.g. the admin replay jumping to another point in time).
+  replaceAll(files) {
+    this.files = new Map(files.map((f) => [f.id, { ...f }]));
+    this.emptyDirs.clear();
+    this._emit("reset", files.map((f) => f.id));
   }
 
   addEmptyDir(path) {

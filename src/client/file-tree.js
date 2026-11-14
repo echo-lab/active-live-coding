@@ -346,6 +346,8 @@ export class FileTreeView {
       initial: pathBasename(path),
       selectBeforeExtension: !isDirectory,
       onCommit: async (name) => {
+        // Same convenience as when creating: "util" means "util.py".
+        if (!isDirectory && !name.includes(".")) name += ".py";
         const to = dir ? `${dir}/${name}` : name;
         if (to === path) return null;
         const invalid = validateFilePath(to, { isDirectory });

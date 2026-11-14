@@ -10,7 +10,6 @@ import {
   Variant,
   Document,
   loadChangeLog,
-  DEFAULT_FILE_NAME,
 } from "./models.js";
 
 // Dev-only routes for offline analysis: listing every lecture, and dumping everything needed to
@@ -38,8 +37,9 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
   });
 
   // MARK: Lecture replay data
-  // Returns every raw row needed to reconstruct this lecture's entire history client-side: the
-  // full change log of the main file (`instructorChanges`; every file's log is under `files`), every
+  // Returns every raw row needed to reconstruct this lecture's entire history client-side: every
+  // file the instructor ever had (including deleted ones), each with its lifetime, rename history
+  // and full change log, every
   // VersionBlock (including dissolved ones) with all Variants (including soft-deleted ones) and
   // their own change logs, every ClassExercise with every response, and the offline events log's
   // instructor-side events (for timeline annotations). Sent once, in full -- the replay page never
@@ -57,16 +57,19 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
 
         const toReplayChanges = (log) => log.map((c) => ({ changeNumber: c.id, change: c.changes, ts: c.ts }));
 
+        // Deleted files too (deleted_at is a plain column, not paranoid): the replay shows each file
+        // from createdAt until deletedAt, under whichever name nameHistory says it had at the time.
         const fileRows = await lecture.getDocuments({ where: { kind: "file" }, order: [["id", "ASC"]], transaction: t });
         const files = await Promise.all(
           fileRows.map(async (f) => ({
             id: f.id,
             name: f.name,
+            createdAt: f.createdAt.getTime(),
+            deletedAt: f.deleted_at ? f.deleted_at.getTime() : null,
+            nameHistory: f.name_history ? JSON.parse(f.name_history) : [{ name: f.name, ts: f.createdAt.getTime() }],
             changes: toReplayChanges(await loadChangeLog(f.id, t)),
           })),
         );
-        // The replay UI only shows one file for now.
-        const mainFile = files.find((f) => f.name === DEFAULT_FILE_NAME) ?? files[0];
 
         const versionBlocks = await lecture.getVersionBlocks({
           // No deleted:false filter -- dissolved blocks are needed too, so the replay can show
@@ -102,7 +105,6 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
           isFinished: lecture.isFinished,
           createdAt: lecture.createdAt.getTime(),
           files,
-          instructorChanges: mainFile?.changes ?? [],
           versionBlocks: versionBlocks.map((b) => ({
             id: b.id,
             anchor_pos: b.anchor_pos,
@@ -132,6 +134,7 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
             code_anchor_from: ex.code_anchor_from,
             code_anchor_to: ex.code_anchor_to,
             code_anchor_doc_version: ex.code_anchor_doc_version,
+            DocumentId: ex.DocumentId,
             VersionBlockId: ex.VersionBlockId,
             VersionBlock: ex.VersionBlock
               ? { deleted: ex.VersionBlock.deleted, deleted_change_number: ex.VersionBlock.deleted_change_number }
@@ -158,8 +161,9 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
       // multiple ids across page reloads, and isStudent:false alone scopes it correctly.
       const eventsWork = Event.findAll({ where: { lectureId, isStudent: false } }).then((rows) => {
         const events = [];
+        // Each batch item is {timestamp, payload: {type, ...}}; flattened to {type, ..., timestamp}.
         for (const row of rows) {
-          events.push(...decompressEventBatch(row.payload));
+          for (const item of decompressEventBatch(row.payload)) events.push({ ...item.payload, timestamp: item.timestamp });
         }
         events.sort((a, b) => a.timestamp - b.timestamp);
         return events;

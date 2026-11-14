@@ -176,7 +176,10 @@ export class StudentCodeEditor {
     for (const [type, handler] of this._managerListeners) this.activitiesManager?.removeEventListener(type, handler);
     this._managerListeners = [];
     for (const widget of this.versionBlocks) {
-      for (const { editor } of widget.variants ?? []) editor?.view?.destroy();
+      // Replay pages mount instructor-style widgets (makeVersionBlockWidget), which clean up after
+      // themselves; the student widget's variant editors are destroyed here.
+      if (widget.disposeVariantEditors) widget.disposeVariantEditors();
+      else for (const { editor } of widget.variants ?? []) editor?.view?.destroy();
     }
     this.view.destroy();
   }

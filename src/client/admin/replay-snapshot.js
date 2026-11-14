@@ -61,27 +61,74 @@ function answerAsOfTime(response, T) {
   return result;
 }
 
-// Computes the full {lectureDoc, lectureDocVersion, versionBlocks, exercises} snapshot as of time
-// T, in the exact shape StudentCodeEditor/StudentActivitiesManager already consume (see
-// src/client/review-lecture.js's initialize()).
+// The file the lecture started with (main.py, the lowest id) counts as existing from the very
+// start: its createdAt is a few ms after the lecture's, which is where the timeline begins.
+function isInitialFile(data, file) {
+  return file.id === data.files[0]?.id;
+}
+
+// A file exists from its creation until it's deleted (if ever).
+function isFileAliveAt(data, file, T) {
+  const born = isInitialFile(data, file) || file.createdAt <= T;
+  return born && (file.deletedAt == null || file.deletedAt > T);
+}
+
+// The file's path as of T: the latest nameHistory entry at or before T (its first name before that).
+function fileNameAt(file, T) {
+  let name = file.nameHistory[0]?.name ?? file.name;
+  for (const entry of file.nameHistory) {
+    if (entry.ts > T) break;
+    name = entry.name;
+  }
+  return name;
+}
+
+// The last INSTRUCTOR_VIEW_FILES event at or before T, as {openFileIds, activeFileId} -- null if
+// the instructor hadn't reported any tabs yet.
+function instructorViewAt(instructorEvents, T) {
+  let view = null;
+  for (const e of instructorEvents) {
+    if (e.timestamp > T) break;
+    if (e.type === EVENT_TYPES.INSTRUCTOR_VIEW_FILES) view = { openFileIds: e.openFileIds ?? [], activeFileId: e.activeFileId ?? null };
+  }
+  return view;
+}
+
+// Computes the full {files, versionBlocks, exercises, instructorView} snapshot as of time T, in the
+// exact shape StudentWorkspace/StudentActivitiesManager already consume (see
+// src/client/review-lecture.js's initialize()). Every file is reconstructed from its own change
+// log, and every anchor (version block or poll) is mapped through the log of the file it lives in.
 export function computeSnapshotAtTime(data, T) {
-  const { instructorChanges, versionBlocks, exercises } = data;
+  const { versionBlocks, exercises, instructorEvents = [] } = data;
+  const filesById = new Map(data.files.map((f) => [f.id, f]));
+  // Exercises from before files existed carry no DocumentId: they belong to the lecture's first file.
+  const legacyFileId = data.files[0]?.id ?? null;
 
-  const changeCountAtT = countUpTo(instructorChanges, T);
-  const lectureDoc = reconstructDocUpTo(instructorChanges, changeCountAtT);
+  // fileId -> how many of its changes have landed by T (only for files alive at T).
+  const changeCounts = new Map();
+  const filesAtT = [];
+  for (const file of data.files) {
+    if (!isFileAliveAt(data, file, T)) continue;
+    const n = countUpTo(file.changes, T);
+    changeCounts.set(file.id, n);
+    filesAtT.push({ id: file.id, name: fileNameAt(file, T), doc: reconstructDocUpTo(file.changes, n).toJSON(), docVersion: n });
+  }
 
-  const visibleBlocks = versionBlocks.filter((b) => isVersionBlockVisible(b, changeCountAtT));
+  const visibleBlocks = versionBlocks.filter(
+    (b) => changeCounts.has(b.fileId) && isVersionBlockVisible(b, changeCounts.get(b.fileId)),
+  );
   const visibleBlockIds = new Set(visibleBlocks.map((b) => b.id));
 
   const versionBlocksAtT = visibleBlocks.map((block) => {
-    const from = mapPosThrough(instructorChanges, block.anchor_change_number, changeCountAtT, block.anchor_pos);
+    const changes = filesById.get(block.fileId).changes;
+    const from = mapPosThrough(changes, block.anchor_change_number, changeCounts.get(block.fileId), block.anchor_pos);
     const variants = block.variants
       .filter((v) => v.createdAt <= T && (v.deletedAt == null || v.deletedAt > T))
       .map((v) => {
         const n = countUpTo(v.changes, T);
         return { id: v.id, name: v.name, code: reconstructDocUpTo(v.changes, n).toString(), docVersion: n };
       });
-    return { id: block.id, from, to: from, variants };
+    return { id: block.id, fileId: block.fileId, from, to: from, variants };
   });
 
   const exercisesAtT = exercises
@@ -93,13 +140,23 @@ export function computeSnapshotAtTime(data, T) {
         .map((r) => ({ ...r, answer: answerAsOfTime(r, T) }))
         .filter((r) => r.answer != null);
 
+      const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
+      const documentId = isPoll && ex.code_anchor_from != null ? (ex.DocumentId ?? legacyFileId) : ex.DocumentId;
       let code_anchor_from = ex.code_anchor_from;
       let code_anchor_to = ex.code_anchor_to;
-      if ((ex.type === "POLL" || ex.type === "POLL_MCQ") && code_anchor_from != null) {
-        const from = mapPosThrough(instructorChanges, ex.code_anchor_doc_version, changeCountAtT, code_anchor_from, 1);
-        const to = mapPosThrough(instructorChanges, ex.code_anchor_doc_version, changeCountAtT, code_anchor_to, -1);
-        code_anchor_from = to > from ? from : null;
-        code_anchor_to = to > from ? to : null;
+      if (isPoll && code_anchor_from != null) {
+        if (changeCounts.has(documentId)) {
+          const changes = filesById.get(documentId).changes;
+          const n = changeCounts.get(documentId);
+          const from = mapPosThrough(changes, ex.code_anchor_doc_version, n, code_anchor_from, 1);
+          const to = mapPosThrough(changes, ex.code_anchor_doc_version, n, code_anchor_to, -1);
+          code_anchor_from = to > from ? from : null;
+          code_anchor_to = to > from ? to : null;
+        } else {
+          // Its file was deleted (or doesn't exist yet): no anchor.
+          code_anchor_from = null;
+          code_anchor_to = null;
+        }
       }
 
       return {
@@ -110,6 +167,7 @@ export function computeSnapshotAtTime(data, T) {
         default_answer: ex.default_answer,
         code_anchor_from,
         code_anchor_to,
+        DocumentId: documentId ?? null,
         VersionBlockId: ex.VersionBlockId,
         VersionBlock: ex.VersionBlockId != null ? { deleted: !visibleBlockIds.has(ex.VersionBlockId) } : null,
         start_ts: ex.start_ts,
@@ -128,15 +186,33 @@ export function computeSnapshotAtTime(data, T) {
     });
 
   return {
-    lectureDoc: lectureDoc.toJSON(),
-    lectureDocVersion: changeCountAtT,
+    files: filesAtT,
     versionBlocks: versionBlocksAtT,
     exercises: exercisesAtT,
+    instructorView: instructorViewAt(instructorEvents, T),
   };
 }
 
+// Every moment a file appeared, was renamed, or was deleted (except the files the lecture started
+// with), as {ts, label}.
+function fileLifecycleEvents(data) {
+  const events = [];
+  for (const file of data.files) {
+    const [first, ...renames] = file.nameHistory;
+    if (!isInitialFile(data, file)) events.push({ ts: file.createdAt, label: `Created ${first?.name ?? file.name}` });
+    let previous = first?.name ?? file.name;
+    for (const entry of renames) {
+      events.push({ ts: entry.ts, label: `Renamed ${previous} → ${entry.name}` });
+      previous = entry.name;
+    }
+    if (file.deletedAt != null) events.push({ ts: file.deletedAt, label: `Deleted ${previous}` });
+  }
+  return events;
+}
+
 // Flat, time-sorted list of {ts, kind, exerciseId, label} timeline markers: when each exercise's
-// creation was started, when it started (went live), and when it ended.
+// creation was started, when it started (went live), and when it ended -- plus ("file" markers,
+// exerciseId null) when files were created, renamed, or deleted.
 export function computeTimelineMarkers(data) {
   const { versionBlocks, exercises, instructorEvents } = data;
   const markers = [];
@@ -178,6 +254,10 @@ export function computeTimelineMarkers(data) {
     }
   }
 
+  for (const { ts, label } of fileLifecycleEvents(data)) {
+    markers.push({ ts, kind: "file", exerciseId: null, label });
+  }
+
   markers.sort((a, b) => a.ts - b.ts);
   return markers;
 }
@@ -186,7 +266,8 @@ export function computeTimelineMarkers(data) {
 // (the lecture's own createdAt) if there's no recorded activity at all.
 export function computeTimeBounds(data) {
   const timestamps = [
-    ...data.instructorChanges.map((c) => c.ts),
+    ...data.files.flatMap((f) => f.changes.map((c) => c.ts)),
+    ...fileLifecycleEvents(data).map((e) => e.ts),
     ...data.versionBlocks.map((b) => b.createdAt),
     ...data.exercises.flatMap((ex) => [ex.start_ts, ex.end_ts].filter((t) => t != null)),
     ...data.instructorEvents.map((e) => e.timestamp),
@@ -212,7 +293,7 @@ export function computeActivityTimeline(data, { gapThresholdMs = DEFAULT_GAP_THR
   const points = [...new Set([
     bounds.min,
     bounds.max,
-    ...data.instructorChanges.map((c) => c.ts),
+    ...data.files.flatMap((f) => f.changes.map((c) => c.ts)),
     ...data.versionBlocks.flatMap((b) => b.variants.flatMap((v) => v.changes.map((c) => c.ts))),
     ...markers.map((m) => m.ts),
     ...data.instructorEvents.map((e) => e.timestamp),

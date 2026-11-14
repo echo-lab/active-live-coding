@@ -9,11 +9,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, DEFAULT_SERVER_URL } from "./lib/cli-args.js";
 import { loadFixture } from "./lib/fixture-io.js";
-import { createFreshLecture, replayInstructorEdits } from "./lib/replay-engine.js";
+import { createFreshLecture, createFixtureFiles, replayInstructorEdits } from "./lib/replay-engine.js";
 import { timedPost } from "./lib/rest-client.js";
 import { getMainFile } from "../../shared-constants.js";
 import { writeNamedResult } from "./lib/results.js";
-import { replayToText } from "./lib/cm-replay.js";
+import { replayFixtureFiles } from "./lib/cm-replay.js";
 
 const LOAD_TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,48 +35,59 @@ async function main() {
 
   const fixturePath = path.isAbsolute(args.fixture) ? args.fixture : path.join(LOAD_TEST_DIR, args.fixture);
   const fixture = loadFixture(fixturePath);
-  console.log(`Loaded fixture: ${fixture.editCount} edits, ${(fixture.durationMs / 1000 / 60).toFixed(1)} min recorded`);
+  console.log(`Loaded fixture: ${fixture.edits.length} edits across ${fixture.files.length} file(s), ${(fixture.durationMs / 1000 / 60).toFixed(1)} min recorded`);
 
   const lecture = await createFreshLecture({ serverUrl, sessionName });
   console.log(`Created lecture #${lecture.sessionNumber} "${sessionName}"`);
+  // Every file exists up front (rather than appearing mid-replay when it was first created).
+  await createFixtureFiles({ serverUrl, lecture, fileNames: fixture.files.map((f) => f.name) });
 
   const t0 = performance.now();
   await replayInstructorEdits({
     serverUrl,
     sessionNumber: lecture.sessionNumber,
     fileId: lecture.fileId,
+    fileIds: lecture.fileIds,
     edits: fixture.edits,
     pace,
   });
   const replayElapsedMs = performance.now() - t0;
 
-  // Read back the resulting doc for verification. POST /lecture-session serves it from the
-  // server's in-memory doc store, so this includes edits that haven't been flushed to the DB yet.
+  // Read back every file for verification. POST /lecture-session serves them from the server's
+  // in-memory doc store, so this includes edits that haven't been flushed to the DB yet.
   const verify = await timedPost(`${serverUrl}/lecture-session`, { sessionName, userId: lecture.userId });
   if (!verify.ok) throw new Error(`Post-seed verification failed: ${verify.json?.error ?? verify.error}`);
   const mainFile = getMainFile(verify.json.files);
 
-  const expectedText = replayToText(fixture.edits);
-  const actualText = (mainFile?.doc ?? []).join("\n");
-  const docMatches = actualText === expectedText;
-  const versionMatches = mainFile?.docVersion === fixture.editCount;
-
   console.log(`Replay (pace=${pace}) took ${(replayElapsedMs / 1000).toFixed(1)}s`);
-  console.log(`docVersion: ${mainFile?.docVersion} (expected ${fixture.editCount}) -- ${versionMatches ? "OK" : "MISMATCH"}`);
-  console.log(`Final doc text matches fixture replay: ${docMatches ? "OK" : "MISMATCH"}`);
+  let allMatch = true;
+  const fileVersions = {};
+  for (const [name, expected] of replayFixtureFiles(fixture)) {
+    const actual = verify.json.files.find((f) => f.name === name);
+    const versionMatches = actual?.docVersion === expected.docVersion;
+    const docMatches = (actual?.doc ?? []).join("\n") === expected.text;
+    allMatch &&= versionMatches && docMatches;
+    fileVersions[name] = actual?.docVersion;
+    console.log(
+      `${name}: docVersion ${actual?.docVersion} (expected ${expected.docVersion}) -- ${versionMatches ? "OK" : "MISMATCH"}; ` +
+        `text ${docMatches ? "OK" : "MISMATCH"}`,
+    );
+  }
 
   const seeded = {
     sessionName,
     sessionNumber: lecture.sessionNumber,
     userId: lecture.userId,
-    editCount: fixture.editCount,
+    editCount: fixture.edits.length,
+    // The main file's version -- what join-reload-stress checks each student against.
     docVersion: mainFile?.docVersion,
+    fileVersions,
     seededAt: new Date().toISOString(),
   };
   writeNamedResult("last-seeded-session.json", seeded);
   console.log(`\nWrote results/last-seeded-session.json -- downstream scripts default to this session.`);
 
-  if (!versionMatches || !docMatches) {
+  if (!allMatch) {
     console.error("\nSeeding verification FAILED.");
     process.exit(1);
   }

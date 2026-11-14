@@ -125,9 +125,15 @@ const exercises = await ClassExercise.findAll({
   order: [["start_ts", "ASC"]],
 });
 
-// Instructor edit timestamps across all of the lecture's files.
-const fileDocs = await Document.findAll({ where: { LectureSessionId: lectureId, kind: "file" }, attributes: ["id"] });
-const changeTimestamps = (await Promise.all(fileDocs.map((d) => loadChangeLog(d.id)))).flat().map((c) => c.ts);
+// Instructor edit timestamps across all of the lecture's files (including deleted ones).
+const fileDocs = await Document.findAll({
+  where: { LectureSessionId: lectureId, kind: "file" },
+  attributes: ["id", "name", "createdAt", "deleted_at", "name_history"],
+  order: [["id", "ASC"]],
+});
+const changeLogs = await Promise.all(fileDocs.map((d) => loadChangeLog(d.id)));
+const changeTimestamps = changeLogs.flat().map((c) => c.ts);
+const fileNameById = new Map(fileDocs.map((d) => [d.id, d.name]));
 
 const studentSessions = await StudentSession.findAll({ where: { LectureSessionId: lectureId }, raw: true });
 
@@ -135,6 +141,7 @@ const versionBlocks = await VersionBlock.findAll({
   where: { LectureSessionId: lectureId },
   include: ["Variants"],
 });
+const versionBlockFileById = new Map(versionBlocks.map((b) => [b.id, b.DocumentId]));
 
 // events.sqlite may not have data for this lecture (introduced 2026-08-24 -- older
 // lectures predate it entirely) or may not exist/be initialized at all -- degrade
@@ -237,6 +244,17 @@ if (!lectureWindow) {
 }
 
 // MARK: Activity counts
+console.log(`\n=== FILES ===`);
+fileDocs.forEach((d, i) => {
+  const renames = Math.max(0, JSON.parse(d.name_history ?? "[]").length - 1);
+  const notes = [
+    `${changeLogs[i].length} edits`,
+    ...(renames > 0 ? [`renamed ${renames}x`] : []),
+    ...(d.deleted_at ? [`deleted ${fmtTime(d.deleted_at.getTime())}`] : []),
+  ];
+  console.log(`  ${d.name} (#${d.id}, created ${fmtTime(d.createdAt.getTime())}): ${notes.join(", ")}`);
+});
+
 console.log(`\n=== ACTIVITY COUNTS ===`);
 const countsByType = {};
 for (const ex of exercises) countsByType[ex.type] = (countsByType[ex.type] ?? 0) + 1;
@@ -264,6 +282,9 @@ if (exercises.length === 0) console.log("No activities in this lecture.");
 exercises.forEach((ex, i) => {
   const isPoll = ex.type === "POLL" || ex.type === "POLL_MCQ";
   console.log(`\n--- ${i + 1}. [${ex.type}] Exercise #${ex.id} ---`);
+  // Code exercises live in their version block's file; anchored polls carry their file directly.
+  const fileId = ex.type === "CODE_VARIANT" ? versionBlockFileById.get(ex.VersionBlockId) : ex.DocumentId;
+  if (fileId != null && fileDocs.length > 1) console.log(`File: ${fileNameById.get(fileId) ?? `#${fileId}`}`);
 
   if (ex.type === "CODE_VARIANT") {
     const firstLine = (ex.default_answer ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0);

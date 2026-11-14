@@ -2789,3 +2789,7 @@ body.file-tree-resizing {
 .workspace-empty[hidden] {
   display: none;
 }
+
+#workspace-row[hidden] {
+  display: none;
+}

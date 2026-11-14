@@ -4,9 +4,10 @@ import "../style-review-lecture.css";
 import "./style-admin.css";
 
 import { GET_JSON_REQUEST, createNoopSocket } from "../utils.js";
-import { StudentCodeEditor } from "../code-editors.js";
-import { versionBlocksField, setVersionBlockReadOnly, VersionBlockWidget } from "../cm-version-widget.js";
+import { setVersionBlockReadOnly, VersionBlockWidget } from "../cm-version-widget.js";
 import { StudentActivitiesManager } from "../activities-manager.js";
+import { LectureFileSystem } from "../file-system.js";
+import { StudentWorkspace } from "../workspace.js";
 import {
   computeSnapshotAtTime,
   computeTimelineMarkers,
@@ -21,7 +22,7 @@ import { createReplayActivitiesSidebar } from "./replay-activities-sidebar.js";
 setVersionBlockReadOnly(true);
 
 const mainEl = document.querySelector("#replay-main");
-const codeContainer = document.querySelector("#replay-code-container");
+const followBtn = document.querySelector("#follow-instructor-btn");
 const errorEl = document.querySelector("#replay-error");
 const nameDisplayEl = document.querySelector("#replay-session-name-display");
 const timelineEl = document.querySelector("#replay-timeline");
@@ -34,8 +35,7 @@ const nextBtn = document.querySelector("#replay-next-btn");
 const eventLogToggleBtn = document.querySelector("#replay-event-log-toggle");
 const eventLogListEl = document.querySelector("#replay-event-log-list");
 
-// Stateless -- StudentCodeEditor/StudentActivitiesManager unconditionally call socket.on(...), but
-// this page replays from an in-memory snapshot and never receives (or sends) any live messages.
+// Stateless -- StudentActivitiesManager unconditionally calls socket.on(...), but this page replays from an in-memory snapshot and never receives (or sends) any live messages.
 const noopSocket = createNoopSocket();
 
 let data = null;
@@ -43,7 +43,9 @@ let markers = [];
 let bounds = { min: 0, max: 0 };
 let segments = [];
 let totalCompressedUnits = 0;
-let codeEditor = null;
+// Built once data arrives; load()-ed with a fresh snapshot on every scrub. Like a student, it
+// follows the instructor's tabs (as recorded at the scrub time) until the viewer picks a file.
+let workspace = null;
 // The exact scrub position, authoritative -- never re-derived from the range input's (quantized)
 // value. Only jumpTo()/the input handlers ever set this; everything else (stepping, the event
 // log's highlight) reads it directly, so there's no lossy round-trip to drift against.
@@ -66,10 +68,8 @@ function makeVersionBlockWidget({ versionBlockId, variants, view }) {
 
 const sidebar = createReplayActivitiesSidebar({
   onScrollToExercise: (ex) => {
-    if (ex.type === "CODE_VARIANT" && ex.VersionBlockId != null) {
-      codeEditor?.scrollToVersionBlock(ex.VersionBlockId);
-    } else if (ex.code_anchor_from != null) {
-      codeEditor?.scrollToPollMarker(ex.id);
+    if (ex.type === "CODE_VARIANT" ? ex.VersionBlockId != null : ex.code_anchor_from != null) {
+      workspace?.scrollToExercise(ex);
     }
   },
 });
@@ -77,20 +77,7 @@ const sidebar = createReplayActivitiesSidebar({
 function renderAtTime(T) {
   const snapshot = computeSnapshotAtTime(data, T);
 
-  // Explicitly dispose each version block's nested variant EditorViews before discarding the
-  // outer view -- VersionBlockWidget no longer cleans these up via CodeMirror's destroy(dom) hook
-  // (that also fires on ordinary scroll-driven viewport recycling, which broke the live instructor
-  // editor), so this page has to release them itself on every scrub-step rebuild.
-  if (codeEditor) {
-    const decorations = codeEditor.view.state.field(versionBlocksField);
-    decorations.between(0, codeEditor.view.state.doc.length, (_from, _to, deco) => {
-      deco.spec.widget?.disposeVariantEditors?.();
-    });
-    codeEditor.view.destroy();
-    codeEditor = null;
-  }
-
-  const activitiesManagerAdapter = new StudentActivitiesManager({
+  const activitiesManager = new StudentActivitiesManager({
     sessionNumber: data.id,
     userId: null,
     studentIdentifier: null,
@@ -98,17 +85,13 @@ function renderAtTime(T) {
     exercises: snapshot.exercises,
   });
 
-  codeEditor = new StudentCodeEditor({
-    node: codeContainer,
-    doc: snapshot.lectureDoc,
-    docVersion: snapshot.lectureDocVersion,
-    socket: noopSocket,
-    sessionId: data.id,
-    extraExtensions: [versionBlocksField],
+  // Rebuilds every file's editor (disposing the old ones, including their version blocks' nested
+  // variant editors).
+  workspace.load({
+    files: snapshot.files,
     versionBlocks: snapshot.versionBlocks,
-    activitiesManager: activitiesManagerAdapter,
-    reviewMode: true,
-    makeVersionBlockWidget,
+    activitiesManager,
+    instructorView: snapshot.instructorView,
   });
 
   sidebar.render(snapshot.exercises);
@@ -267,6 +250,20 @@ async function load() {
   rangeEl.min = 0;
   rangeEl.max = totalCompressedUnits;
   rangeEl.step = 1;
+
+  workspace = new StudentWorkspace({
+    fs: new LectureFileSystem({ sessionNumber: data.id }),
+    containersHostEl: document.querySelector("#code-containers"),
+    tabsEl: document.querySelector("#file-tabs"),
+    treePanelEl: document.querySelector("#file-tree-panel"),
+    sessionNumber: data.id,
+    mode: "review",
+    makeVersionBlockWidget,
+  });
+  workspace.addEventListener("followchange", ({ detail: { following } }) => {
+    followBtn.hidden = following;
+  });
+  followBtn.addEventListener("click", () => workspace.setFollowing(true));
 
   renderGaps();
   renderMarkers();

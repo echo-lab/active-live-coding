@@ -46,9 +46,23 @@
   min-height: 0;
 }
 
-#replay-code-container {
+/* File tabs above the stacked per-file editors (see #code-containers in style.css). */
+#replay-code-column {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#replay-code-column #code-tabs {
+  flex: 0 0 40px;
+}
+
+#replay-code-column #code-containers {
+  flex: 1;
+}
+
+#replay-code-column .code-container.file-editor {
   overflow: auto;
 }
 
@@ -149,6 +163,11 @@
 
 .replay-timeline-marker.ended {
   background: #ea4335;
+}
+
+/* A file was created, renamed, or deleted. */
+.replay-timeline-marker.file {
+  background: #646cff;
 }
 
 #replay-timeline.disabled {
