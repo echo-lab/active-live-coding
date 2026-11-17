@@ -93,7 +93,7 @@ registerAdminRoutes(app, { flushLecture, flushEvents });
 // Return a list of all the lectures.
 app.get("/lecture-sessions", async (req, res) => {
   try {
-    let response = await db.transaction(async (t) => {
+    let response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
       let sessions = await LectureSession.findAll(
         {
           order: [["createdAt", "DESC"]],
@@ -126,7 +126,7 @@ app.get("/my-lectures", async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.json({ error: "userId is required" });
   try {
-    let response = await db.transaction(async (t) => {
+    let response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
       let sessions = await LectureSession.findAll({
         where: { instructor_id: userId },
         order: [["createdAt", "DESC"]],
@@ -560,10 +560,10 @@ app.post("/current-session-student", async (req, res) => {
         };
       });
     } else {
-      // Slow-but-safe path: first-ever join for this student, may need to INSERT a
-      // StudentSession. Unchanged from before this fix: default IMMEDIATE, atomic
-      // check-then-create, so two genuinely-concurrent first joins for the same student are
-      // still safely serialized.
+      // First-ever join for this student, may need to INSERT a StudentSession: a write
+      // transaction (atomic check-then-create), so two genuinely-concurrent first joins for the
+      // same student are safely serialized. Write transactions queue on database.js's in-process
+      // write lock, so a burst of first joins costs ~1ms each instead of busy-waiting in SQLite.
       response = await db.transaction(async (t) => {
         let existingInner = await lecture.getStudentSessions({ where: { student_id }, transaction: t });
         let sesh =
@@ -830,7 +830,7 @@ app.get("/exercise/:id/historical-context", async (req, res) => {
   const exerciseId = req.params.id;
 
   try {
-    const response = await db.transaction(async (t) => {
+    const response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
       const exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
       const lecture = await LectureSession.findByPk(exercise.LectureSessionId, { transaction: t });
@@ -983,12 +983,28 @@ await eventsDb.sync();
 const PORT = Number(process.env.PORT ?? 3000);
 const server = http.createServer(app).listen(PORT, () => {
   console.log(`Server is listening on port ${PORT}!`);
+  // node-sqlite3 runs every query on libuv's thread pool (default: 4 threads). `npm run dev` /
+  // `npm start` raise it; launching main.js directly (e.g. for a load test) silently doesn't.
+  if (!process.env.UV_THREADPOOL_SIZE) {
+    console.warn(
+      "WARNING: UV_THREADPOOL_SIZE is not set, so SQLite gets only 4 threads. Start the server with " +
+        "`npm run dev` / `npm start` (or set UV_THREADPOOL_SIZE=64) -- load-test results otherwise won't match a real lecture.",
+    );
+  }
 });
 
 
 // MARK: Sockets
 
-const io = new Server(server);
+// Connection state recovery: when a client drops briefly (wifi blip, laptop sleep) and reconnects
+// within maxDisconnectionDuration, Socket.IO restores its id + rooms and replays every room
+// broadcast it missed, in order -- so students don't lose exercises/version blocks/edits sent while
+// they were offline. Needs the default in-memory adapter (i.e. this single-process server). Longer
+// gaps and server restarts can't be recovered; the client then asks the user to reload
+// (joinLectureRoom in src/client/utils.js).
+const io = new Server(server, {
+  connectionStateRecovery: { maxDisconnectionDuration: 2 * 60 * 1000 },
+});
 initDocStore(io);
 
 // Flush unpersisted edits before exiting. SIGUSR2 is what nodemon sends on every dev restart --

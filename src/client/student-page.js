@@ -1,7 +1,7 @@
 import "./style.css";
 import "./style-student-page.css";
 
-import { getEmail, getUserID, POST_JSON_REQUEST } from "./utils.js";
+import { getEmail, getUserID, joinLectureRoom, POST_JSON_REQUEST } from "./utils.js";
 
 import { io } from "socket.io-client";
 import { setVersionBlockReadOnly } from "./cm-version-widget.js";
@@ -102,11 +102,8 @@ async function initialize({
   instructorView = null,
 }) {
   currentSessionNumber = sessionNumber;
-  socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
-  // Socket.IO reconnects (e.g. a wifi blip) get a new server-side socket id that isn't
-  // automatically re-joined to the lecture room -- without this, a reconnected student would
-  // silently stop receiving live updates until they reload the page.
-  socket.on("connect", () => socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber));
+  // Joins the lecture room and keeps this socket in it across reconnects (see utils.js).
+  joinLectureRoom(socket, sessionNumber);
 
   initEventLogging(/*isStudent=*/ true, userId, sessionNumber);
 

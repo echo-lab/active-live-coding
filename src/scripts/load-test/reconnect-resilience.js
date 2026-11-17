@@ -1,13 +1,20 @@
-// Empirically checks the suspected "reconnect doesn't rejoin the lecture room" bug: JOIN_SESSION
-// is emitted exactly once on initial page load (student-page.js:108, instructor.js:140) with no
-// socket.on("connect", ...) handler to re-emit it on reconnect. A reconnected socket gets a new
-// server-side id that's never rejoined to lecture-<id>, so it should silently stop receiving
-// broadcasts. --simulate-fix lets the harness validate the proposed one-line fix before it's
-// applied to the real client code.
+// Checks that students who lose their connection mid-lecture keep (or regain) the live feed.
+// Students are split into three groups:
+//
+//   - control:   never disconnects.
+//   - drop:      loses its network for ~--offline-ms (transport closed, not an intentional
+//                disconnect). While they're offline the instructor sends edits AND an exercise.
+//                Socket.IO's connection state recovery (main.js) should restore their session and
+//                replay everything they missed, in order.
+//   - fresh:     an intentional disconnect + reconnect, which Socket.IO never recovers -- standing
+//                in for a gap too long to recover, or a server restart. These students can't get
+//                the missed broadcasts back (the real client shows a "reload" banner); what's
+//                checked is that rejoin-on-connect (joinLectureRoom in src/client/utils.js) puts
+//                them back in the lecture room so they get everything sent AFTER they're back.
 //
 // Usage:
 //   node src/scripts/load-test/reconnect-resilience.js --students 50 --disconnect-fraction 0.3
-//   node src/scripts/load-test/reconnect-resilience.js --students 50 --disconnect-fraction 0.3 --simulate-fix
+//   node src/scripts/load-test/reconnect-resilience.js --students 50 --offline-ms 3000
 import { io } from "socket.io-client";
 import { ChangeSet } from "@codemirror/state";
 import { SOCKET_MESSAGE_TYPE } from "../../shared-constants.js";
@@ -15,15 +22,10 @@ import { parseArgs, DEFAULT_SERVER_URL } from "./lib/cli-args.js";
 import { SimulatedStudent } from "./lib/simulated-student.js";
 import { createFreshLecture } from "./lib/replay-engine.js";
 import { writeResults } from "./lib/results.js";
+import { printVerdict } from "./lib/stats.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function usage() {
-  console.log(`Usage:
-  node src/scripts/load-test/reconnect-resilience.js [--students 50] [--disconnect-fraction 0.3]
-    [--simulate-fix] [--session-name <name>] [--server <url>]`);
 }
 
 // Only delivery matters here, not content realism -- builds `count` sequential single-character
@@ -33,7 +35,7 @@ function makeSyntheticEdits(count, startId, startLength) {
   let length = startLength;
   for (let i = 0; i < count; i++) {
     const changes = ChangeSet.of({ from: length, to: length, insert: "x" }, length).toJSON();
-    edits.push({ id: startId + i, changes, ts: Date.now() + i * 10 });
+    edits.push({ id: startId + i, changes });
     length += 1;
   }
   return edits;
@@ -45,24 +47,42 @@ function sendEdits(socket, { sessionNumber, fileId }, edits) {
   }
 }
 
-function receivedIds(student) {
+const range = (from, to) => Array.from({ length: to - from }, (_, i) => from + i);
+
+function editIds(student) {
   return student.receivedEvents.filter((e) => e.type === SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT).map((e) => e.payload.id);
 }
+
+function gotAll(student, ids) {
+  const received = new Set(editIds(student));
+  return ids.every((id) => received.has(id));
+}
+
+function gotExercise(student, exerciseId) {
+  return student.receivedEvents.some((e) => e.type === SOCKET_MESSAGE_TYPE.EXERCISE_CREATED && e.payload.exerciseId === exerciseId);
+}
+
+// Edits must arrive in order (the student editor depends on it); recovery replays them in order.
+function inOrder(student) {
+  const ids = editIds(student);
+  return ids.every((id, i) => i === 0 || id > ids[i - 1]);
+}
+
+const rate = (group, pred) => (group.length === 0 ? 1 : group.filter(pred).length / group.length);
+const pct = (r) => `${(r * 100).toFixed(0)}%`;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const serverUrl = args.server ?? DEFAULT_SERVER_URL;
   const studentCount = Number(args.students ?? 50);
   const disconnectFraction = Number(args["disconnect-fraction"] ?? 0.3);
-  const simulateFix = Boolean(args["simulate-fix"]);
+  const offlineMs = Number(args["offline-ms"] ?? 1500);
   const sessionName = args["session-name"] ?? `LOAD_TEST_reconnect_${Date.now()}`;
 
   const lecture = await createFreshLecture({ serverUrl, sessionName });
   console.log(`Created fresh lecture #${lecture.sessionNumber} "${sessionName}"`);
 
-  const studentIds = Array.from({ length: studentCount }, () => crypto.randomUUID());
-  const students = studentIds.map((id) => new SimulatedStudent({ serverUrl, sessionName, studentId: id }));
-
+  const students = Array.from({ length: studentCount }, () => new SimulatedStudent({ serverUrl, sessionName }));
   console.log(`Joining ${studentCount} students...`);
   const joinResults = await Promise.allSettled(students.map((s) => s.join()));
   const joinErrors = joinResults.filter((r) => r.status === "rejected" || !r.value.ok);
@@ -78,65 +98,80 @@ async function main() {
   instructorSocket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, lecture.sessionNumber);
   await sleep(300);
 
-  // Baseline: everyone should receive this -- a harness sanity check, not the bug under test.
-  console.log("Sending baseline batch (5 edits)...");
+  // Baseline: everyone should receive this -- a harness sanity check.
+  console.log("Sending baseline batch (edits 0-4)...");
   sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 0, 0));
   await sleep(1000);
+  const baselineMisses = students.filter((s) => !gotAll(s, range(0, 5))).length;
+  console.log(`Baseline receipt: ${studentCount - baselineMisses}/${studentCount}`);
 
-  const baselineMisses = students.filter((s) => receivedIds(s).length !== 5);
-  console.log(`Baseline receipt: ${studentCount - baselineMisses.length}/${studentCount}`);
+  const groupSize = Math.round((studentCount * disconnectFraction) / 2);
+  const dropGroup = students.slice(0, groupSize);
+  const freshGroup = students.slice(groupSize, 2 * groupSize);
+  const controlGroup = students.slice(2 * groupSize);
 
-  const disconnectCount = Math.round(studentCount * disconnectFraction);
-  const disconnectedGroup = students.slice(0, disconnectCount);
-  const controlGroup = students.slice(disconnectCount);
-  console.log(`Force-disconnecting ${disconnectCount}/${studentCount} students (simulate-fix=${simulateFix})...`);
-  await Promise.all(disconnectedGroup.map((s) => s.forceDisconnectReconnect({ rejoinOnReconnect: simulateFix })));
+  console.log(`Dropping the network for ${dropGroup.length} students (~${offlineMs}ms offline)...`);
+  const drops = await Promise.all(dropGroup.map((s) => s.simulateNetworkDrop({ offlineMs })));
 
-  // JOIN_SESSION has no ack, so a socket's "connect" event firing only means the client has
-  // queued the rejoin emit, not that the server has processed it yet. Give it a moment before
-  // broadcasting the after-batch, same as the settle window in broadcast-latency.js.
+  // Sent while the drop group is offline -- only connection state recovery can get these to them.
+  const gapExerciseId = 1_000_000 + Math.floor(Math.random() * 1_000_000);
+  console.log(`While they're offline: sending edits 5-9 and EXERCISE_CREATED #${gapExerciseId}...`);
+  sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 5, 5));
+  instructorSocket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, { sessionId: lecture.sessionNumber, exerciseId: gapExerciseId });
+
+  const dropReconnects = await Promise.all(drops.map((d) => d.reconnected));
+  console.log(`Drop group back online (${dropReconnects.filter((r) => r.recovered).length}/${dropGroup.length} recovered).`);
+
+  console.log(`Fresh-reconnecting ${freshGroup.length} students (not recoverable)...`);
+  const freshReconnects = await Promise.all(freshGroup.map((s) => s.freshReconnect()));
+
+  // JOIN_SESSION has no ack, so "connect" only means the rejoin emit is queued -- give it a moment.
   await sleep(300);
 
-  console.log("Sending after-batch (5 more edits, continuing docVersion)...");
-  sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 5, 5));
+  console.log("Sending after-batch (edits 10-14)...");
+  sendEdits(instructorSocket, lecture, makeSyntheticEdits(5, 10, 10));
   await sleep(1500);
 
-  const afterIdsExpected = [5, 6, 7, 8, 9];
-  const controlReceived = controlGroup.map((s) => afterIdsExpected.every((id) => receivedIds(s).includes(id)));
-  const controlReceiptRate = controlReceived.filter(Boolean).length / (controlGroup.length || 1);
+  const gapIds = range(5, 10);
+  const afterIds = range(10, 15);
+  const r = {
+    controlAll: rate(controlGroup, (s) => gotAll(s, range(0, 15)) && gotExercise(s, gapExerciseId)),
+    dropRecovered: rate(dropReconnects, (x) => x.recovered),
+    dropGotGap: rate(dropGroup, (s) => gotAll(s, gapIds) && gotExercise(s, gapExerciseId)),
+    dropGotAfter: rate(dropGroup, (s) => gotAll(s, afterIds)),
+    dropInOrder: rate(dropGroup, inOrder),
+    freshFlaggedForReload: rate(freshReconnects, (x) => !x.recovered),
+    freshGotAfter: rate(freshGroup, (s) => gotAll(s, afterIds)),
+  };
 
-  const reconnectedReceived = disconnectedGroup.map((s) => afterIdsExpected.every((id) => receivedIds(s).includes(id)));
-  const reconnectedReceiptRate = reconnectedReceived.filter(Boolean).length / (disconnectedGroup.length || 1);
+  console.log(`\nControl group (${controlGroup.length}): received everything: ${pct(r.controlAll)}`);
+  console.log(`Drop group (${dropGroup.length}): session recovered ${pct(r.dropRecovered)}, ` +
+    `got what was sent while offline ${pct(r.dropGotGap)}, got after-batch ${pct(r.dropGotAfter)}, in order ${pct(r.dropInOrder)}`);
+  console.log(`Fresh group (${freshGroup.length}): not recovered (client would show reload banner) ${pct(r.freshFlaggedForReload)}, ` +
+    `got after-batch ${pct(r.freshGotAfter)}`);
 
-  console.log(`\nControl group (never disconnected) after-batch receipt: ${(controlReceiptRate * 100).toFixed(0)}%`);
-  console.log(`Reconnected group after-batch receipt: ${(reconnectedReceiptRate * 100).toFixed(0)}%`);
-
-  let verdict;
-  if (controlReceiptRate < 1 || baselineMisses.length > 0) {
-    verdict = "HARNESS ISSUE -- baseline or control group didn't get 100% receipt; results below are not meaningful. Check server is running and reachable.";
-  } else if (simulateFix) {
-    verdict = reconnectedReceiptRate === 1
-      ? "Fix validated: rejoin-on-reconnect resolves delivery for the reconnected group."
-      : `Fix did NOT fully resolve delivery (${(reconnectedReceiptRate * 100).toFixed(0)}%) -- the bug may be more subtle than the static-analysis theory.`;
-  } else if (reconnectedReceiptRate === 0) {
-    verdict = "Bug CONFIRMED: reconnected sockets receive none of the post-reconnect broadcasts.";
-  } else if (reconnectedReceiptRate === 1) {
-    verdict = "Bug REFUTED: reconnected sockets received all post-reconnect broadcasts.";
-  } else {
-    verdict = `INCONSISTENT (${(reconnectedReceiptRate * 100).toFixed(0)}%) -- partial receipt is a different, more surprising finding than the all-or-nothing bug suspected from static analysis. Investigate further.`;
-  }
-  console.log(`\n${verdict}`);
+  const harnessOk = baselineMisses === 0 && r.controlAll === 1;
+  const checks = [
+    [harnessOk, "baseline + control group received everything (harness sanity)"],
+    [r.dropRecovered === 1 && r.dropGotGap === 1, "network-drop students recovered and got every broadcast sent while offline"],
+    [r.dropGotAfter === 1 && r.dropInOrder === 1, "network-drop students got the after-batch, all edits in order"],
+    [r.freshFlaggedForReload === 1, "unrecoverable reconnects are detected (socket.recovered === false)"],
+    [r.freshGotAfter === 1, "unrecoverable reconnects rejoin the room and get the after-batch"],
+  ];
+  console.log();
+  for (const [ok, label] of checks) printVerdict(ok, label);
+  const passed = checks.every(([ok]) => ok);
 
   students.forEach((s) => s.close());
   instructorSocket.close();
 
   writeResults("reconnect-resilience", {
-    serverUrl, sessionName, studentCount, disconnectFraction, disconnectCount, simulateFix,
-    baselineMissCount: baselineMisses.length, controlReceiptRate, reconnectedReceiptRate, verdict,
+    serverUrl, sessionName, studentCount, disconnectFraction, offlineMs,
+    groupSizes: { control: controlGroup.length, drop: dropGroup.length, fresh: freshGroup.length },
+    baselineMissCount: baselineMisses, rates: r, passed,
   });
 
-  const harnessOk = controlReceiptRate === 1 && baselineMisses.length === 0;
-  process.exit(harnessOk ? 0 : 1);
+  process.exit(passed ? 0 : 1);
 }
 
 main().catch((error) => {

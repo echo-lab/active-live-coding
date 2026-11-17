@@ -71,6 +71,14 @@ export class SimulatedStudent extends EventEmitter {
     const socketConnectLatencyMs = performance.now() - connectT0;
 
     this.socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, this.sessionNumber);
+    // Mirrors joinLectureRoom (src/client/utils.js): re-join the room on every reconnect, and note
+    // whether Socket.IO's connection state recovery restored the session (and replayed what was
+    // missed) or this is a brand-new session (the real client would show its "reload" banner).
+    this.reconnects = [];
+    this.socket.on("connect", () => {
+      this.socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, this.sessionNumber);
+      this.reconnects.push({ recovered: this.socket.recovered });
+    });
 
     return {
       ok: true,
@@ -219,15 +227,32 @@ export class SimulatedStudent extends EventEmitter {
     return this.receivedEvents.filter((e) => e.type === type && predicate(e.payload)).length;
   }
 
-  // Reproduces the suspected reconnect bug's exact mechanism: a fresh transport reconnect gets a
-  // new server-side socket id. `rejoinOnReconnect` opts into the proposed fix (re-emit
-  // JOIN_SESSION on "connect") so the harness can validate the fix before it ships client-side.
-  forceDisconnectReconnect({ rejoinOnReconnect = false } = {}) {
-    return new Promise((resolve) => {
+  // A real network drop (wifi blip): closes the underlying transport without telling Socket.IO
+  // it was intentional, so the server keeps the session around for connection state recovery and
+  // the client auto-reconnects after ~offlineMs. Resolves once disconnected, with `reconnected`, a
+  // promise that resolves to {recovered} when the socket is back.
+  async simulateNetworkDrop({ offlineMs = 1500 } = {}) {
+    const manager = this.socket.io;
+    const saved = [manager.reconnectionDelay(), manager.reconnectionDelayMax(), manager.randomizationFactor()];
+    manager.reconnectionDelay(offlineMs).reconnectionDelayMax(offlineMs).randomizationFactor(0);
+    const disconnected = new Promise((resolve) => this.socket.once("disconnect", resolve));
+    const reconnected = new Promise((resolve) => {
       this.socket.once("connect", () => {
-        if (rejoinOnReconnect) this.socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, this.sessionNumber);
-        resolve();
+        manager.reconnectionDelay(saved[0]).reconnectionDelayMax(saved[1]).randomizationFactor(saved[2]);
+        resolve({ recovered: this.socket.recovered });
       });
+    });
+    manager.engine.close();
+    await disconnected;
+    return { reconnected };
+  }
+
+  // An intentional disconnect + reconnect, which Socket.IO never recovers -- stands in for a gap
+  // too long to recover (or a server restart): the socket gets a brand-new server-side session and
+  // only the rejoin-on-connect handler gets it back into the lecture room.
+  freshReconnect() {
+    return new Promise((resolve) => {
+      this.socket.once("connect", () => resolve({ recovered: this.socket.recovered }));
       this.socket.disconnect();
       this.socket.connect();
     });

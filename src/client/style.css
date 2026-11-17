@@ -2793,3 +2793,45 @@ body.file-tree-resizing {
 #workspace-row[hidden] {
   display: none;
 }
+
+/* Shown by joinLectureRoom (utils.js) when a socket reconnects without Socket.IO being able to
+   replay what it missed. Same palette as .historical-banner. */
+.reconnected-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  background-color: #fef3c7;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.9rem;
+  color: #78350f;
+}
+
+.reconnected-banner button {
+  background-color: #d97706;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.reconnected-banner button:hover {
+  background-color: #b45309;
+}
+
+.reconnected-banner button.reconnected-banner-dismiss {
+  background-color: transparent;
+  color: #78350f;
+  text-decoration: underline;
+}

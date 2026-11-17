@@ -1,4 +1,4 @@
-import { ANONYMOUS_STUDENT_MODE } from "../shared-constants.js";
+import { ANONYMOUS_STUDENT_MODE, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 
 export const JSON_HEADERS = { "Content-Type": "application/json" };
 export const GET_JSON_REQUEST = { method: "GET", headers: JSON_HEADERS };
@@ -32,6 +32,49 @@ export function getUserID() {
 // connection, e.g. the static review-lecture page.
 export function createNoopSocket() {
   return { on() {}, off() {}, emit() {} };
+}
+
+// Joins this socket to the lecture's broadcast room, and keeps it there across reconnects.
+//
+// A short blip (wifi drop, laptop sleep < 2 min) is handled entirely by Socket.IO's connection
+// state recovery (enabled server-side in main.js): the socket comes back with its rooms intact and
+// every broadcast it missed is replayed in order, so `socket.recovered` is true and nothing else is
+// needed. If recovery wasn't possible (longer outage, server restart), the socket is a brand-new
+// one: we re-join the room so live updates resume, but anything sent during the gap (new
+// exercises, version blocks, files, ...) was missed -- so we ask the user to reload. We don't
+// reload for them: a student could be mid-way through typing an answer.
+export function joinLectureRoom(socket, sessionNumber) {
+  socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
+  if (socket.__lectureRoomJoined) return; // initialize() called twice -- don't stack handlers
+  socket.__lectureRoomJoined = true;
+
+  let wasDisconnected = false;
+  socket.on("disconnect", () => {
+    wasDisconnected = true;
+  });
+  socket.on("connect", () => {
+    socket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, sessionNumber);
+    if (wasDisconnected && !socket.recovered) showReconnectedBanner();
+    wasDisconnected = false;
+  });
+}
+
+function showReconnectedBanner() {
+  if (document.querySelector(".reconnected-banner")) return;
+  const banner = document.createElement("div");
+  banner.className = "reconnected-banner";
+  banner.setAttribute("role", "alert");
+  const text = document.createElement("span");
+  text.textContent = "Your connection was interrupted, so you may have missed some updates.";
+  const reload = document.createElement("button");
+  reload.textContent = "Reload to catch up";
+  reload.addEventListener("click", () => location.reload());
+  const dismiss = document.createElement("button");
+  dismiss.className = "reconnected-banner-dismiss";
+  dismiss.textContent = "Dismiss";
+  dismiss.addEventListener("click", () => banner.remove());
+  banner.append(text, reload, dismiss);
+  document.body.append(banner);
 }
 
 // Returns true/false once the student has answered the consent form, or null

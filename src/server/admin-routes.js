@@ -1,3 +1,4 @@
+import { Sequelize } from "sequelize";
 import { db } from "./database.js";
 import { Event, decompressEventBatch } from "./events-database.js";
 import {
@@ -51,7 +52,7 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
     await Promise.all([flushLecture(lectureId), flushEvents()]);
 
     try {
-      const mainDbWork = db.transaction(async (t) => {
+      const mainDbWork = db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
         const lecture = await LectureSession.findByPk(lectureId, { transaction: t });
         if (!lecture) return { error: "Lecture not found" };
 
