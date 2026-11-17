@@ -643,6 +643,24 @@ export class InstructorCodeEditor {
     scrollIntoViewAccurate(this.view, () => widget.getPosition(this.view.state).from);
   }
 
+  // Like scrollToVersionBlock, but leaves the scroll position alone if the block's top is already
+  // on screen -- e.g. after adding a variant from the sidebar, where a jump would be jarring if
+  // the instructor can already see it. Checked on the next frame so a just-unhidden editor (tab
+  // switch) has been laid out first.
+  revealVersionBlock(versionBlockId) {
+    requestAnimationFrame(() => {
+      const widget = this.versionBlocks[versionBlockId];
+      if (!widget) return;
+      const el = widget.container;
+      if (el?.isConnected) {
+        const box = el.getBoundingClientRect();
+        const pane = this.view.scrollDOM.getBoundingClientRect();
+        if (box.height > 0 && box.top >= pane.top && box.top < pane.bottom - 40) return;
+      }
+      this.scrollToVersionBlock(versionBlockId);
+    });
+  }
+
   getDocVersion() {
     return this.docVersion;
   }

@@ -301,6 +301,17 @@ export class Workspace extends EventTarget {
     else editor.scrollToPollMarker(ex.id);
   }
 
+  // Switches to a code exercise's file and scrolls its version block into view only if it isn't
+  // already visible -- for actions that change the block from elsewhere (e.g. adding a variant
+  // from the sidebar), so the instructor sees the effect without an unnecessary jump.
+  revealExercise(ex) {
+    const fileId = this.fileIdForExercise(ex);
+    if (fileId == null) return;
+    this.openFile(fileId, { source: "exercise" });
+    if (ex.type === "CODE_VARIANT") this.editorFor(fileId).revealVersionBlock(ex.VersionBlockId);
+    else this.editorFor(fileId).scrollToPollMarker(ex.id);
+  }
+
   // Where to anchor an exercise's popover: on its code if that's in the visible file, else a fixed
   // point near the top-right of the code pane.
   anchorForExercise(ex) {

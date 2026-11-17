@@ -2413,6 +2413,25 @@ td {
 .poll-activity-header .poll-popover-close {
   align-self: flex-start;
 }
+
+/* Deliberately understated: a muted link beside the "x" that jumps back to the exercise's code. */
+.activity-show-in-code {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 10px 10px auto;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 400;
+  color: #999;
+  cursor: pointer;
+}
+
+.activity-show-in-code:hover {
+  color: #555;
+  text-decoration: underline;
+  border-color: transparent;
+}
 /* MARK: Multi-file workspace
    The file tree sits beside .parent-container in a flex row rather than inside its CSS grid:
    makeActivitiesPanelResizable rewrites the grid's columns as exactly three tracks. */

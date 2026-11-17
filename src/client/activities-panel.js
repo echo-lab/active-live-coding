@@ -699,7 +699,8 @@ export function computeMcqCounts(choices, responses) {
 // Builds a `.poll-activity-header` with a "back to list" link (left) and a "x" close button
 // (right) -- shared between the poll and code-exercise summary views, which both need identical
 // markup but different back/close behavior (the poll view also closes its linked popover).
-export function buildActivityHeader({ onBack, onClose }) {
+// `onShowInCode` (optional) adds a low-key "Show in code" link that jumps back to the exercise.
+export function buildActivityHeader({ onBack, onClose, onShowInCode }) {
   const header = document.createElement("div");
   header.className = "poll-activity-header";
 
@@ -708,6 +709,15 @@ export function buildActivityHeader({ onBack, onClose }) {
   backBtn.textContent = "← Back to list";
   backBtn.addEventListener("click", () => onBack());
   header.appendChild(backBtn);
+
+  if (onShowInCode) {
+    const showBtn = document.createElement("button");
+    showBtn.className = "activity-show-in-code";
+    showBtn.textContent = "Show in code";
+    showBtn.title = "Switch to this exercise's file and scroll to it";
+    showBtn.addEventListener("click", () => onShowInCode());
+    header.appendChild(showBtn);
+  }
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "poll-popover-close";
@@ -725,10 +735,11 @@ export function buildActivityHeader({ onBack, onClose }) {
 // sidebar -- the question and (for POLL_MCQ) results now live in InstructorPollCompletePopover
 // instead (see poll-complete-popover.js); this widget is only ever shown for type "POLL".
 class PollExerciseWidget {
-  constructor({ pollEl, onBack, onClose }) {
+  constructor({ pollEl, onBack, onClose, onShowInCode }) {
     this.pollEl = pollEl;
     this._onBack = onBack;
     this._onClose = onClose;
+    this._onShowInCode = onShowInCode;
     this._responsesEl = null;
   }
 
@@ -739,13 +750,17 @@ class PollExerciseWidget {
     this.pollEl.innerHTML = "";
   }
 
-  _buildHeader() {
-    this.pollEl.appendChild(buildActivityHeader({ onBack: this._onBack, onClose: this._onClose }));
+  _buildHeader(ex) {
+    this.pollEl.appendChild(buildActivityHeader({
+      onBack: this._onBack,
+      onClose: this._onClose,
+      onShowInCode: this._onShowInCode && (() => this._onShowInCode(ex)),
+    }));
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
     this._reset();
-    this._buildHeader();
+    this._buildHeader(ex);
 
     this._responsesEl = document.createElement("div");
     this._responsesEl.className = "responses-list";
@@ -772,18 +787,23 @@ class PollExerciseWidget {
 
 // MARK: CodeExerciseSummaryWidget
 class CodeExerciseSummaryWidget {
-  constructor({ codeExerciseEl, onBack, onClose, onAddAsVariant }) {
+  constructor({ codeExerciseEl, onBack, onClose, onAddAsVariant, onShowInCode }) {
     this.codeExerciseEl = codeExerciseEl;
     this._onBack = onBack;
     this._onClose = onClose;
     this._onAddAsVariant = onAddAsVariant;
+    this._onShowInCode = onShowInCode;
     this._responsesEl = null;
   }
 
   showSummary(ex, { loading = false, groups = undefined } = {}) {
     this.codeExerciseEl.innerHTML = "";
 
-    this.codeExerciseEl.appendChild(buildActivityHeader({ onBack: this._onBack, onClose: this._onClose }));
+    this.codeExerciseEl.appendChild(buildActivityHeader({
+      onBack: this._onBack,
+      onClose: this._onClose,
+      onShowInCode: this._onShowInCode && (() => this._onShowInCode(ex)),
+    }));
 
     this._responsesEl = document.createElement("div");
     this._responsesEl.className = "responses-list";
@@ -873,16 +893,25 @@ export class InstructorActivitiesPanel {
 
     document.querySelector("#activities-list-close").addEventListener("click", onClose);
 
+    // Same branching as clicking the exercise in the list: a deleted anchor has no live code to
+    // scroll to, so fall back to the historical view.
+    const onShowInCode = (ex) => {
+      if (isAnchorDeleted(ex)) this._openHistoricalView?.(ex);
+      else this._scrollToExercise?.(ex);
+    };
+
     this.pollSummaryWidget = new PollExerciseWidget({
       pollEl: this.pollEl,
       onBack: onPollBack,
       onClose,
+      onShowInCode,
     });
     this.codeWidget = new CodeExerciseSummaryWidget({
       codeExerciseEl: this.codeExerciseEl,
       onBack,
       onClose,
       onAddAsVariant: addResponseAsVariant,
+      onShowInCode,
     });
 
     this.#subscribeToManager();

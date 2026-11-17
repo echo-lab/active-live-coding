@@ -287,8 +287,12 @@ function initialize({
     },
     openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),
-    addResponseAsVariant: (ex, code, label) =>
-      workspace.editorForVersionBlock(ex.VersionBlockId)?.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label),
+    // Reveal the block first (switching files if needed) so the new variant's flash is visible.
+    addResponseAsVariant: (ex, code, label) => {
+      historicalController.returnToLive();
+      workspace.revealExercise(ex);
+      return workspace.editorForVersionBlock(ex.VersionBlockId)?.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label);
+    },
   });
 
   document.querySelector("#open-activities-panel").addEventListener("click", () => activitiesPanel.openToList());
