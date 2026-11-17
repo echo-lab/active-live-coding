@@ -9,8 +9,9 @@ import { INSTRUCTOR_AWARENESS, restartFlash } from "./instructor-awareness-confi
 // edit off-screen (offscreen.flashOnEdit). Clicking a bar scrolls to the instructor.
 //
 // Whether the bars apply at all is up to the caller's isActive() (StudentWorkspace: cues are on
-// and this is the instructor's active file); dispatch refreshAwarenessEffect when that may have
-// changed.
+// and this is the instructor's active file). Alternatively, while shouldAutoScroll() holds, the
+// editor itself scrolls (just enough) to keep the instructor's cursor / latest edit in view.
+// Dispatch refreshAwarenessEffect when either may have changed.
 
 // Instructor activity somewhere other than the main doc (e.g. a variant inside a version block):
 // value is a doc position.
@@ -47,7 +48,7 @@ function activityPos(update) {
   return pos;
 }
 
-export function instructorAwareness({ isActive }) {
+export function instructorAwareness({ isActive, shouldAutoScroll = () => false }) {
   const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
@@ -87,6 +88,14 @@ export function instructorAwareness({ isActive }) {
           this.lastActivityPos = pos;
           this.lastActivityAt = Date.now();
           this.pendingFlash = true;
+        }
+        const headMoved = update.startState.field(instructorHeadField, false) !== update.state.field(instructorHeadField, false);
+        const refreshed = update.transactions.some((tr) => tr.effects.some((e) => e.is(refreshAwarenessEffect)));
+        if ((pos != null || headMoved || refreshed) && shouldAutoScroll()) {
+          // Can't dispatch mid-update; "nearest" is a no-op while the target is already on screen.
+          queueMicrotask(() => {
+            if (this.view.dom.isConnected && shouldAutoScroll()) this.scrollToInstructor("nearest");
+          });
         }
         this.schedule();
       }
@@ -152,10 +161,10 @@ export function instructorAwareness({ isActive }) {
         }, INSTRUCTOR_AWARENESS.flashFadeMs);
       }
 
-      scrollToInstructor() {
+      scrollToInstructor(y = "center") {
         const pos = this._targetPos() ?? this.lastActivityPos;
         if (pos == null || pos > this.view.state.doc.length) return;
-        this.view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+        this.view.dispatch({ effects: EditorView.scrollIntoView(pos, { y, yMargin: 40 }) });
       }
 
       destroy() {

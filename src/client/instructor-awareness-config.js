@@ -4,8 +4,9 @@
 export const INSTRUCTOR_AWARENESS = {
   enabled: true,
 
-  // true: cues only show once the student has stopped following the instructor.
-  // false: they also show while following.
+  // true: the tree/tab cues only show once the student has stopped following the instructor.
+  // false: they also show while following. (The editor's edge bars while following are governed
+  // by the student's own follow-offscreen preference instead -- see getFollowOffscreenMode.)
   onlyWhenNotFollowing: true,
 
   // Tint + badge on the instructor's active file.
@@ -26,6 +27,31 @@ export const INSTRUCTOR_AWARENESS = {
   // Each keystroke flashes the cue, which immediately starts fading back over this long.
   flashFadeMs: 600,
 };
+
+// Student preference (gear menu) for when they're following and the instructor's cursor is
+// scrolled out of view:
+//   "cues":   show the off-screen edge bars, as when not following (default)
+//   "scroll": scroll the editor so the instructor stays in view (e.g. for projecting a student
+//             window to the class)
+const FOLLOW_OFFSCREEN_STORAGE_KEY = "student_follow_offscreen";
+export const FOLLOW_OFFSCREEN_MODES = ["cues", "scroll"];
+
+export function getFollowOffscreenMode() {
+  try {
+    const mode = localStorage.getItem(FOLLOW_OFFSCREEN_STORAGE_KEY);
+    return FOLLOW_OFFSCREEN_MODES.includes(mode) ? mode : "cues";
+  } catch {
+    return "cues";
+  }
+}
+
+export function setFollowOffscreenMode(mode) {
+  try {
+    localStorage.setItem(FOLLOW_OFFSCREEN_STORAGE_KEY, mode);
+  } catch {
+    // Storage unavailable (e.g. private mode) -- just don't remember it.
+  }
+}
 
 // The badge as a DOM element (fresh each call).
 export function makeInstructorBadge() {

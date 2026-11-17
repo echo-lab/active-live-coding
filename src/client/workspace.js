@@ -2,7 +2,7 @@ import { InstructorCodeEditor, StudentCodeEditor } from "./code-editors.js";
 import { versionBlocksField } from "./cm-version-widget.js";
 import { FileTabBar } from "./file-tabs.js";
 import { FileTreeView } from "./file-tree.js";
-import { INSTRUCTOR_AWARENESS } from "./instructor-awareness-config.js";
+import { INSTRUCTOR_AWARENESS, getFollowOffscreenMode, setFollowOffscreenMode } from "./instructor-awareness-config.js";
 import { instructorAwareness, instructorActivityEffect, refreshAwarenessEffect } from "./cm-instructor-awareness.js";
 import { recordEvent } from "./shared-interactions.js";
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, getMainFile, pathBasename, pathDirname } from "../shared-constants.js";
@@ -392,7 +392,9 @@ export class InstructorWorkspace extends Workspace {
 //
 // Awareness cues (live mode; see instructor-awareness-config.js): while not following, the
 // instructor's file is marked in the tree and tabs, files they type in glow, and in their file,
-// edge bars point at them when they're scrolled out of view.
+// edge bars point at them when they're scrolled out of view. While following, what happens when
+// the instructor is scrolled out of view is the student's choice (followOffscreenMode, gear menu):
+// "cues" shows the same edge bars; "scroll" scrolls the editor to keep the instructor in view.
 export class StudentWorkspace extends Workspace {
   constructor({ socket = null, mode = "live", instructorView = null, onOpenPollMarker, makeVersionBlockWidget = null, ...rest }) {
     super({ ...rest, editableTree: false });
@@ -402,6 +404,7 @@ export class StudentWorkspace extends Workspace {
     this.makeVersionBlockWidget = makeVersionBlockWidget;
     this.lastInstructorView = instructorView;
     this.following = true;
+    this.followOffscreenMode = getFollowOffscreenMode();
     this.sessionEnded = false;
 
     this.addEventListener("viewchange", ({ detail: { source, activeId } }) => {
@@ -457,13 +460,39 @@ export class StudentWorkspace extends Workspace {
     );
   }
 
+  // The editor's off-screen edge bars: always when not following; while following, only if the
+  // student chose cues over auto-scroll (or onlyWhenNotFollowing is off).
+  _edgeBarsActive() {
+    return (
+      INSTRUCTOR_AWARENESS.enabled &&
+      this.mode === "live" &&
+      !this.sessionEnded &&
+      (!this.following || this.followOffscreenMode === "cues" || !INSTRUCTOR_AWARENESS.onlyWhenNotFollowing)
+    );
+  }
+
+  // While following in "scroll" mode, the instructor's file keeps them in view.
+  _autoScrollActive() {
+    return this.mode === "live" && !this.sessionEnded && this.following && this.followOffscreenMode === "scroll";
+  }
+
+  setFollowOffscreenMode(mode) {
+    if (this.followOffscreenMode === mode) return;
+    this.followOffscreenMode = mode;
+    setFollowOffscreenMode(mode);
+    this._updateInstructorMarkers();
+  }
+
   // The instructor just edited `fileId` (in a variant of `versionBlockId`, if given): glow its tree
-  // row / tab, and let the editor's edge bars know. Main-doc edits reach the edge bars on their own.
+  // row / tab, and let the editor's edge bars / auto-scroll know. Main-doc edits reach the editor's
+  // awareness plugin on their own.
   _onInstructorActivity(fileId, editor = null, versionBlockId = null) {
-    if (!this._awarenessActive()) return;
-    const shouldFlash = (mode) => mode === "always" || (mode === "other-file" && fileId !== this.activeId);
-    if (shouldFlash(INSTRUCTOR_AWARENESS.flashTreeOnEdit)) this.tree.pulseFile(fileId);
-    if (shouldFlash(INSTRUCTOR_AWARENESS.flashTabOnEdit)) this.tabs.pulseTab(fileId);
+    if (this._awarenessActive()) {
+      const shouldFlash = (mode) => mode === "always" || (mode === "other-file" && fileId !== this.activeId);
+      if (shouldFlash(INSTRUCTOR_AWARENESS.flashTreeOnEdit)) this.tree.pulseFile(fileId);
+      if (shouldFlash(INSTRUCTOR_AWARENESS.flashTabOnEdit)) this.tabs.pulseTab(fileId);
+    }
+    if (!this._edgeBarsActive() && !this._autoScrollActive()) return;
     if (editor && versionBlockId != null) {
       const pos = editor.getVersionBlock(versionBlockId)?.getPosition(editor.view.state);
       const from = pos?.from ?? pos;
@@ -510,8 +539,14 @@ export class StudentWorkspace extends Workspace {
   _createEditor(file, node, versionBlocks) {
     const live = this.mode === "live";
     if (live) node.classList.add("uneditable");
+    const isInstructorFile = () => this.lastInstructorView?.activeFileId === file.id;
     const awareness = live
-      ? [instructorAwareness({ isActive: () => this._awarenessActive() && this.lastInstructorView?.activeFileId === file.id })]
+      ? [
+          instructorAwareness({
+            isActive: () => this._edgeBarsActive() && isInstructorFile(),
+            shouldAutoScroll: () => this._autoScrollActive() && isInstructorFile(),
+          }),
+        ]
       : [];
     return new StudentCodeEditor({
       node,

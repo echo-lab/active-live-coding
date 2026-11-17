@@ -148,6 +148,13 @@ async function initialize({
     workspace.setFollowing(true);
   });
 
+  // Gear menu: while following, auto-scroll to the instructor instead of showing off-screen cues.
+  const autoScrollCheckbox = document.querySelector("#auto-scroll-checkbox");
+  autoScrollCheckbox.checked = workspace.followOffscreenMode === "scroll";
+  autoScrollCheckbox.addEventListener("change", () => {
+    workspace.setFollowOffscreenMode(autoScrollCheckbox.checked ? "scroll" : "cues");
+  });
+
   let codeRunner = new PythonCodeRunner();
   let consoleOutput = new Console(codeOutputsEl, { authorLabels: true });
 
