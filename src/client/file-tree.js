@@ -1,5 +1,5 @@
 import { pathBasename, pathDirname, validateFilePath } from "../shared-constants.js";
-import { GlowTracker, makeInstructorBadge } from "./instructor-awareness-config.js";
+import { GlowTracker, makeExerciseBadge, makeInstructorBadge } from "./instructor-awareness-config.js";
 
 const COLLAPSED_STORAGE_KEY = "file_tree_collapsed";
 const WIDTH_STORAGE_KEY = "file_tree_width";
@@ -48,6 +48,8 @@ export class FileTreeView {
     // Student awareness cues: the instructor's file (tint + badge) and files they're typing in (glow).
     this.instructorFileId = null;
     this._glow = new GlowTracker();
+    // Files with an active exercise (red "?" badge).
+    this.exerciseFileIds = new Set();
     this.collapsedDirs = new Set();
     this.locked = false;
     this._menuEl = null;
@@ -116,7 +118,7 @@ export class FileTreeView {
     this.toggleBtn.textContent = collapsed ? "»" : "«";
     this.toggleBtn.title = collapsed ? "Show files" : "Hide files";
     if (remember) writePref(COLLAPSED_STORAGE_KEY, collapsed);
-    this._applyInstructorMarks(); // the toggle button stands in for the rows while collapsed
+    this._applyMarks(); // the toggle button stands in for the rows while collapsed
   }
 
   // The expanded panel's width, in px (clamped to [MIN_TREE_WIDTH, MAX_TREE_WIDTH]).
@@ -200,7 +202,15 @@ export class FileTreeView {
     const tree = this.fs.buildTree();
     const list = this._renderLevel(tree, 0);
     this.bodyEl.append(list);
-    this._applyInstructorMarks();
+    this._applyMarks();
+  }
+
+  // MARK: Badges
+
+  // Marks the files with an active exercise. Re-applied on every render.
+  setExerciseFiles(ids) {
+    this.exerciseFileIds = new Set(ids);
+    this._applyMarks();
   }
 
   // MARK: Instructor awareness (student page)
@@ -208,7 +218,7 @@ export class FileTreeView {
   // Marks the instructor's file (null: none). Re-applied on every render.
   setInstructorFile(id) {
     this.instructorFileId = id;
-    this._applyInstructorMarks();
+    this._applyMarks();
   }
 
   // Glows the file's row while the instructor types in it (fades shortly after the last call).
@@ -235,9 +245,17 @@ export class FileTreeView {
     return found;
   }
 
-  _applyInstructorMarks() {
+  // Re-applies the exercise badges, then the instructor's tint + badge (so the person comes last),
+  // then any glow -- each on the row standing in for its file.
+  _applyMarks() {
     for (const el of this.panelEl.querySelectorAll(".instructor-here")) el.classList.remove("instructor-here");
-    for (const el of this.panelEl.querySelectorAll(".instructor-badge")) el.remove();
+    for (const el of this.panelEl.querySelectorAll(".instructor-badge, .exercise-badge")) el.remove();
+    const exerciseRows = new Set();
+    for (const id of this.exerciseFileIds) {
+      const row = this._visibleRowFor(id);
+      if (row) exerciseRows.add(row);
+    }
+    for (const row of exerciseRows) row.append(makeExerciseBadge({ aggregate: !row.classList.contains("is-file") }));
     const el = this._visibleRowFor(this.instructorFileId);
     if (el) {
       el.classList.add("instructor-here");

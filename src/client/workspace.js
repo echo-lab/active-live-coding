@@ -72,6 +72,7 @@ export class Workspace extends EventTarget {
   _start(view) {
     for (const file of this.fs.allFiles()) this.getOrCreateEditor(file.id);
     this._setView(this._usableView(view), { source: "program" });
+    this._bindActivitiesManager(this.activitiesManager);
   }
 
   // `view` ({openFileIds, activeFileId}) as a tab state, or just the main file if none of its
@@ -100,6 +101,7 @@ export class Workspace extends EventTarget {
     this.openIds = [];
     this.activeId = null;
     this._setView(this._usableView(view ?? kept), { source: "program" });
+    this._bindActivitiesManager(activitiesManager);
   }
 
   // Overridden by subclasses that let the user edit the tree.
@@ -220,6 +222,7 @@ export class Workspace extends EventTarget {
       for (const id of ids) this._destroyEditor(id);
       this._setView({ openIds: this.openIds, activeId: this.activeId }, { source: "program" });
     }
+    this._updateExerciseMarkers();
   }
 
   _destroyEditor(fileId) {
@@ -248,6 +251,32 @@ export class Workspace extends EventTarget {
   }
 
   // MARK: Exercises
+
+  // Listens to `manager` (dropping the previous one's listener -- load() can swap managers) so the
+  // active-exercise badges in the tree and tabs stay current.
+  _bindActivitiesManager(manager) {
+    if (this._boundManager !== manager) {
+      this._onExercisesChanged ??= () => this._updateExerciseMarkers();
+      for (const type of ["exerciseCreated", "exerciseFinished", "exerciseUpdated"]) {
+        this._boundManager?.removeEventListener(type, this._onExercisesChanged);
+        manager?.addEventListener(type, this._onExercisesChanged);
+      }
+      this._boundManager = manager;
+    }
+    this._updateExerciseMarkers();
+  }
+
+  // Badges every file holding an active exercise (whose code is still somewhere in a file).
+  _updateExerciseMarkers() {
+    const ids = new Set();
+    for (const ex of this.activitiesManager?.getActiveExercises() ?? []) {
+      if (ex.VersionBlock?.deleted) continue;
+      const fileId = this.fileIdForExercise(ex);
+      if (fileId != null) ids.add(fileId);
+    }
+    this.tree.setExerciseFiles(ids);
+    this.tabs.setExerciseFiles(ids);
+  }
 
   // The file an exercise's code lives in: a code exercise's version block's file, or a poll's
   // anchor file. Null if unknown (e.g. a standalone poll, or its version block was dissolved).
@@ -437,14 +466,20 @@ export class StudentWorkspace extends Workspace {
         if (msg.fileId != null) this._onInstructorActivity(msg.fileId);
       // falls through
       case SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR:
-      case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED:
         if (msg.fileId == null) return;
         return this.editorFor(msg.fileId)?.handleSocketMessage(type, msg);
+      case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED:
+        if (msg.fileId == null) return;
+        this.editorFor(msg.fileId)?.handleSocketMessage(type, msg);
+        // A code exercise's file is found through its version block.
+        return this._updateExerciseMarkers();
       default: {
         // Variant messages and VERSION_BLOCK_DELETED name a version block, not a file.
         const editor = this.editorForVersionBlock(msg.versionBlockId);
         if (type === SOCKET_MESSAGE_TYPE.VARIANT_EDIT && editor) this._onInstructorActivity(editor.fileId, editor, msg.versionBlockId);
-        return editor?.handleSocketMessage(type, msg);
+        editor?.handleSocketMessage(type, msg);
+        if (type === SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED) this._updateExerciseMarkers();
+        return;
       }
     }
   }

@@ -2835,3 +2835,37 @@ body.file-tree-resizing {
   color: #78350f;
   text-decoration: underline;
 }
+
+/* MARK: Active-exercise badge (makeExerciseBadge in instructor-awareness-config.js)
+   A file (tree row / tab) holding an active exercise (poll or code): the live-poll gutter marker's
+   red "?", minus the pulse. Sits before the instructor badge when both are shown. */
+.exercise-badge {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #e5484d;
+  color: white;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+  font-weight: bold;
+  line-height: 12px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* Right-aligned in a tree row; the instructor badge then follows at the row's gap. */
+.file-tree-row .exercise-badge {
+  margin-left: auto;
+}
+
+.file-tree-row .exercise-badge + .instructor-badge {
+  margin-left: 0;
+}
+
+/* Non-flex stand-ins (the tab overflow button, the collapsed tree's toggle). */
+.file-tabs-overflow-btn .exercise-badge,
+.file-tree-toggle .exercise-badge {
+  margin-left: 4px;
+}

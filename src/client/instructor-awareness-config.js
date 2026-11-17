@@ -109,3 +109,15 @@ export function restartFlash(el, className) {
   void el.offsetWidth;
   el.classList.add(className);
 }
+
+// MARK: Active-exercise badge
+// The red "?" (the live-poll gutter marker's look) on tree rows / tabs whose file has an active
+// exercise (poll or code). `aggregate`: the element stands in for several files (a collapsed
+// folder, the collapsed tree's toggle, the tab overflow button). Fresh element each call.
+export function makeExerciseBadge({ aggregate = false } = {}) {
+  const el = document.createElement("span");
+  el.className = "exercise-badge";
+  el.textContent = "?";
+  el.title = aggregate ? "An exercise is active in a file in here" : "An exercise is active in this file";
+  return el;
+}

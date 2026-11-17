@@ -1,4 +1,4 @@
-import { GlowTracker, makeInstructorBadge } from "./instructor-awareness-config.js";
+import { GlowTracker, makeExerciseBadge, makeInstructorBadge } from "./instructor-awareness-config.js";
 
 // MARK: FileTabBar
 // A strip of closable file tabs. DOM only: the open/active state lives in the controller
@@ -21,6 +21,8 @@ export class FileTabBar {
     // Student awareness cues: the instructor's file (tint + badge) and files they're typing in (glow).
     this.instructorFileId = null;
     this._glow = new GlowTracker();
+    // Files with an active exercise (red "?" badge).
+    this.exerciseFileIds = new Set();
 
     containerEl.classList.add("file-tabs");
 
@@ -78,12 +80,20 @@ export class FileTabBar {
     this._layout();
   }
 
+  // MARK: Badges
+
+  // Marks the tabs of files with an active exercise. Kept across re-renders.
+  setExerciseFiles(ids) {
+    this.exerciseFileIds = new Set(ids);
+    this._applyMarks();
+  }
+
   // MARK: Instructor awareness (student page)
 
   // Marks the instructor's file's tab (null: none). Kept across re-renders.
   setInstructorFile(id) {
     this.instructorFileId = id;
-    this._applyInstructorMarks();
+    this._applyMarks();
   }
 
   // Glows the file's tab (if open) while the instructor types in it.
@@ -99,20 +109,32 @@ export class FileTabBar {
     return tab.hidden ? this.overflowBtn : tab;
   }
 
-  _applyInstructorMarks() {
+  // Re-applies the exercise badges, then the instructor's tint + badge (so the person comes last),
+  // then any glow -- each on the tab standing in for its file.
+  _applyMarks() {
     for (const el of this.containerEl.querySelectorAll(".instructor-here")) el.classList.remove("instructor-here");
-    for (const el of this.containerEl.querySelectorAll(".instructor-badge")) el.remove();
+    for (const el of this.containerEl.querySelectorAll(".instructor-badge, .exercise-badge")) el.remove();
     this.overflowBtn.classList.remove(this._glow.className);
     for (const tab of this.tabEls?.values() ?? []) tab.classList.remove(this._glow.className);
+
+    // On a tab, badges go before the close button.
+    const addBadge = (el, badge) => {
+      const close = el.querySelector(".file-tab-close");
+      if (close) close.before(badge);
+      else el.append(badge);
+    };
+    const exerciseEls = new Set();
+    for (const id of this.exerciseFileIds) {
+      if (!this.openIds.includes(id)) continue;
+      const el = this._visibleTabFor(id);
+      if (el) exerciseEls.add(el);
+    }
+    for (const el of exerciseEls) addBadge(el, makeExerciseBadge({ aggregate: el === this.overflowBtn }));
 
     const el = this.instructorFileId != null ? this._visibleTabFor(this.instructorFileId) : null;
     if (el) {
       el.classList.add("instructor-here");
-      const badge = makeInstructorBadge();
-      // On a tab, the badge goes before the close button.
-      const close = el.querySelector(".file-tab-close");
-      if (close) close.before(badge);
-      else el.append(badge);
+      addBadge(el, makeInstructorBadge());
     }
     for (const id of this._glow.glowingKeys()) this._visibleTabFor(id)?.classList.add(this._glow.className);
   }
@@ -166,7 +188,7 @@ export class FileTabBar {
   _layout() {
     this._fitTabs();
     // Again now that we know which tabs overflowed (and the overflow button's label is final).
-    this._applyInstructorMarks();
+    this._applyMarks();
   }
 
   // Decides which tabs fit, hiding the rest and listing them in the overflow menu.
@@ -174,8 +196,8 @@ export class FileTabBar {
     const tabs = this.openIds.map((id) => [id, this.tabEls.get(id)]);
     for (const [, el] of tabs) el.hidden = false;
     this.overflowWrap.hidden = true;
-    // Measure with the instructor badge in place, so a badged tab isn't squeezed.
-    this._applyInstructorMarks();
+    // Measure with the badges in place, so a badged tab isn't squeezed.
+    this._applyMarks();
     if (tabs.length === 0) return;
 
     const available = this._availableWidth();
