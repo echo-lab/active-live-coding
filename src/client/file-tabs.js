@@ -1,3 +1,5 @@
+import { GlowTracker, makeInstructorBadge } from "./instructor-awareness-config.js";
+
 // MARK: FileTabBar
 // A strip of closable file tabs. DOM only: the open/active state lives in the controller
 // (workspace.js), which pushes it in with setState(). setState never fires callbacks; only real
@@ -16,6 +18,9 @@ export class FileTabBar {
     this.onClose = onClose;
     this.openIds = [];
     this.activeId = null;
+    // Student awareness cues: the instructor's file (tint + badge) and files they're typing in (glow).
+    this.instructorFileId = null;
+    this._glow = new GlowTracker();
 
     containerEl.classList.add("file-tabs");
 
@@ -73,6 +78,45 @@ export class FileTabBar {
     this._layout();
   }
 
+  // MARK: Instructor awareness (student page)
+
+  // Marks the instructor's file's tab (null: none). Kept across re-renders.
+  setInstructorFile(id) {
+    this.instructorFileId = id;
+    this._applyInstructorMarks();
+  }
+
+  // Glows the file's tab (if open) while the instructor types in it.
+  pulseTab(id) {
+    if (!this.openIds.includes(id)) return;
+    this._glow.pulse(id, () => this._visibleTabFor(id));
+  }
+
+  // The file's tab, or the "▾ N more" button if the tab is in the overflow menu.
+  _visibleTabFor(id) {
+    const tab = this.tabEls?.get(id);
+    if (!tab) return null;
+    return tab.hidden ? this.overflowBtn : tab;
+  }
+
+  _applyInstructorMarks() {
+    for (const el of this.containerEl.querySelectorAll(".instructor-here")) el.classList.remove("instructor-here");
+    for (const el of this.containerEl.querySelectorAll(".instructor-badge")) el.remove();
+    this.overflowBtn.classList.remove(this._glow.className);
+    for (const tab of this.tabEls?.values() ?? []) tab.classList.remove(this._glow.className);
+
+    const el = this.instructorFileId != null ? this._visibleTabFor(this.instructorFileId) : null;
+    if (el) {
+      el.classList.add("instructor-here");
+      const badge = makeInstructorBadge();
+      // On a tab, the badge goes before the close button.
+      const close = el.querySelector(".file-tab-close");
+      if (close) close.before(badge);
+      else el.append(badge);
+    }
+    for (const id of this._glow.glowingKeys()) this._visibleTabFor(id)?.classList.add(this._glow.className);
+  }
+
   _makeTab(id) {
     const { label, title } = this.getLabel(id);
     const tab = document.createElement("div");
@@ -119,11 +163,19 @@ export class FileTabBar {
     return width;
   }
 
-  // Decides which tabs fit, hiding the rest and listing them in the overflow menu.
   _layout() {
+    this._fitTabs();
+    // Again now that we know which tabs overflowed (and the overflow button's label is final).
+    this._applyInstructorMarks();
+  }
+
+  // Decides which tabs fit, hiding the rest and listing them in the overflow menu.
+  _fitTabs() {
     const tabs = this.openIds.map((id) => [id, this.tabEls.get(id)]);
     for (const [, el] of tabs) el.hidden = false;
     this.overflowWrap.hidden = true;
+    // Measure with the instructor badge in place, so a badged tab isn't squeezed.
+    this._applyInstructorMarks();
     if (tabs.length === 0) return;
 
     const available = this._availableWidth();

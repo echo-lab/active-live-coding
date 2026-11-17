@@ -2,6 +2,8 @@ import { InstructorCodeEditor, StudentCodeEditor } from "./code-editors.js";
 import { versionBlocksField } from "./cm-version-widget.js";
 import { FileTabBar } from "./file-tabs.js";
 import { FileTreeView } from "./file-tree.js";
+import { INSTRUCTOR_AWARENESS } from "./instructor-awareness-config.js";
+import { instructorAwareness, instructorActivityEffect, refreshAwarenessEffect } from "./cm-instructor-awareness.js";
 import { recordEvent } from "./shared-interactions.js";
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, getMainFile, pathBasename, pathDirname } from "../shared-constants.js";
 
@@ -387,6 +389,10 @@ export class InstructorWorkspace extends Workspace {
 // the instructor isn't showing, or edit their own answer to a code exercise -- from then on,
 // instructor edits still stream in, but tab changes no longer move the student. setFollowing(true)
 // snaps back to the instructor's current tabs. Dispatches "followchange" ({detail: {following}}).
+//
+// Awareness cues (live mode; see instructor-awareness-config.js): while not following, the
+// instructor's file is marked in the tree and tabs, files they type in glow, and in their file,
+// edge bars point at them when they're scrolled out of view.
 export class StudentWorkspace extends Workspace {
   constructor({ socket = null, mode = "live", instructorView = null, onOpenPollMarker, makeVersionBlockWidget = null, ...rest }) {
     super({ ...rest, editableTree: false });
@@ -396,11 +402,16 @@ export class StudentWorkspace extends Workspace {
     this.makeVersionBlockWidget = makeVersionBlockWidget;
     this.lastInstructorView = instructorView;
     this.following = true;
+    this.sessionEnded = false;
 
     this.addEventListener("viewchange", ({ detail: { source, activeId } }) => {
       if (source === "user") this.setFollowing(false);
       // Revealing an exercise only breaks away if it lands somewhere the instructor isn't.
       else if (source === "exercise" && activeId !== this.lastInstructorView?.activeFileId) this.setFollowing(false);
+    });
+    // A newly shown editor couldn't measure while hidden -- have it recheck its edge bars.
+    this.addEventListener("activechange", ({ detail: { editor } }) => {
+      editor?.view?.dispatch({ effects: refreshAwarenessEffect.of(null) });
     });
 
     if (socket) {
@@ -414,24 +425,65 @@ export class StudentWorkspace extends Workspace {
     }
 
     this._start(instructorView);
+    this._updateInstructorMarkers();
   }
 
   _routeInstructorMessage(type, msg) {
     switch (type) {
       case SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT:
+        if (msg.fileId != null) this._onInstructorActivity(msg.fileId);
+      // falls through
       case SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR:
       case SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED:
         if (msg.fileId == null) return;
         return this.editorFor(msg.fileId)?.handleSocketMessage(type, msg);
-      default:
+      default: {
         // Variant messages and VERSION_BLOCK_DELETED name a version block, not a file.
-        return this.editorForVersionBlock(msg.versionBlockId)?.handleSocketMessage(type, msg);
+        const editor = this.editorForVersionBlock(msg.versionBlockId);
+        if (type === SOCKET_MESSAGE_TYPE.VARIANT_EDIT && editor) this._onInstructorActivity(editor.fileId, editor, msg.versionBlockId);
+        return editor?.handleSocketMessage(type, msg);
+      }
     }
+  }
+
+  // MARK: Awareness cues
+
+  _awarenessActive() {
+    return (
+      INSTRUCTOR_AWARENESS.enabled &&
+      this.mode === "live" &&
+      !this.sessionEnded &&
+      (!this.following || !INSTRUCTOR_AWARENESS.onlyWhenNotFollowing)
+    );
+  }
+
+  // The instructor just edited `fileId` (in a variant of `versionBlockId`, if given): glow its tree
+  // row / tab, and let the editor's edge bars know. Main-doc edits reach the edge bars on their own.
+  _onInstructorActivity(fileId, editor = null, versionBlockId = null) {
+    if (!this._awarenessActive()) return;
+    const shouldFlash = (mode) => mode === "always" || (mode === "other-file" && fileId !== this.activeId);
+    if (shouldFlash(INSTRUCTOR_AWARENESS.flashTreeOnEdit)) this.tree.pulseFile(fileId);
+    if (shouldFlash(INSTRUCTOR_AWARENESS.flashTabOnEdit)) this.tabs.pulseTab(fileId);
+    if (editor && versionBlockId != null) {
+      const pos = editor.getVersionBlock(versionBlockId)?.getPosition(editor.view.state);
+      const from = pos?.from ?? pos;
+      if (typeof from === "number") editor.view.dispatch({ effects: instructorActivityEffect.of(from) });
+    }
+  }
+
+  // Marks (or unmarks, when the cues are off) the instructor's file, and has every editor recheck
+  // its edge bars.
+  _updateInstructorMarkers() {
+    const id = this._awarenessActive() ? (this.lastInstructorView?.activeFileId ?? null) : null;
+    this.tree.setInstructorFile(INSTRUCTOR_AWARENESS.markInstructorFile.tree ? id : null);
+    this.tabs.setInstructorFile(INSTRUCTOR_AWARENESS.markInstructorFile.tab ? id : null);
+    for (const editor of this.editors.values()) editor.view?.dispatch({ effects: refreshAwarenessEffect.of(null) });
   }
 
   _onInstructorView({ openFileIds, activeFileId }) {
     this.lastInstructorView = { openFileIds, activeFileId };
     if (this.following) this._applyInstructorView();
+    this._updateInstructorMarkers();
   }
 
   _applyInstructorView() {
@@ -444,17 +496,23 @@ export class StudentWorkspace extends Workspace {
   load({ instructorView = null, ...rest }) {
     this.lastInstructorView = instructorView;
     super.load({ ...rest, view: this.following ? instructorView : null });
+    this._updateInstructorMarkers();
   }
 
   setFollowing(following) {
     if (this.following === following) return;
     this.following = following;
     if (following) this._applyInstructorView();
+    this._updateInstructorMarkers();
     this.dispatchEvent(new CustomEvent("followchange", { detail: { following } }));
   }
 
   _createEditor(file, node, versionBlocks) {
-    if (this.mode === "live") node.classList.add("uneditable");
+    const live = this.mode === "live";
+    if (live) node.classList.add("uneditable");
+    const awareness = live
+      ? [instructorAwareness({ isActive: () => this._awarenessActive() && this.lastInstructorView?.activeFileId === file.id })]
+      : [];
     return new StudentCodeEditor({
       node,
       doc: file.doc,
@@ -462,7 +520,7 @@ export class StudentWorkspace extends Workspace {
       fileId: file.id,
       fileName: file.name,
       sessionId: this.sessionNumber,
-      extraExtensions: [versionBlocksField],
+      extraExtensions: [versionBlocksField, ...awareness],
       versionBlocks,
       activitiesManager: this.activitiesManager,
       onOpenPollMarker: this.onOpenPollMarker,
@@ -474,6 +532,8 @@ export class StudentWorkspace extends Workspace {
 
   // The session ended: stop applying instructor edits.
   stopFollowing() {
+    this.sessionEnded = true;
     for (const editor of this.editors.values()) editor.stopFollowing();
+    this._updateInstructorMarkers();
   }
 }

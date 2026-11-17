@@ -1,4 +1,5 @@
 import { pathBasename, pathDirname, validateFilePath } from "../shared-constants.js";
+import { GlowTracker, makeInstructorBadge } from "./instructor-awareness-config.js";
 
 const COLLAPSED_STORAGE_KEY = "file_tree_collapsed";
 const WIDTH_STORAGE_KEY = "file_tree_width";
@@ -44,6 +45,9 @@ export class FileTreeView {
     this.editable = editable;
     this.callbacks = { onOpenFile, onCreateFile, onCreateDir, onRename, onDelete };
     this.activeFileId = null;
+    // Student awareness cues: the instructor's file (tint + badge) and files they're typing in (glow).
+    this.instructorFileId = null;
+    this._glow = new GlowTracker();
     this.collapsedDirs = new Set();
     this.locked = false;
     this._menuEl = null;
@@ -112,6 +116,7 @@ export class FileTreeView {
     this.toggleBtn.textContent = collapsed ? "»" : "«";
     this.toggleBtn.title = collapsed ? "Show files" : "Hide files";
     if (remember) writePref(COLLAPSED_STORAGE_KEY, collapsed);
+    this._applyInstructorMarks(); // the toggle button stands in for the rows while collapsed
   }
 
   // The expanded panel's width, in px (clamped to [MIN_TREE_WIDTH, MAX_TREE_WIDTH]).
@@ -195,6 +200,50 @@ export class FileTreeView {
     const tree = this.fs.buildTree();
     const list = this._renderLevel(tree, 0);
     this.bodyEl.append(list);
+    this._applyInstructorMarks();
+  }
+
+  // MARK: Instructor awareness (student page)
+
+  // Marks the instructor's file (null: none). Re-applied on every render.
+  setInstructorFile(id) {
+    this.instructorFileId = id;
+    this._applyInstructorMarks();
+  }
+
+  // Glows the file's row while the instructor types in it (fades shortly after the last call).
+  pulseFile(id) {
+    this._glow.pulse(id, () => this._visibleRowFor(id));
+  }
+
+  // The row standing in for a file: its own row, or the nearest folder row above it if it's inside
+  // a collapsed folder, or the panel's toggle button if the whole tree is collapsed.
+  _visibleRowFor(id) {
+    if (id == null) return null;
+    if (this.panelEl.classList.contains("collapsed")) return this.toggleBtn;
+    const row = this.bodyEl.querySelector(`.file-tree-row[data-file-id="${id}"]`);
+    if (row) return row;
+    const file = this.fs.getFile(id);
+    let dir = file ? pathDirname(file.name) : "";
+    let found = null;
+    // Walk up and keep the outermost rendered folder row (inner ones aren't shown).
+    while (dir) {
+      const dirRow = this.bodyEl.querySelector(`.file-tree-row.is-dir[data-path="${CSS.escape(dir)}"]`);
+      if (dirRow) found = dirRow;
+      dir = pathDirname(dir);
+    }
+    return found;
+  }
+
+  _applyInstructorMarks() {
+    for (const el of this.panelEl.querySelectorAll(".instructor-here")) el.classList.remove("instructor-here");
+    for (const el of this.panelEl.querySelectorAll(".instructor-badge")) el.remove();
+    const el = this._visibleRowFor(this.instructorFileId);
+    if (el) {
+      el.classList.add("instructor-here");
+      el.append(makeInstructorBadge());
+    }
+    for (const id of this._glow.glowingKeys()) this._visibleRowFor(id)?.classList.add(this._glow.className);
   }
 
   _renderLevel(node, depth) {

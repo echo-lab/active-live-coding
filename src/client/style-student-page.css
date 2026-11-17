@@ -190,3 +190,183 @@
 .follow-instructor-btn[hidden] {
   display: none;
 }
+
+/* MARK: Instructor awareness cues (see instructor-awareness-config.js)
+   Instructor pink, the same family as the instructor's selection highlight (.cm-highlight). */
+:root {
+  --instructor-accent: rgb(214 51 165);
+  --instructor-tint: rgb(242 117 204 / 16%);
+  --instructor-glow: rgb(242 117 204 / 42%);
+}
+
+.instructor-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--instructor-accent);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.code-tab .instructor-badge {
+  margin-left: 0;
+}
+
+.instructor-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--instructor-accent);
+}
+
+/* The instructor's file. */
+.file-tree-row.instructor-here,
+.code-tab.file-tab.instructor-here,
+.file-tabs-overflow-btn.instructor-here {
+  background-color: var(--instructor-tint);
+}
+
+.file-tree-row.active.instructor-here {
+  background-image: linear-gradient(var(--instructor-tint), var(--instructor-tint));
+}
+
+/* The instructor is typing here: each keystroke flashes the glow color, which immediately fades
+   back to whatever the element normally looks like (the keyframes only set the start, so the end
+   is the element's own style). JS restarts the animation on every keystroke. */
+@keyframes instructor-flash-row {
+  from {
+    background-color: var(--instructor-glow);
+    box-shadow: inset 3px 0 0 var(--instructor-accent);
+  }
+}
+
+@keyframes instructor-flash-tab {
+  from {
+    background-color: var(--instructor-glow);
+    box-shadow: inset 0 -2px 0 var(--instructor-accent);
+  }
+}
+
+.file-tree-row.instructor-activity,
+.file-tabs-overflow-btn.instructor-activity,
+.file-tree-toggle.instructor-activity {
+  animation: instructor-flash-row var(--instructor-flash-ms, 600ms) ease-out;
+}
+
+.code-tab.file-tab.instructor-activity {
+  animation: instructor-flash-tab var(--instructor-flash-ms, 600ms) ease-out;
+}
+
+/* Edge bars: the instructor is above/below the visible part of this file. */
+.cm-instructor-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 26px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 14px;
+  pointer-events: none;
+}
+
+/* The flash overlay: a stronger copy of the bar's gradient that fades out on each edit. */
+.cm-instructor-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cm-instructor-edge.above::before {
+  background: linear-gradient(to bottom, var(--instructor-glow), transparent);
+}
+
+.cm-instructor-edge.below::before {
+  background: linear-gradient(to top, var(--instructor-glow), transparent);
+}
+
+@keyframes instructor-flash-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes instructor-flash-pill {
+  from {
+    opacity: 1;
+    box-shadow: 0 0 0 3px var(--instructor-glow);
+  }
+}
+
+.cm-instructor-edge.active-edit::before {
+  animation: instructor-flash-fade var(--instructor-flash-ms, 600ms) ease-out;
+}
+
+.cm-instructor-edge.active-edit .cm-instructor-edge-pill {
+  animation: instructor-flash-pill var(--instructor-flash-ms, 600ms) ease-out;
+}
+
+.cm-instructor-edge[hidden] {
+  display: none;
+}
+
+.cm-instructor-edge.above {
+  top: 0;
+  background: linear-gradient(to bottom, var(--instructor-tint), transparent);
+}
+
+.cm-instructor-edge.below {
+  bottom: 0;
+  background: linear-gradient(to top, var(--instructor-tint), transparent);
+}
+
+.code-container .cm-instructor-edge-pill {
+  pointer-events: auto;
+  padding: 1px 9px;
+  border: 1px solid rgb(242 117 204 / 55%);
+  border-radius: 999px;
+  background-color: white;
+  color: var(--instructor-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.code-container .cm-instructor-edge-pill:hover {
+  opacity: 1;
+}
+
+/* Reduced motion: no fading -- a short, steady tint instead. */
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-row.instructor-activity,
+  .file-tabs-overflow-btn.instructor-activity,
+  .file-tree-toggle.instructor-activity,
+  .code-tab.file-tab.instructor-activity {
+    animation: none;
+    background-color: var(--instructor-glow);
+  }
+
+  .cm-instructor-edge.active-edit::before {
+    animation: none;
+    opacity: 1;
+  }
+
+  .cm-instructor-edge.active-edit .cm-instructor-edge-pill {
+    animation: none;
+  }
+
+  .code-container .cm-instructor-edge-pill {
+    transition: none;
+  }
+}
