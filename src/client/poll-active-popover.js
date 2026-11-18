@@ -312,6 +312,10 @@ export class StudentActivePollPopover {
     footer.className = "poll-text-answer-footer";
     root.appendChild(footer);
 
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "poll-popover-submit-btn";
+    footer.appendChild(submitBtn);
+
     const statusEl = document.createElement("div");
     statusEl.className = "poll-submission-status";
     const statusCheck = document.createElement("span");
@@ -322,9 +326,6 @@ export class StudentActivePollPopover {
     statusEl.appendChild(statusText);
     footer.appendChild(statusEl);
 
-    const submitBtn = document.createElement("button");
-    submitBtn.className = "poll-popover-submit-btn";
-    footer.appendChild(submitBtn);
 
     let submittedAnswer = myResponse?.answer ?? null;
     let submittedAt = myResponse?.submitted_ts ?? null;

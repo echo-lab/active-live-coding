@@ -2325,6 +2325,7 @@ td {
   gap: 4px;
   font-size: 12px;
   color: #888;
+  padding-left: 10px;
 }
 
 .poll-submission-status-check {
