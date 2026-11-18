@@ -77,6 +77,60 @@ function showReconnectedBanner() {
   document.body.append(banner);
 }
 
+// MARK: Rejoin after reload
+// "?lecture=<name>" makes the instructor/student page join that lecture on load, skipping the
+// join modal -- so the Reload button on a locked tab drops you straight back into the lecture.
+const LECTURE_URL_PARAM = "lecture";
+
+// Reloads this page, rejoining `sessionName` (the name typed into the join modal) automatically.
+export function reloadIntoLecture(sessionName) {
+  if (!sessionName) return location.reload();
+  const url = new URL(location.href);
+  url.searchParams.set(LECTURE_URL_PARAM, sessionName);
+  location.replace(url);
+}
+
+// Returns the lecture name from "?lecture=" (or null), and strips it from the address bar so it
+// doesn't linger in bookmarks/copied links or re-trigger on a later manual refresh.
+export function takeLectureFromUrl() {
+  const url = new URL(location.href);
+  const name = url.searchParams.get(LECTURE_URL_PARAM)?.trim();
+  if (url.searchParams.has(LECTURE_URL_PARAM)) {
+    url.searchParams.delete(LECTURE_URL_PARAM);
+    history.replaceState(history.state, "", url);
+  }
+  return name || null;
+}
+
+// Blocks the whole page with a non-dismissable notice + Reload button. Used when this tab must stop
+// interacting -- e.g. it's a stale duplicate of a lecture being edited in another tab/window. The
+// caller is responsible for actually making the page read-only; this is just the notice (which
+// also swallows clicks/keys aimed at the page underneath). Idempotent. Pass `sessionName` so Reload
+// rejoins that lecture automatically.
+export function showStaleTabOverlay({ title, message, sessionName = null }) {
+  if (document.querySelector(".stale-tab-overlay")) return;
+  document.querySelector(".reconnected-banner")?.remove(); // superseded
+  const overlay = document.createElement("div");
+  overlay.className = "stale-tab-overlay";
+  const dialog = document.createElement("div");
+  dialog.className = "stale-tab-dialog";
+  dialog.setAttribute("role", "alertdialog");
+  dialog.setAttribute("aria-modal", "true");
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+  const text = document.createElement("p");
+  text.textContent = message;
+  const reload = document.createElement("button");
+  reload.textContent = "Reload";
+  reload.addEventListener("click", () => reloadIntoLecture(sessionName));
+  dialog.append(heading, text, reload);
+  overlay.append(dialog);
+  document.body.append(overlay);
+  // Pull focus out of any editor so keystrokes can't land there.
+  document.activeElement?.blur?.();
+  reload.focus();
+}
+
 // Returns true/false once the student has answered the consent form, or null
 // if they haven't been asked yet (or their answer hasn't been recorded).
 export function getConsentChoice() {

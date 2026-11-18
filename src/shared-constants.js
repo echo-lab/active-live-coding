@@ -136,6 +136,10 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   STUDENT_CODE_EDIT: "STUDENT_CODE_EDIT",
   STUDENT_NOTES_EDIT: "STUDENT_NOTES_EDIT",
   INSTRUCTOR_OUT_OF_SYNC: "INSTRUCTOR_OUT_OF_SYNC",
+  // Server -> ONLY the socket whose edit was rejected: {sessionId, fileId, variantId, reason}, where
+  // reason is "stale" (edit built on an old version -- usually another tab is editing the same
+  // lecture), "gap", or "error". The server ignores every later edit/relay from that socket.
+  EDIT_REJECTED: "EDIT_REJECTED",
   // Server -> lecture room: {docId, variantId (null for files), version} -- every change to that
   // document before `version` has been durably written to the DB.
   DOC_PERSISTED: "DOC_PERSISTED",

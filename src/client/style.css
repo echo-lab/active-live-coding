@@ -2856,6 +2856,54 @@ body.file-tree-resizing {
   text-decoration: underline;
 }
 
+/* MARK: Stale tab overlay (showStaleTabOverlay in utils.js) */
+.stale-tab-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+.stale-tab-dialog {
+  max-width: 460px;
+  padding: 20px 24px;
+  background-color: #fef3c7;
+  border: 1px solid #d97706;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: #78350f;
+  font-family: system-ui, sans-serif;
+}
+
+.stale-tab-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.stale-tab-dialog p {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.stale-tab-dialog button {
+  background-color: #d97706;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.stale-tab-dialog button:hover {
+  background-color: #b45309;
+}
+
 /* MARK: Active-exercise badge (makeExerciseBadge in instructor-awareness-config.js)
    A file (tree row / tab) holding an active exercise (poll or code): the live-poll gutter marker's
    red "?", minus the pulse. Sits before the instructor badge when both are shown. */

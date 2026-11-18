@@ -344,6 +344,18 @@ export class Workspace extends EventTarget {
 
 // MARK: InstructorWorkspace
 export class InstructorWorkspace extends Workspace {
+  static FOREIGN_MUTATION_TYPES = [
+    SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
+    SOCKET_MESSAGE_TYPE.VARIANT_EDIT,
+    SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED,
+    SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED,
+    SOCKET_MESSAGE_TYPE.VARIANT_ADDED,
+    SOCKET_MESSAGE_TYPE.VARIANT_RENAMED,
+    SOCKET_MESSAGE_TYPE.VARIANT_DELETED,
+    SOCKET_MESSAGE_TYPE.EXERCISE_CREATED,
+    SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED,
+  ];
+
   constructor({ socket, instructorView = null, onCreatePollRequested, onOpenPollMarker, ...rest }) {
     super({ ...rest, editableTree: true });
     this.socket = socket;
@@ -359,6 +371,18 @@ export class InstructorWorkspace extends Workspace {
     socket.on(SOCKET_MESSAGE_TYPE.FILES_DELETED, (msg) => this.applyFilesDeleted(msg));
     // After a reconnect, re-announce our tabs (the server's copy may be stale).
     socket.on("connect", () => this._broadcastView());
+
+    // The server relays instructor mutations to everyone EXCEPT their sender, and only relays edits
+    // it accepted. So if we receive one, another tab/window is editing this lecture and our copy is
+    // now stale -- fire "stale" so the page can lock itself (instructor.js). Cursors and view state
+    // are deliberately excluded: a freshly opened tab announces its view on load, and that alone
+    // shouldn't lock the older tab before anyone actually edits.
+    for (const type of InstructorWorkspace.FOREIGN_MUTATION_TYPES) {
+      socket.on(type, (msg) => {
+        if (Number(msg?.sessionId ?? msg?.sessionNumber) !== Number(this.sessionNumber)) return;
+        this.dispatchEvent(new CustomEvent("stale", { detail: { type } }));
+      });
+    }
 
     this._start(instructorView);
     this._broadcastView();

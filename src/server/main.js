@@ -1035,82 +1035,95 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGUSR2"]) {
 io.on("connection", async (socket) => {
   console.log("a user connected");
 
+  // MARK: Stale-writer fencing
+  // Only one instructor tab can write to a lecture. If a socket sends an edit that doesn't apply on
+  // top of the server's current version, it was built on a stale copy -- almost always a second
+  // tab/window with the same lecture open. From then on we drop everything that socket tries to
+  // change or relay (so nothing it sends can clobber newer text or confuse students), and tell
+  // only that socket so it can lock itself and ask the user to reload.
+  const fence = (msg, result) => {
+    if (!socket.data.stale) {
+      socket.data.stale = true;
+      console.warn(
+        `Fenced socket ${socket.id} (lecture ${msg.sessionId ?? msg.sessionNumber}): rejected ` +
+          `${msg.fileId != null ? `file #${msg.fileId}` : `variant #${msg.variantId}`} change #${msg.id} (${result.reason})`,
+      );
+    }
+    socket.emit(SOCKET_MESSAGE_TYPE.EDIT_REJECTED, {
+      sessionId: msg.sessionId ?? msg.sessionNumber,
+      fileId: msg.fileId ?? null,
+      variantId: msg.variantId ?? null,
+      reason: result.reason,
+    });
+  };
+
+  // Relays an instructor-originated message to everyone else in the lecture -- NOT back to the
+  // sender, which never needs its own echo. That makes "an instructor tab received an instructor
+  // mutation" mean "some OTHER tab made it", which is how idle duplicate tabs notice they're stale
+  // (InstructorWorkspace). Fenced sockets can't relay anything.
+  const relay = (type) => {
+    socket.on(type, (msg) => {
+      if (socket.data.stale) return;
+      socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(type, msg);
+    });
+  };
+
   socket.on(SOCKET_MESSAGE_TYPE.JOIN_SESSION, (sessionId) => {
     socket.join(lectureRoom(sessionId));
   });
 
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR, msg);
-  });
+  relay(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR);
 
-  // msg: {sessionId, fileId, id, changes, ts}
+  // msg: {sessionId, fileId, id, changes, ts}. Applied first (synchronously, in arrival order), and
+  // relayed only if accepted -- so students never see an edit the server rejected.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, (msg) => {
-    // Forward proactively!
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
+    if (socket.data.stale) return;
     if (msg.fileId == null) {
       console.warn("INSTRUCTOR_EDIT without a fileId -- dropping:", msg.id);
       return;
     }
-    // Synchronous (no await) so edits are applied in exactly the order they arrived.
-    applyChange(msg.fileId, msg);
+    applyChange(msg.fileId, msg, (result) => {
+      if (result.ok) socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
+      else fence(msg, result);
+    });
   });
 
   // msg: {sessionId, openFileIds, activeFileId}
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, (msg) => {
+    if (socket.data.stale) return;
     const sessionId = Number(msg.sessionId);
     instructorViews.set(sessionId, { openFileIds: msg.openFileIds ?? [], activeFileId: msg.activeFileId ?? null });
     socket.to(lectureRoom(sessionId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, msg);
   });
 
-  // Forward info about code runs.
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN, msg);
-  });
+  // Code runs, exercises, version blocks, and variants.
+  relay(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN);
+  relay(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED);
+  relay(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED);
+  relay(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED);
+  relay(SOCKET_MESSAGE_TYPE.VARIANT_ADDED);
+  relay(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED);
+  relay(SOCKET_MESSAGE_TYPE.VARIANT_DELETED);
+  relay(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED);
+  relay(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR);
 
-  // Exercises
-  socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, msg);
-  });
-
+  // From students, consumed by the instructor page.
   socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
     io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
   });
 
-  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_ADDED, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_DELETED, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED, msg);
-  });
-
+  // Same as INSTRUCTOR_EDIT, for a variant's document.
   socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
-    applyVariantChange(msg.variantId, msg);
-  });
-
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR, msg);
+    if (socket.data.stale) return;
+    applyVariantChange(msg.variantId, msg, (result) => {
+      if (result.ok) socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
+      else fence(msg, result);
+    });
   });
 
   // Forward/push this so the students stop writing.
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
+    if (socket.data.stale) return;
     // Forward immediately
     io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
     instructorViews.delete(Number(msg.sessionNumber));

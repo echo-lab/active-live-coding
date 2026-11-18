@@ -101,7 +101,7 @@ async function hydrate(entry) {
   };
   const queued = entry.queued;
   entry.queued = [];
-  for (const msg of queued) applyToState(entry, msg);
+  for (const { msg, onResult } of queued) onResult?.(applyToState(entry, msg));
   return entry.state;
 }
 
@@ -116,6 +116,8 @@ function getEntry(docId) {
       if (entries.get(docId) === entry) entries.delete(docId);
       if (entry.queued.length > 0) {
         console.error(`Dropped ${entry.queued.length} change(s) for document #${docId}: hydration failed`);
+        for (const { onResult } of entry.queued) onResult?.({ ok: false, reason: "error" });
+        entry.queued = [];
       }
       throw err;
     });
@@ -143,12 +145,16 @@ function reportOutOfSync(entry, error) {
   });
 }
 
+// Returns {ok: true} if the change was applied, else {ok: false, reason}. A change must apply on top
+// of exactly the current version. An older `id` is NOT a duplicate (socket.io never re-sends client
+// emits): it means the sender was built on a stale copy -- typically a second tab/window editing the
+// same lecture -- and applying it would clobber newer text. The caller fences that sender.
 function applyToState(entry, { id, changes, ts }) {
   const state = entry.state;
-  if (id < state.version) return; // duplicate of something already applied
+  if (id < state.version) return { ok: false, reason: "stale" };
   if (id > state.version) {
     reportOutOfSync(entry, `Expected change #${state.version} but got #${id}`);
-    return;
+    return { ok: false, reason: "gap" };
   }
 
   let cs;
@@ -157,7 +163,7 @@ function applyToState(entry, { id, changes, ts }) {
     state.text = cs.apply(state.text);
   } catch (error) {
     reportOutOfSync(entry, `Could not apply change #${id}: ${error.message}`);
-    return;
+    return { ok: false, reason: "error" };
   }
   state.version++;
   state.outOfSync = false;
@@ -171,18 +177,21 @@ function applyToState(entry, { id, changes, ts }) {
 
   mapActiveAnchors(state.anchors, cs);
   activateReadyPendingAnchors(state);
+  return { ok: true };
 }
 
 // Applies one client change ({id, changes, ts}, where `id` is the doc version it applies on top
-// of). Synchronous when the doc is already in memory, which keeps per-doc ordering trivially
-// correct: socket.io delivers one client's messages in order, and nothing awaits in between.
-export function applyChange(docId, msg) {
+// of), then calls onResult({ok, reason}). Synchronous when the doc is already in memory, which
+// keeps per-doc ordering trivially correct: socket.io delivers one client's messages in order, and
+// nothing awaits in between. While the doc is hydrating, changes (and their callbacks) queue up and
+// run in arrival order once it's ready.
+export function applyChange(docId, msg, onResult = null) {
   const entry = getEntry(docId);
   if (!entry.state) {
-    entry.queued.push(msg);
+    entry.queued.push({ msg, onResult });
     return;
   }
-  applyToState(entry, msg);
+  onResult?.(applyToState(entry, msg));
 }
 
 // Server-originated full replace (e.g. seeding a variant with a student's answer). Returns the
@@ -214,26 +223,28 @@ export async function resolveVariantDoc(variantId) {
   return row.id;
 }
 
-export function applyVariantChange(variantId, msg) {
+export function applyVariantChange(variantId, msg, onResult = null) {
   variantId = Number(variantId);
   const docId = variantDocIds.get(variantId);
-  if (docId != null) return applyChange(docId, msg);
+  if (docId != null) return applyChange(docId, msg, onResult);
 
   const waiting = variantWaiting.get(variantId);
   if (waiting) {
-    waiting.push(msg);
+    waiting.push({ msg, onResult });
     return;
   }
-  variantWaiting.set(variantId, [msg]);
+  variantWaiting.set(variantId, [{ msg, onResult }]);
   resolveVariantDoc(variantId)
     .then((resolved) => {
-      const msgs = variantWaiting.get(variantId) ?? [];
+      const pending = variantWaiting.get(variantId) ?? [];
       variantWaiting.delete(variantId);
-      for (const m of msgs) applyChange(resolved, m);
+      for (const p of pending) applyChange(resolved, p.msg, p.onResult);
     })
     .catch((err) => {
+      const pending = variantWaiting.get(variantId) ?? [];
       variantWaiting.delete(variantId);
       console.error(`Dropped variant #${variantId} change(s):`, err.message);
+      for (const p of pending) p.onResult?.({ ok: false, reason: "error" });
     });
 }
 

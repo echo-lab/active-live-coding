@@ -606,7 +606,7 @@ export function setUpChangeEmail(el) {
 
 // NOTE: buildBody is a function that builds the parameters for the correct API call.
 // TODO: this isn't really shared anymore -- can consider moving somewhere else?
-export function setupJoinLectureModalV2({ url, buildBody, onSuccess }) {
+export function setupJoinLectureModalV2({ url, buildBody, onSuccess, initialSessionName = null }) {
   let sessionNameInput = document.querySelector(".modal input");
   let fetchSessionButton = document.querySelector("#fetch-session");
   let errorMessage = document.querySelector("#load-session-error");
@@ -634,6 +634,11 @@ export function setupJoinLectureModalV2({ url, buildBody, onSuccess }) {
     ev.key === "Enter" && try_connecting();
   });
   sessionNameInput.focus();
+
+  if (initialSessionName) {
+    sessionNameInput.value = initialSessionName;
+    try_connecting();
+  }
 }
 
 /**

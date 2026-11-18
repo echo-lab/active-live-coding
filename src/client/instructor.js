@@ -1,7 +1,7 @@
 import "./style.css";
 
 import { io } from "socket.io-client";
-import { POST_JSON_REQUEST, getUserID, joinLectureRoom, setupSimulateResponsesCheckbox } from "./utils.js";
+import { POST_JSON_REQUEST, getUserID, joinLectureRoom, setupSimulateResponsesCheckbox, showStaleTabOverlay, takeLectureFromUrl } from "./utils.js";
 
 import { PythonCodeRunner } from "./code-runner.js";
 import {
@@ -94,7 +94,7 @@ async function getOrCreateSession(sessionName) {
   document.querySelector("#session-name-display").innerText =
     `Lecture ID: ${sessionName}`;
   setUpCopyReviewLink(res.uuid);
-  initialize(res);
+  initialize({ ...res, sessionName });
   return res.sessionNumber;
 }
 
@@ -132,10 +132,18 @@ sessionNameInput.addEventListener("keypress", (ev) => {
   ev.key === "Enter" && tryStartSession();
 });
 
+// Arrived via a locked tab's Reload button (?lecture=...): rejoin that lecture directly.
+const lectureFromUrl = takeLectureFromUrl();
+if (lectureFromUrl) {
+  sessionNameInput.value = lectureFromUrl;
+  tryStartSession();
+}
+
 // Start up the editor and hook up the end session button.
 function initialize({
   files = [],
   sessionNumber = null,
+  sessionName = null,
   exercises = [],
   versionBlocks = [],
   instructorView = null,
@@ -254,14 +262,48 @@ function initialize({
     socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, { sessionNumber });
   });
 
-  socket.on(
-    SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC,
-    ({ sessionId: problemSesh, error }) => {
-      if (parseInt(problemSesh) === sessionNumber) {
-        alert(`Please restart: out of sync w/ server (${error})`);
-      }
-    },
-  );
+  // MARK: Stale tab lock
+  // Freezes this tab for good: same read-only state as after "End lecture" (editors, version blocks,
+  // file tree, exercises), then drops the socket so nothing else (cursor, view state, code runs)
+  // goes out. The server has usually fenced us already; this is the client half.
+  let locked = false;
+  function lockAsStale({ title, message }) {
+    if (locked) return;
+    locked = true;
+    workspace.endSession();
+    activitiesManager.endSession();
+    endButton.disabled = true;
+    runButtonEl.disabled = true;
+    socket.disconnect();
+    showStaleTabOverlay({ title, message, sessionName });
+  }
+  const OTHER_TAB_NOTICE = {
+    title: "This lecture was changed in another tab or window",
+    message:
+      "To avoid conflicting edits, this tab is now read-only. Close it and keep using the other one, " +
+      "or reload to continue here with the latest version.",
+  };
+  const OUT_OF_SYNC_NOTICE = {
+    title: "This tab is out of sync",
+    message:
+      "This tab's copy of the lecture no longer matches the server, so it's now read-only. " +
+      "Reload to continue with the latest version. (Is the lecture open in another tab or window?)",
+  };
+
+  // Another tab's change reached us -- our copy is behind.
+  workspace.addEventListener("stale", () => lockAsStale(OTHER_TAB_NOTICE));
+  // The server rejected one of our edits (and now ignores this socket).
+  socket.on(SOCKET_MESSAGE_TYPE.EDIT_REJECTED, ({ sessionId, reason }) => {
+    if (Number(sessionId) !== sessionNumber) return;
+    lockAsStale(reason === "stale" ? OTHER_TAB_NOTICE : OUT_OF_SYNC_NOTICE);
+  });
+  // Room-wide notice that the server's copy hit a gap/apply error. If it was our edit, we also got
+  // EDIT_REJECTED; either way this tab can't safely keep editing.
+  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_OUT_OF_SYNC, ({ sessionId: problemSesh, error }) => {
+    if (parseInt(problemSesh) !== sessionNumber) return;
+    console.warn("Server reported out of sync:", error);
+    lockAsStale(OUT_OF_SYNC_NOTICE);
+  });
 
   // Once a poll draft is actually submitted, swap its draft marker for a persisted one.
   activitiesManager.addEventListener("exerciseCreated", ({ detail: { exercise } }) => {

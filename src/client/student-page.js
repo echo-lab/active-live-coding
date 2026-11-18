@@ -1,7 +1,7 @@
 import "./style.css";
 import "./style-student-page.css";
 
-import { getEmail, getUserID, joinLectureRoom, POST_JSON_REQUEST } from "./utils.js";
+import { getEmail, getUserID, joinLectureRoom, POST_JSON_REQUEST, showStaleTabOverlay, takeLectureFromUrl } from "./utils.js";
 
 import { io } from "socket.io-client";
 import { setVersionBlockReadOnly } from "./cm-version-widget.js";
@@ -94,6 +94,7 @@ const socket = io();
 
 async function initialize({
   sessionNumber,
+  sessionName = null,
   files = [],
   playgroundCodeInfo,
   exercises = [],
@@ -201,6 +202,20 @@ async function initialize({
     }
   });
 
+  watchForNewerTab(sessionNumber, () => {
+    workspace.stopFollowing();
+    sessionActive = false;
+    followBtn.hidden = true;
+    socket.disconnect();
+    showStaleTabOverlay({
+      sessionName,
+      title: "This lecture is open in another tab",
+      message:
+        "To keep your answers in one place, please use the newer tab. " +
+        "Reload this one if you'd rather continue here.",
+    });
+  });
+
   socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, () => {
     console.log("SESSION IS ENDED!");
     workspace.stopFollowing();
@@ -245,9 +260,30 @@ async function initialize({
   });
 }
 
+// MARK: Duplicate tabs
+// Newest tab wins: when this browser opens the same lecture in another tab, that tab announces
+// itself and every older one locks (otherwise an answer submitted in one tab wouldn't show in the
+// other). Purely local -- BroadcastChannel is same-origin, same-browser, and never hits the network;
+// the message carries no student identifiers. Best-effort: silently skipped where unsupported.
+function watchForNewerTab(sessionNumber, onNewerTab) {
+  try {
+    const channel = new BroadcastChannel(`alc-student-lecture-${sessionNumber}`);
+    channel.addEventListener("message", ({ data }) => {
+      if (data?.type !== "opened") return;
+      channel.close();
+      onNewerTab();
+    });
+    channel.postMessage({ type: "opened" });
+  } catch (err) {
+    console.warn("Duplicate-tab detection unavailable:", err);
+  }
+}
+
 setupJoinLectureModalV2({
   url: "/current-session-student",
   buildBody: (sessionName) => ({ student_id: userId, student_identifier: email, sessionName }),
   onSuccess: initialize,
+  // Arrived via a locked tab's Reload button (?lecture=...): rejoin that lecture directly.
+  initialSessionName: takeLectureFromUrl(),
 });
 
