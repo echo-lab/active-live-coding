@@ -2856,6 +2856,13 @@ body.file-tree-resizing {
   text-decoration: underline;
 }
 
+/* Left behind by the stale-tab overlay's "Keep viewing" button. Docked at the bottom (over the
+   console, which is idle in a locked tab) so it never covers the file tabs. */
+.reconnected-banner.read-only-banner {
+  top: auto;
+  bottom: 16px;
+}
+
 /* MARK: Stale tab overlay (showStaleTabOverlay in utils.js) */
 .stale-tab-overlay {
   position: fixed;
@@ -2902,6 +2909,26 @@ body.file-tree-resizing {
 
 .stale-tab-dialog button:hover {
   background-color: #b45309;
+}
+
+.stale-tab-dialog p.stale-tab-note {
+  font-size: 0.85rem;
+}
+
+.stale-tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stale-tab-dialog button.stale-tab-secondary {
+  background-color: transparent;
+  color: #78350f;
+  border: 1px solid #d97706;
+}
+
+.stale-tab-dialog button.stale-tab-secondary:hover {
+  background-color: #fde68a;
 }
 
 /* MARK: Active-exercise badge (makeExerciseBadge in instructor-awareness-config.js)

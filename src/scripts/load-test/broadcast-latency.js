@@ -87,6 +87,7 @@ async function main() {
   const { elapsedMs } = await replayInstructorEdits({
     serverUrl,
     sessionNumber: lecture.sessionNumber,
+    userId: lecture.userId,
     fileId: lecture.fileId,
     fileIds: lecture.fileIds,
     edits: fixture.edits,

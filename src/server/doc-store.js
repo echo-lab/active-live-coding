@@ -33,6 +33,12 @@ export function lectureRoom(sessionId) {
   return `lecture-${sessionId}`;
 }
 
+// Only sockets verified as the lecture's instructor (JOIN_SESSION with role "instructor") join this
+// room -- for messages students shouldn't see, e.g. other students' submissions.
+export function instructorRoom(sessionId) {
+  return `lecture-${sessionId}-instructor`;
+}
+
 let io = null;
 let flushTimer = null;
 

@@ -101,11 +101,14 @@ async function main() {
     throw new Error(`${joinErrors.length}/${studentCount} students failed to join -- aborting exercise-fanout-stress`);
   }
 
-  const instructorSocket = io(serverUrl, { forceNew: true });
+  const instructorSocket = io(serverUrl, { forceNew: true, auth: { userId: lecture.userId } });
   await new Promise((resolve, reject) => {
     instructorSocket.once("connect", resolve);
     instructorSocket.once("connect_error", reject);
   });
+  // STUDENT_SUBMITTED goes only to the lecture's instructor (instructorRoom in main.js).
+  const instructorSubmissions = [];
+  instructorSocket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (m) => instructorSubmissions.push(m));
   instructorSocket.emit(SOCKET_MESSAGE_TYPE.JOIN_SESSION, lecture.sessionNumber);
   await sleep(300); // let JOIN_SESSION land on every socket before we start emitting
 
@@ -144,11 +147,13 @@ async function main() {
   printSummary("Exercise-response submission latency", submitSummary);
   console.log(`Submission errors: ${submitErrors.length}/${studentCount}`);
 
-  // Settle window for STUDENT_SUBMITTED fan-out to finish landing on every socket.
+  // Settle window for the STUDENT_SUBMITTED messages to finish landing.
   await sleep(1000);
-  const receivedCounts = students.map((s) => s.countReceived(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (m) => m.exerciseId === exerciseId));
-  const studentsWithFullFanIn = receivedCounts.filter((n) => n === studentCount).length;
-  console.log(`Students who received all ${studentCount} STUDENT_SUBMITTED broadcasts: ${studentsWithFullFanIn}/${studentCount}`);
+  const instructorFanIn = instructorSubmissions.filter((m) => m.exerciseId === exerciseId).length;
+  console.log(`STUDENT_SUBMITTED received by the instructor: ${instructorFanIn}/${studentCount}`);
+  // Each carries a student's user_id and answer, so no student should ever receive one.
+  const studentsWhoSawSubmissions = students.filter((s) => s.countReceived(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED) > 0).length;
+  console.log(`Students who received any STUDENT_SUBMITTED (expected 0): ${studentsWhoSawSubmissions}/${studentCount}`);
 
   // DB ground truth -- catches silent drops that wouldn't show up in the REST responses alone.
   const { ExerciseResponse } = await import("../../server/models.js");
@@ -175,21 +180,23 @@ async function main() {
   const passSubmitErrors = submitErrors.length === 0;
   const passSubmitLatency = submitSummary.p95 == null || submitSummary.p95 < THRESHOLDS.submissionP95Ms;
   const passDbCount = dbRowCount === studentCount;
-  const passFanIn = studentsWithFullFanIn === studentCount;
+  const passFanIn = instructorFanIn === studentCount;
+  const passPrivacy = studentsWhoSawSubmissions === 0;
 
   printVerdict(passCreationMisses, "every student received the exercise-creation broadcast");
   printVerdict(passCreationLatency, `p95 creation-broadcast latency < ${THRESHOLDS.creationBroadcastP95Ms}ms (got ${creationSummary.p95?.toFixed(1)}ms)`);
   printVerdict(passSubmitErrors, "zero submission errors");
   printVerdict(passSubmitLatency, `p95 submission latency < ${THRESHOLDS.submissionP95Ms}ms (got ${submitSummary.p95?.toFixed(1)}ms)`);
   printVerdict(passDbCount, `ExerciseResponse DB row count == student count (${dbRowCount}/${studentCount})`);
-  printVerdict(passFanIn, `every student received all ${studentCount} STUDENT_SUBMITTED broadcasts`);
+  printVerdict(passFanIn, `instructor received all ${studentCount} STUDENT_SUBMITTED messages`);
+  printVerdict(passPrivacy, "no student received another student's STUDENT_SUBMITTED");
 
-  const passed = passCreationMisses && passCreationLatency && passSubmitErrors && passSubmitLatency && passDbCount && passFanIn;
+  const passed = passCreationMisses && passCreationLatency && passSubmitErrors && passSubmitLatency && passDbCount && passFanIn && passPrivacy;
 
   writeResults(`exercise-fanout-${exerciseType}`, {
     serverUrl, sessionName, studentCount, exerciseType, exerciseId, versionBlockId,
     creationSummary, creationMisses, submitSummary, submitErrorCount: submitErrors.length,
-    studentsWithFullFanIn, dbRowCount, summaryResult, thresholds: THRESHOLDS, passed,
+    instructorFanIn, studentsWhoSawSubmissions, dbRowCount, summaryResult, thresholds: THRESHOLDS, passed,
   });
 
   process.exit(passed ? 0 : 1);

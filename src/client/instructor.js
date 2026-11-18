@@ -67,7 +67,10 @@ const { openPanel: openActivitiesPanel, closePanel: closeActivitiesPanel } = mak
 
 const userId = getUserID();
 
-const socket = io();
+// The server only accepts instructor messages (edits, exercises, ...) from a socket whose handshake
+// names the lecture's instructor -- see asInstructor in main.js. Handshake auth (rather than a
+// field on JOIN_SESSION) is resent on every reconnect *before* any buffered emits are flushed.
+const socket = io({ auth: { userId } });
 // Change ID X gets you to doc version X+1
 
 ///////////////////////////////

@@ -60,7 +60,8 @@ export function joinLectureRoom(socket, sessionNumber) {
 }
 
 function showReconnectedBanner() {
-  if (document.querySelector(".reconnected-banner")) return;
+  // (.read-only-banner is also a .reconnected-banner, so a locked tab never gets this one.)
+  if (document.querySelector(".reconnected-banner, .stale-tab-overlay")) return;
   const banner = document.createElement("div");
   banner.className = "reconnected-banner";
   banner.setAttribute("role", "alert");
@@ -102,13 +103,14 @@ export function takeLectureFromUrl() {
   return name || null;
 }
 
-// Blocks the whole page with a non-dismissable notice + Reload button. Used when this tab must stop
+// Blocks the whole page with a notice offering Reload, or "Keep viewing" (which swaps the overlay
+// for a persistent read-only banner, so the user can still browse files and copy out anything this
+// tab has that the server doesn't -- e.g. edits that were rejected). Used when this tab must stop
 // interacting -- e.g. it's a stale duplicate of a lecture being edited in another tab/window. The
-// caller is responsible for actually making the page read-only; this is just the notice (which
-// also swallows clicks/keys aimed at the page underneath). Idempotent. Pass `sessionName` so Reload
-// rejoins that lecture automatically.
+// caller is responsible for actually making the page read-only (and disconnecting); this is just
+// the notice. Idempotent. Pass `sessionName` so Reload rejoins that lecture automatically.
 export function showStaleTabOverlay({ title, message, sessionName = null }) {
-  if (document.querySelector(".stale-tab-overlay")) return;
+  if (document.querySelector(".stale-tab-overlay, .read-only-banner")) return;
   document.querySelector(".reconnected-banner")?.remove(); // superseded
   const overlay = document.createElement("div");
   overlay.className = "stale-tab-overlay";
@@ -120,15 +122,45 @@ export function showStaleTabOverlay({ title, message, sessionName = null }) {
   heading.textContent = title;
   const text = document.createElement("p");
   text.textContent = message;
+  const keepNote = document.createElement("p");
+  keepNote.className = "stale-tab-note";
+  keepNote.textContent =
+    "Worried you'll lose something? Choose “Keep viewing” to look around and copy anything " +
+    "you want to keep. Everything stays read-only until you reload.";
+  const actions = document.createElement("div");
+  actions.className = "stale-tab-actions";
   const reload = document.createElement("button");
   reload.textContent = "Reload";
   reload.addEventListener("click", () => reloadIntoLecture(sessionName));
-  dialog.append(heading, text, reload);
+  const keep = document.createElement("button");
+  keep.className = "stale-tab-secondary";
+  keep.textContent = "Keep viewing (read-only)";
+  keep.addEventListener("click", () => {
+    overlay.remove();
+    showReadOnlyBanner(sessionName);
+  });
+  actions.append(reload, keep);
+  dialog.append(heading, text, keepNote, actions);
   overlay.append(dialog);
   document.body.append(overlay);
   // Pull focus out of any editor so keystrokes can't land there.
   document.activeElement?.blur?.();
   reload.focus();
+}
+
+// The non-dismissable reminder left behind by "Keep viewing" on the stale-tab overlay.
+function showReadOnlyBanner(sessionName) {
+  const banner = document.createElement("div");
+  banner.className = "reconnected-banner read-only-banner";
+  banner.setAttribute("role", "status");
+  const text = document.createElement("span");
+  text.textContent =
+    "Read-only: this page may be out of date, so editing is turned off. Copy anything you need, then reload.";
+  const reload = document.createElement("button");
+  reload.textContent = "Reload";
+  reload.addEventListener("click", () => reloadIntoLecture(sessionName));
+  banner.append(text, reload);
+  document.body.append(banner);
 }
 
 // Returns true/false once the student has answered the consent form, or null

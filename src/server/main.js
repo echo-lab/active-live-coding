@@ -28,6 +28,7 @@ import { EventBuffer } from "./event-buffer.js";
 import {
   initDocStore,
   lectureRoom,
+  instructorRoom,
   applyChange,
   applyVariantChange,
   createDocument,
@@ -306,6 +307,29 @@ async function getInstructorLecture(lectureId, userId, transaction) {
   if (!userId || lecture.instructor_id !== userId) return { error: "Unauthorized" };
   if (lecture.isFinished) return { error: "This lecture has ended" };
   return { lecture };
+}
+
+// lectureId -> Promise<instructor_id | null>, for authenticating instructor socket messages (see
+// asInstructor). instructor_id never changes, so hits are cached forever; misses (no such lecture
+// yet, or a DB error) are forgotten so a later lookup retries. Callers rely on getting the *same*
+// promise for repeated lookups, which keeps one socket's messages in order.
+const lectureInstructorIds = new Map();
+function lectureInstructorId(lectureId) {
+  let p = lectureInstructorIds.get(lectureId);
+  if (!p) {
+    p = LectureSession.findByPk(lectureId, { attributes: ["instructor_id"] })
+      .then((lecture) => lecture?.instructor_id ?? null)
+      .catch((err) => {
+        console.error(`Instructor lookup for lecture ${lectureId} failed:`, err);
+        return null;
+      })
+      .then((instructorId) => {
+        if (instructorId == null) lectureInstructorIds.delete(lectureId);
+        return instructorId;
+      });
+    lectureInstructorIds.set(lectureId, p);
+  }
+  return p;
 }
 
 function liveFiles(lectureId, transaction) {
@@ -1057,44 +1081,70 @@ io.on("connection", async (socket) => {
     });
   };
 
+  // MARK: Instructor auth
+  // Sockets are otherwise anonymous, so everything that changes the lecture or reaches students as
+  // the instructor's must come from a socket whose handshake `auth.userId` is the lecture's
+  // instructor_id -- the same check the HTTP routes do (getInstructorLecture). The lookup is async,
+  // but every message for a lecture chains on the same cached promise, and callbacks on one promise
+  // run in registration order, so edits still apply in the order they were sent.
+  const authUserId = typeof socket.handshake.auth?.userId === "string" ? socket.handshake.auth.userId : null;
+  const asInstructor = (handler) => (msg) => {
+    if (!authUserId || socket.data.stale) return;
+    const lectureId = Number(msg?.sessionId ?? msg?.sessionNumber);
+    if (!Number.isInteger(lectureId)) return;
+    lectureInstructorId(lectureId).then((instructorId) => {
+      if (instructorId !== authUserId || socket.data.stale) return;
+      handler(msg, lectureId);
+    });
+  };
+
   // Relays an instructor-originated message to everyone else in the lecture -- NOT back to the
   // sender, which never needs its own echo. That makes "an instructor tab received an instructor
   // mutation" mean "some OTHER tab made it", which is how idle duplicate tabs notice they're stale
   // (InstructorWorkspace). Fenced sockets can't relay anything.
   const relay = (type) => {
-    socket.on(type, (msg) => {
-      if (socket.data.stale) return;
-      socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(type, msg);
-    });
+    socket.on(
+      type,
+      asInstructor((msg, lectureId) => socket.to(lectureRoom(lectureId)).emit(type, msg)),
+    );
   };
 
+  // Everyone joins the lecture room; the lecture's instructor also joins its instructor room.
   socket.on(SOCKET_MESSAGE_TYPE.JOIN_SESSION, (sessionId) => {
     socket.join(lectureRoom(sessionId));
+    const lectureId = Number(sessionId);
+    if (!authUserId || !Number.isInteger(lectureId)) return;
+    lectureInstructorId(lectureId).then((instructorId) => {
+      if (instructorId === authUserId) socket.join(instructorRoom(lectureId));
+    });
   });
 
   relay(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CURSOR);
 
-  // msg: {sessionId, fileId, id, changes, ts}. Applied first (synchronously, in arrival order), and
-  // relayed only if accepted -- so students never see an edit the server rejected.
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, (msg) => {
-    if (socket.data.stale) return;
-    if (msg.fileId == null) {
-      console.warn("INSTRUCTOR_EDIT without a fileId -- dropping:", msg.id);
-      return;
-    }
-    applyChange(msg.fileId, msg, (result) => {
-      if (result.ok) socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
-      else fence(msg, result);
-    });
-  });
+  // msg: {sessionId, fileId, id, changes, ts}. Applied first (in arrival order), and relayed only
+  // if accepted -- so students never see an edit the server rejected.
+  socket.on(
+    SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT,
+    asInstructor((msg, lectureId) => {
+      if (msg.fileId == null) {
+        console.warn("INSTRUCTOR_EDIT without a fileId -- dropping:", msg.id);
+        return;
+      }
+      applyChange(msg.fileId, msg, (result) => {
+        if (result.ok) socket.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_EDIT, msg);
+        else fence(msg, result);
+      });
+    }),
+  );
 
   // msg: {sessionId, openFileIds, activeFileId}
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, (msg) => {
-    if (socket.data.stale) return;
-    const sessionId = Number(msg.sessionId);
-    instructorViews.set(sessionId, { openFileIds: msg.openFileIds ?? [], activeFileId: msg.activeFileId ?? null });
-    socket.to(lectureRoom(sessionId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, msg);
-  });
+  socket.on(
+    SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE,
+    asInstructor((msg, lectureId) => {
+      instructorViews.set(lectureId, { openFileIds: msg.openFileIds ?? [], activeFileId: msg.activeFileId ?? null });
+      socket.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, msg);
+    }),
+  );
 
   // Code runs, exercises, version blocks, and variants.
   relay(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN);
@@ -1107,40 +1157,42 @@ io.on("connection", async (socket) => {
   relay(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED);
   relay(SOCKET_MESSAGE_TYPE.VARIANT_CURSOR);
 
-  // From students, consumed by the instructor page.
+  // From students, consumed by the instructor page only -- the payload carries the student's
+  // user_id (which HTTP routes trust as a credential) and answer, so other students mustn't get it.
   socket.on(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, (msg) => {
-    io.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
+    io.to(instructorRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.STUDENT_SUBMITTED, msg);
   });
 
   // Same as INSTRUCTOR_EDIT, for a variant's document.
-  socket.on(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, (msg) => {
-    if (socket.data.stale) return;
-    applyVariantChange(msg.variantId, msg, (result) => {
-      if (result.ok) socket.to(lectureRoom(msg.sessionId ?? msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
-      else fence(msg, result);
-    });
-  });
+  socket.on(
+    SOCKET_MESSAGE_TYPE.VARIANT_EDIT,
+    asInstructor((msg, lectureId) => {
+      applyVariantChange(msg.variantId, msg, (result) => {
+        if (result.ok) socket.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.VARIANT_EDIT, msg);
+        else fence(msg, result);
+      });
+    }),
+  );
 
   // Forward/push this so the students stop writing.
-  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, async (msg) => {
-    if (socket.data.stale) return;
+  socket.on(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, asInstructor(async (msg, lectureId) => {
     // Forward immediately
-    io.to(lectureRoom(msg.sessionNumber)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
-    instructorViews.delete(Number(msg.sessionNumber));
+    io.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_END_SESSION, msg);
+    instructorViews.delete(lectureId);
     // A finished lecture won't be edited again -- persist everything, then drop it from memory
     // (it'll cheaply re-hydrate from its snapshot if it's ever read again, e.g. the review page).
-    await evictLecture(msg.sessionNumber);
+    await evictLecture(lectureId);
 
     try {
       await db.transaction(async (t) => {
-        let lecture = await LectureSession.findByPk(msg.sessionNumber);
+        let lecture = await LectureSession.findByPk(lectureId);
         lecture &&
           (await lecture.update({ isFinished: true }, { transaction: t }));
       });
     } catch (error) {
       console.error("failed to close session: ", error);
     }
-  });
+  }));
 });
 
 ViteExpress.bind(app, server);

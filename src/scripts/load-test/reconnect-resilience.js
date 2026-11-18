@@ -90,7 +90,7 @@ async function main() {
     throw new Error(`${joinErrors.length}/${studentCount} students failed to join -- aborting reconnect-resilience`);
   }
 
-  const instructorSocket = io(serverUrl, { forceNew: true });
+  const instructorSocket = io(serverUrl, { forceNew: true, auth: { userId: lecture.userId } });
   await new Promise((resolve, reject) => {
     instructorSocket.once("connect", resolve);
     instructorSocket.once("connect_error", reject);

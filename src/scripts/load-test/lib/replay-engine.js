@@ -51,8 +51,10 @@ function delayForPace(pace, deltaMs) {
 // (see createFixtureFiles), falling back to `fileId` (the main file) for edits without a fileName;
 // its id is its per-file doc version, which matches a fresh file's docVersion starting at 0
 // (fixture-io.js enforces contiguity at load time).
-export async function replayInstructorEdits({ serverUrl, sessionNumber, fileId, fileIds = new Map(), edits, pace = "max", onEditSent }) {
-  const socket = io(serverUrl, { forceNew: true });
+// `userId` must be the lecture's instructor_id (lecture.userId) -- the server drops instructor
+// messages from any other socket (asInstructor in main.js).
+export async function replayInstructorEdits({ serverUrl, sessionNumber, userId, fileId, fileIds = new Map(), edits, pace = "max", onEditSent }) {
+  const socket = io(serverUrl, { forceNew: true, auth: { userId } });
   await new Promise((resolve, reject) => {
     socket.once("connect", resolve);
     socket.once("connect_error", reject);
