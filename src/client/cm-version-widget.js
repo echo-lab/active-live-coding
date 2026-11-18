@@ -33,7 +33,7 @@ export function setVersionBlockReadOnly(v) {
 // MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
-  // onAnswerEdit: called whenever the student edits their own answer.
+  // onAnswerEdit(exercise): called whenever the student edits their own answer.
   constructor({ versionBlockId, variants, activitiesManager = null, outerView = null, reviewMode = false, onAnswerEdit = null }) {
     super();
     this.versionBlockId = versionBlockId;
@@ -201,7 +201,7 @@ export class StudentVersionBlockWidget extends WidgetType {
               hasStarted = true;
               recordEvent(EVENT_TYPES.STUDENT_START_EXERCISE, { exerciseId: exercise.id });
             }
-            this._onAnswerEdit?.();
+            this._onAnswerEdit?.(exercise);
           }),
           ...(readOnly ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : []),
         ],

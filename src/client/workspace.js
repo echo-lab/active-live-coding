@@ -426,7 +426,8 @@ export class InstructorWorkspace extends Workspace {
 //
 // Following: by default the student's tabs mirror the instructor's (INSTRUCTOR_VIEW_STATE). The
 // student stops following as soon as they pick a file or tab themselves, open an exercise in a file
-// the instructor isn't showing, or edit their own answer to a code exercise -- from then on,
+// the instructor isn't showing, or the instructor switches away from a file where the student has
+// started answering a still-active code exercise (typing alone never unfollows) -- from then on,
 // instructor edits still stream in, but tab changes no longer move the student. setFollowing(true)
 // snaps back to the instructor's current tabs. Dispatches "followchange" ({detail: {following}}).
 //
@@ -444,6 +445,7 @@ export class StudentWorkspace extends Workspace {
     this.makeVersionBlockWidget = makeVersionBlockWidget;
     this.lastInstructorView = instructorView;
     this.following = true;
+    this.answeredExerciseIds = new Set(); // exercises the student has typed an answer into
     this.followOffscreenMode = getFollowOffscreenMode();
     this.sessionEnded = false;
 
@@ -557,8 +559,20 @@ export class StudentWorkspace extends Workspace {
 
   _onInstructorView({ openFileIds, activeFileId }) {
     this.lastInstructorView = { openFileIds, activeFileId };
-    if (this.following) this._applyInstructorView();
+    if (this.following) {
+      // Don't pull the student away from an answer they're writing: stay put and stop following.
+      if (activeFileId !== this.activeId && this._hasAnswerInProgressIn(this.activeId)) this.setFollowing(false);
+      else this._applyInstructorView();
+    }
     this._updateInstructorMarkers();
+  }
+
+  // Whether `fileId` holds a still-active exercise the student has started answering.
+  _hasAnswerInProgressIn(fileId) {
+    if (fileId == null) return false;
+    return (this.activitiesManager?.getActiveExercises() ?? []).some(
+      (ex) => this.answeredExerciseIds.has(ex.id) && this.fileIdForExercise(ex) === fileId,
+    );
   }
 
   _applyInstructorView() {
@@ -607,7 +621,7 @@ export class StudentWorkspace extends Workspace {
       onOpenPollMarker: this.onOpenPollMarker,
       reviewMode: this.mode === "review",
       makeVersionBlockWidget: this.makeVersionBlockWidget,
-      onAnswerEdit: () => this.setFollowing(false),
+      onAnswerEdit: (ex) => this.answeredExerciseIds.add(ex.id),
     });
   }
 
