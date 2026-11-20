@@ -1,6 +1,7 @@
 // pyodide-webworker.js
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js");
+// importScripts("https://cdn.jsdelivr.net/pyodide/v314.0.8/full/pyodide.js");
 
 // Text accumulated since the last flush, per stream -- may or may not end in a newline yet.
 let stdoutText = "";
