@@ -21,7 +21,6 @@
     "lz-string": "^1.5.0",
     "openai": "^6.36.0",
     "pyodide": "^0.26.1",
-    "quill": "^2.0.2",
     "sequelize": "^6.37.3",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
