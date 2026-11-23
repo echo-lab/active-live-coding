@@ -177,6 +177,7 @@ async function initialize({
   syncRunButtonVisibility();
   activitiesManager.addEventListener("exerciseCreated", syncRunButtonVisibility);
   activitiesManager.addEventListener("exerciseFinished", syncRunButtonVisibility);
+  activitiesManager.addEventListener("exerciseDeleted", syncRunButtonVisibility);
 
   // Purely passive rendering of the instructor's broadcast run -- this client never executes
   // this code itself, it only mirrors incoming events. A msg.runId with no "start" seen yet (e.g.

@@ -146,6 +146,15 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseUpdated", () => {
       this._renderList();
     });
+
+    // The instructor deleted it: close anything still showing it (the historical view closes
+    // itself -- see historical-view-controller.js).
+    this.manager.addEventListener("exerciseDeleted", ({ detail: { exercise } }) => {
+      if (this._activePopover.isOpenFor(exercise.id)) this._activePopover.close();
+      if (this._completePopover.isOpenFor(exercise.id)) this._completePopover.close();
+      if (this._selectedActivityId === exercise.id) this._notifyPollHighlight(null);
+      this._renderList();
+    });
   }
 
   _showList() {
@@ -842,6 +851,7 @@ export class InstructorActivitiesPanel {
     openHistoricalView,
     closeHistoricalView,
     addResponseAsVariant,
+    deleteExercise,
   }) {
     /** @type {InstructorActivitiesManager} */
     this.manager = manager;
@@ -855,6 +865,7 @@ export class InstructorActivitiesPanel {
     this._scrollToExercise = scrollToExercise;
     this._openHistoricalView = openHistoricalView;
     this._closeHistoricalView = closeHistoricalView;
+    this._deleteExercise = deleteExercise;
     this._currentPollId = null;
     this._currentSummaryExerciseId = null;
     this._activePopoverId = null;
@@ -960,6 +971,15 @@ export class InstructorActivitiesPanel {
     });
 
     this.manager.addEventListener("exerciseUpdated", () => {
+      this._renderList();
+    });
+
+    // Close anything still showing the deleted exercise (the historical view closes itself -- see
+    // historical-view-controller.js), then drop its row.
+    this.manager.addEventListener("exerciseDeleted", ({ detail: { exercise } }) => {
+      if (this._activePopover.isOpenFor(exercise.id)) this._activePopover.close();
+      if (this._completePopover.isOpenFor(exercise.id)) this._completePopover.close();
+      if (this._currentSummaryExerciseId === exercise.id) this._showView("list");
       this._renderList();
     });
   }
@@ -1115,7 +1135,7 @@ export class InstructorActivitiesPanel {
         item.classList.toggle("selected", ex.id === this._selectedActivityId);
         item.addEventListener("click", () => {
           if (isAnchorDeleted(ex)) this._openHistoricalView?.(ex);
-          if (isActive) {
+          else if (isActive) {
             this._openActivePopover(ex);
           } else {
             this._openFinished(ex);
@@ -1131,6 +1151,24 @@ export class InstructorActivitiesPanel {
           this.openPanel();
           this._showSummaryView(ex);
         });
+      }
+
+      // The only place an exercise can be deleted from.
+      if (this._deleteExercise) {
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "activity-item-delete";
+        deleteBtn.title = "Delete activity";
+        deleteBtn.setAttribute("aria-label", "Delete activity");
+        deleteBtn.innerHTML =
+          `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.8 6.5v4.5M9.2 6.5v4.5"/></svg>`;
+        deleteBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (!window.confirm("Permanently delete this activity? Neither you nor students will be able to access it in the future.\n\nNOTE: It is not recommended to delete activities that have been completed by students.")) return;
+          deleteBtn.disabled = true;
+          const ok = await this._deleteExercise(ex);
+          if (!ok) deleteBtn.disabled = false;
+        });
+        item.appendChild(deleteBtn);
       }
       this.listItemsEl.appendChild(item);
     });

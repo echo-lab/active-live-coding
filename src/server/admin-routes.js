@@ -137,6 +137,7 @@ export function registerAdminRoutes(app, { flushLecture, flushEvents }) {
             code_anchor_doc_version: ex.code_anchor_doc_version,
             DocumentId: ex.DocumentId,
             VersionBlockId: ex.VersionBlockId,
+            deleted_at: ex.deleted_at ? ex.deleted_at.getTime() : null,
             VersionBlock: ex.VersionBlock
               ? { deleted: ex.VersionBlock.deleted, deleted_change_number: ex.VersionBlock.deleted_change_number }
               : null,

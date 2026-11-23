@@ -16,7 +16,7 @@ import {
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, PYTHON_VERSIONS, DEFAULT_PYTHON_VERSION } from "../shared-constants.js";
 import { LectureFileSystem } from "./file-system.js";
 import { InstructorWorkspace } from "./workspace.js";
-import { InstructorActivitiesPanel } from "./activities-panel.js";
+import { InstructorActivitiesPanel, isAnchorDeleted } from "./activities-panel.js";
 import { InstructorActivitiesManager } from "./activities-manager.js";
 import { fillInBlankExtensions } from "./cm-fill-in-the-blank.js";
 import { PollCreatePopover } from "./poll-create-popover.js";
@@ -381,6 +381,17 @@ function initialize({
       historicalController.returnToLive();
       workspace.revealExercise(ex);
       return workspace.editorForVersionBlock(ex.VersionBlockId)?.getVersionBlock(ex.VersionBlockId)?.addVariantFromCode(code, label);
+    },
+    // A code exercise whose Version Block is still live gets its block dissolved first (the normal
+    // dissolve flow: historical snapshot, broadcast to students, flatten), replaced by the block's
+    // original variant rather than whichever tab happens to be selected.
+    deleteExercise: async (ex) => {
+      if (ex.type === "CODE_VARIANT" && !isAnchorDeleted(ex)) {
+        const widget = workspace.editorForVersionBlock(ex.VersionBlockId)?.getVersionBlock(ex.VersionBlockId);
+        if (widget) await widget.dissolve({ useOriginalVariant: true });
+        else console.warn(`Deleting exercise #${ex.id}: its version block #${ex.VersionBlockId} isn't in any editor.`);
+      }
+      return activitiesManager.deleteExercise(ex.id);
     },
   });
 

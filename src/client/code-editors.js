@@ -105,6 +105,9 @@ export class StudentCodeEditor {
         activitiesManager.addEventListener(type, onExercise);
         this._managerListeners.push([type, onExercise]);
       }
+      const onDeleted = ({ detail: { exercise } }) => this._removePollMarker(exercise.id);
+      activitiesManager.addEventListener("exerciseDeleted", onDeleted);
+      this._managerListeners.push(["exerciseDeleted", onDeleted]);
     }
 
     this._socket = null;
@@ -201,6 +204,11 @@ export class StudentCodeEditor {
 
   getVersionBlock(id) {
     return this.versionBlocks.find(v => v.versionBlockId === id);
+  }
+
+  // Drops a (deleted) poll's marker. A no-op if this editor never had one for it.
+  _removePollMarker(id) {
+    this.view.dispatch({ effects: removePollMarkerEffect.of({ id }) });
   }
 
   _maybeAddPollMarker(ex) {
@@ -465,7 +473,7 @@ export class InstructorCodeEditor {
         activitiesManager: this.activitiesManager,
         getInstructorCode: () => this.codeWithVariantAsPlaceholder(block.id),
         view: this.view,
-        onDissolve: () => this.dissolveVersionBlock(block.id),
+        onDissolve: (opts) => this.dissolveVersionBlock(block.id, opts),
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -481,6 +489,8 @@ export class InstructorCodeEditor {
     // instructor or reflected in from another client.
     this._onExerciseFinished = ({ detail: { exercise } }) => this._maybeAddPollMarker(exercise);
     activitiesManager.addEventListener("exerciseFinished", this._onExerciseFinished);
+    this._onExerciseDeleted = ({ detail: { exercise } }) => this._removePollMarker(exercise.id);
+    activitiesManager.addEventListener("exerciseDeleted", this._onExerciseDeleted);
   }
 
   // Tears the editor down for good (e.g. its file was deleted). Stops broadcasting first, so the
@@ -489,9 +499,15 @@ export class InstructorCodeEditor {
     this.active = false;
     this.socket.off(SOCKET_MESSAGE_TYPE.DOC_PERSISTED, this._onPersisted);
     this.activitiesManager?.removeEventListener("exerciseFinished", this._onExerciseFinished);
+    this.activitiesManager?.removeEventListener("exerciseDeleted", this._onExerciseDeleted);
     for (const widget of Object.values(this.versionBlocks)) widget.disposeVariantEditors();
     this.versionBlocks = {};
     this.view.destroy();
+  }
+
+  // Drops a (deleted) poll's marker. A no-op if this editor never had one for it.
+  _removePollMarker(id) {
+    this.view.dispatch({ effects: removePollMarkerEffect.of({ id }) });
   }
 
   _maybeAddPollMarker(ex) {
@@ -665,7 +681,9 @@ export class InstructorCodeEditor {
     return this.docVersion;
   }
 
-  async dissolveVersionBlock(versionBlockId) {
+  // useOriginalVariant: replace the block with its earliest variant's code (variants are kept in
+  // creation order) rather than the currently-selected one's.
+  async dissolveVersionBlock(versionBlockId, { useOriginalVariant = false } = {}) {
     if (!this.active) return;
     const widget = this.versionBlocks[versionBlockId];
     // Snapshot the file + the widget's position BEFORE anything changes, for the historical view.
@@ -687,7 +705,8 @@ export class InstructorCodeEditor {
       console.log("Version block deleted, but not present in editor:", widget);
       return;
     }
-    const code = widget?.getActiveVariant()?.editor?.currentCode() ?? "";
+    const variant = useOriginalVariant ? widget?.variants[0] : widget?.getActiveVariant();
+    const code = variant?.editor?.currentCode() ?? "";
 
     // Need to do this in two separate transactions, for some reason!
     this.view.dispatch({
@@ -806,7 +825,7 @@ export class InstructorCodeEditor {
           activitiesManager: this.activitiesManager,
           getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId),
           view: this.view,
-          onDissolve: () => this.dissolveVersionBlock(versionBlockId),
+          onDissolve: (opts) => this.dissolveVersionBlock(versionBlockId, opts),
         });
       this.versionBlocks[versionBlockId] = widget;
       const isAtDocEnd = lineTo >= state.doc.length;

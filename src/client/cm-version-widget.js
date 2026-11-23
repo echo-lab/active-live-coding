@@ -641,9 +641,11 @@ export class VersionBlockWidget extends WidgetType {
     }
   }
 
-  async dissolve() {
+  // opts.useOriginalVariant: flatten to the earliest variant's code instead of the selected tab's
+  // (used when the instructor deletes the block's exercise).
+  async dissolve(opts = {}) {
     if (this._locked) return;
-    await this._onDissolve?.();  // from InstructorCodeEditor.
+    await this._onDissolve?.(opts);  // from InstructorCodeEditor.
     this.disposeVariantEditors();
     this._clearExerciseState();
     this.activitiesManager.removeEventListener("codeSummaryDisplayed", this._summaryDisplayListener);

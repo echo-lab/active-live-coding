@@ -362,6 +362,14 @@ export async function unregisterVersionBlockAnchor(docId, blockId) {
   state.anchorsDirty = true;
 }
 
+export async function unregisterPollAnchor(docId, exerciseId) {
+  const state = await getState(docId);
+  exerciseId = Number(exerciseId);
+  state.anchors.polls.delete(exerciseId);
+  state.anchors.pending = state.anchors.pending.filter((a) => !(a.type === "poll" && a.id === exerciseId));
+  state.anchorsDirty = true;
+}
+
 // MARK: Creating documents
 
 // Creates a Document row. Files start empty at version 0. Variants start at version 1, whose one

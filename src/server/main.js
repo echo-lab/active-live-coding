@@ -49,6 +49,7 @@ import {
   registerVersionBlockAnchor,
   registerPollAnchor,
   unregisterVersionBlockAnchor,
+  unregisterPollAnchor,
   resolveVariantDoc,
 } from "./doc-store.js";
 import { registerAdminRoutes } from "./admin-routes.js";
@@ -778,6 +779,8 @@ app.post("/api/events", (req, res) => {
   res.json({ success: true });
 });
 
+const EXERCISE_DELETED_ERROR = "This exercise was deleted";
+
 // MARK: create exercise
 // Create a new exercise for a lecture session.
 app.post("/exercise", async (req, res) => {
@@ -859,6 +862,7 @@ app.post("/simulate-responses", async (req, res) => {
     if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
     if (exercise.LectureSession.instructor_id !== instructorId)
       return res.json({ error: "Unauthorized" });
+    if (exercise.deleted_at != null) return res.json({ error: EXERCISE_DELETED_ERROR });
     if (exercise.end_ts !== null)
       return res.json({ error: "Exercise is already completed" });
 
@@ -893,6 +897,7 @@ app.get("/exercise/:id/historical-context", async (req, res) => {
     const response = await db.transaction({ type: Sequelize.Transaction.TYPES.DEFERRED }, async (t) => {
       const exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      if (exercise.deleted_at != null) return { error: EXERCISE_DELETED_ERROR };
       const lecture = await LectureSession.findByPk(exercise.LectureSessionId, { transaction: t });
       if (!lecture) return { error: `Session #${exercise.LectureSessionId} not found` };
       return lecture.getHistoricalContextForExercise(exerciseId, t, req.query.student_id ?? null);
@@ -900,6 +905,45 @@ app.get("/exercise/:id/historical-context", async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("Failed to get historical context:", error);
+    res.json({ error: error.message });
+  }
+});
+
+// MARK: Delete exercise
+// Soft-deletes an exercise: sets deleted_at (and end_ts, if it was still active) but keeps the row
+// and its responses. Deleted exercises are skipped by every live query, so they vanish for the
+// instructor and students alike. A poll's live anchor is dropped from the doc store. (A code
+// exercise's Version Block is dissolved by the instructor client beforehand, via DELETE
+// /version-block.) The client relays EXERCISE_DELETED to the lecture room.
+app.post("/exercise/delete", async (req, res) => {
+  const { lectureId, userId, exerciseId } = req.body;
+  if (lectureId == null || exerciseId == null) return res.json({ error: "lectureId and exerciseId are required" });
+
+  try {
+    const response = await db.transaction(async (t) => {
+      const auth = await getInstructorLecture(lectureId, userId, t);
+      if (auth.error) return auth;
+      const exercise = await ClassExercise.findByPk(exerciseId, { transaction: t });
+      if (!exercise || exercise.LectureSessionId !== auth.lecture.id) {
+        return { error: `Exercise #${exerciseId} not found` };
+      }
+      if (exercise.deleted_at == null) await exercise.softDelete(t);
+      return { ok: true, exercise };
+    });
+    if (response.error) return res.json(response);
+
+    const ex = response.exercise;
+    if ((ex.type === "POLL" || ex.type === "POLL_MCQ") && ex.DocumentId != null) {
+      const file = await Document.findByPk(ex.DocumentId, { attributes: ["deleted_at"] });
+      // A deleted file's doc is no longer held in memory -- its anchors don't matter any more.
+      if (file && file.deleted_at == null) {
+        await unregisterPollAnchor(ex.DocumentId, ex.id);
+        await flushDoc(ex.DocumentId);
+      }
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Failed to delete exercise:", error);
     res.json({ error: error.message });
   }
 });
@@ -917,6 +961,7 @@ app.post("/exercise/finish", async (req, res) => {
         transaction: t,
       });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      if (exercise.deleted_at != null) return { error: EXERCISE_DELETED_ERROR };
       await exercise.finish(t);
       return { success: true };
     });
@@ -938,6 +983,7 @@ app.post("/exercise/mcq-results", async (req, res) => {
   try {
     const exercise = await ClassExercise.findByPk(exerciseId);
     if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
+    if (exercise.deleted_at != null) return res.json({ error: EXERCISE_DELETED_ERROR });
     if (exercise.type !== "POLL_MCQ") return res.json({ error: "Not a multiple-choice poll" });
     if (exercise.end_ts === null) return res.json({ error: "Exercise is not yet completed" });
 
@@ -973,6 +1019,7 @@ app.post("/exercise/summary", async (req, res) => {
     if (!exercise) return res.json({ error: `Exercise #${exerciseId} not found` });
     if (exercise.LectureSession.instructor_id !== instructorId)
       return res.json({ error: "Unauthorized" });
+    if (exercise.deleted_at != null) return res.json({ error: EXERCISE_DELETED_ERROR });
     if (exercise.end_ts === null)
       return res.json({ error: "Exercise is not yet completed" });
 
@@ -1012,6 +1059,7 @@ app.post("/exercise/response", async (req, res) => {
         transaction: t,
       });
       if (!exercise) return { error: `Exercise #${exerciseId} not found` };
+      if (exercise.deleted_at != null) return { error: EXERCISE_DELETED_ERROR };
       let studentSession = await StudentSession.findOne({
         where: { student_id, LectureSessionId: exercise.LectureSessionId },
         transaction: t,
@@ -1186,6 +1234,7 @@ io.on("connection", async (socket) => {
   relay(SOCKET_MESSAGE_TYPE.INSTRUCTOR_CODE_RUN);
   relay(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED);
   relay(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED);
+  relay(SOCKET_MESSAGE_TYPE.EXERCISE_DELETED);
   relay(SOCKET_MESSAGE_TYPE.VERSION_BLOCK_CREATED);
   relay(SOCKET_MESSAGE_TYPE.VARIANT_ADDED);
   relay(SOCKET_MESSAGE_TYPE.VARIANT_RENAMED);

@@ -301,6 +301,27 @@ export class InstructorActivitiesManager extends EventTarget {
       });
   }
 
+  // Soft-deletes an exercise: the server keeps the row but every UI (ours and the students') drops
+  // it. A code exercise's Version Block must already be dissolved by the caller (instructor.js).
+  async deleteExercise(id) {
+    if (!this.active) return false;
+    const ex = this.exercises.find((e) => e.id === id);
+    if (!ex) return false;
+    const res = await fetch("/exercise/delete", {
+      body: JSON.stringify({ lectureId: this.sessionNumber, userId: this.userId, exerciseId: id }),
+      ...POST_JSON_REQUEST,
+    }).then((r) => r.json());
+    if (res.error) { alert(res.error); return false; }
+
+    this.exercises = this.exercises.filter((e) => e.id !== id);
+    this.socket.emit(SOCKET_MESSAGE_TYPE.EXERCISE_DELETED, {
+      sessionNumber: this.sessionNumber,
+      exerciseId: id,
+    });
+    this.dispatchEvent(new CustomEvent("exerciseDeleted", { detail: { exercise: ex } }));
+    return true;
+  }
+
   // Marks an exercise finished locally and notifies other clients, without generating a
   // summary -- used when dissolving a version block whose exercise is still active (the
   // server has already set end_ts as part of the delete).
@@ -317,11 +338,9 @@ export class InstructorActivitiesManager extends EventTarget {
 
   #handleStudentSubmitted(msg) {
     if (msg.sessionNumber !== this.sessionNumber) return;
+    // Unknown exercise: most likely one we just deleted (a submission was already in flight).
     const ex = this.exercises.find((e) => e.id === msg.exerciseId);
-    if (!ex) {
-      console.error("Received exercise response for an exercise we don't know about");
-      return;
-    }
+    if (!ex) return;
 
     const idx = ex.ExerciseResponses.findIndex((r) => r.student_id === msg.student_id);
     if (idx >= 0) {
@@ -354,6 +373,7 @@ export class StudentActivitiesManager extends EventTarget {
 
     socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_CREATED, (msg) => this.#handleExerciseCreated(msg));
     socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED, (msg) => this.#handleExerciseFinished(msg));
+    socket.on(SOCKET_MESSAGE_TYPE.EXERCISE_DELETED, (msg) => this.#handleExerciseDeleted(msg));
   }
 
   getExercise(id) {
@@ -465,5 +485,13 @@ export class StudentActivitiesManager extends EventTarget {
     if (!ex) return;
     ex.end_ts = Date.now();
     this.dispatchEvent(new CustomEvent("exerciseFinished", { detail: { exercise: ex } }));
+  }
+
+  #handleExerciseDeleted(msg) {
+    if (msg.sessionNumber !== this.sessionNumber) return;
+    const ex = this.exercises.find((e) => e.id === msg.exerciseId);
+    if (!ex) return;
+    this.exercises = this.exercises.filter((e) => e.id !== msg.exerciseId);
+    this.dispatchEvent(new CustomEvent("exerciseDeleted", { detail: { exercise: ex } }));
   }
 }

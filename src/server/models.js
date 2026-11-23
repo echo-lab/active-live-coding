@@ -51,10 +51,11 @@ export class LectureSession extends Model {
     );
   }
 
-  // Returns all exercises for this lecture with every student's responses.
+  // Returns all (non-deleted) exercises for this lecture with every student's responses.
   async getExercisesForInstructor(transaction) {
     const exercises = await this.getClassExercises(
       {
+        where: { deleted_at: null },
         include: [
           {
             model: ExerciseResponse,
@@ -204,9 +205,10 @@ export class LectureSession extends Model {
     };
   }
 
-  // Returns all exercises for this lecture with only the given student's response (if any).
+  // Returns all (non-deleted) exercises for this lecture with only the given student's response (if any).
   async getExercisesForStudent(studentId, transaction) {
     const exercises = await this.getClassExercises({
+      where: { deleted_at: null },
       include: [
         {
           model: ExerciseResponse,
@@ -420,6 +422,13 @@ export class ClassExercise extends Model {
   async finish(transaction) {
     return this.update({ end_ts: Date.now() }, { transaction });
   }
+
+  // Hides the exercise from every live UI (instructor and students alike) while keeping the row
+  // and its responses for analysis. A still-active exercise is also closed, so it stops taking
+  // responses.
+  async softDelete(transaction) {
+    return this.update({ deleted_at: new Date(), end_ts: this.end_ts ?? Date.now() }, { transaction });
+  }
 }
 
 ClassExercise.init(
@@ -491,6 +500,12 @@ ClassExercise.init(
     // positions in THIS text; their live positions are tracked by the doc store.
     context_doc: {
       type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    // Set when the instructor deletes the exercise. The row (and its responses) is kept for
+    // analysis/replay; live queries skip it, so neither the instructor nor students see it.
+    deleted_at: {
+      type: DataTypes.DATE,
       allowNull: true,
     },
   },

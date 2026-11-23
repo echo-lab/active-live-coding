@@ -146,6 +146,9 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   STUDENT_OUT_OF_SYNC: "STUDENT_OUT_OF_SYNC",
   EXERCISE_CREATED: "EXERCISE_CREATED",
   EXERCISE_FINISHED: "EXERCISE_FINISHED",
+  // Instructor -> lecture room: {sessionNumber, exerciseId} -- the exercise was (soft-)deleted and
+  // should disappear from every UI.
+  EXERCISE_DELETED: "EXERCISE_DELETED",
   STUDENT_SUBMITTED: "STUDENT_SUBMITTED",
   VERSION_BLOCK_CREATED: "VERSION_BLOCK_CREATED",
   VARIANT_ADDED: "VARIANT_ADDED",

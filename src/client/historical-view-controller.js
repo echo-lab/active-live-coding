@@ -45,6 +45,7 @@ export function createHistoricalViewController({
   let currentExercise = null;
   let currentManager = null;
   let unsubscribeManager = null;
+  let unsubscribeDeleted = null;
 
   function isShowingExercise(id) {
     return currentExercise?.id === id;
@@ -115,6 +116,8 @@ export function createHistoricalViewController({
     showLiveTab();
     unsubscribeManager?.();
     unsubscribeManager = null;
+    unsubscribeDeleted?.();
+    unsubscribeDeleted = null;
     historicalPopover?.close();
     historicalEditor?.destroy();
     historicalEditor = null;
@@ -157,6 +160,13 @@ export function createHistoricalViewController({
     currentExercise = ex;
     currentManager = manager;
     showHistoricalTab();
+
+    // The instructor deleted the exercise being shown -- there's nothing left to look at.
+    const onDeleted = ({ detail: { exercise } }) => {
+      if (exercise.id === ex.id) closeHistorical();
+    };
+    manager.addEventListener("exerciseDeleted", onDeleted);
+    unsubscribeDeleted = () => manager.removeEventListener("exerciseDeleted", onDeleted);
 
     // Wait a frame so the browser actually PAINTs that now-visible, unscrolled, empty container
     // before we mount the editor into it -- otherwise the editor's own first paint and its

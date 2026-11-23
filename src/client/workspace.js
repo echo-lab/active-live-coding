@@ -257,7 +257,7 @@ export class Workspace extends EventTarget {
   _bindActivitiesManager(manager) {
     if (this._boundManager !== manager) {
       this._onExercisesChanged ??= () => this._updateExerciseMarkers();
-      for (const type of ["exerciseCreated", "exerciseFinished", "exerciseUpdated"]) {
+      for (const type of ["exerciseCreated", "exerciseFinished", "exerciseUpdated", "exerciseDeleted"]) {
         this._boundManager?.removeEventListener(type, this._onExercisesChanged);
         manager?.addEventListener(type, this._onExercisesChanged);
       }
@@ -354,6 +354,7 @@ export class InstructorWorkspace extends Workspace {
     SOCKET_MESSAGE_TYPE.VARIANT_DELETED,
     SOCKET_MESSAGE_TYPE.EXERCISE_CREATED,
     SOCKET_MESSAGE_TYPE.EXERCISE_FINISHED,
+    SOCKET_MESSAGE_TYPE.EXERCISE_DELETED,
   ];
 
   constructor({ socket, instructorView = null, onCreatePollRequested, onOpenPollMarker, ...rest }) {
