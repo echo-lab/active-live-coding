@@ -2,7 +2,9 @@
 
 // Pyodide is ES-module-only (pyodide.asm.mjs), so this must run as a module worker (see
 // code-runner.js) and load the .mjs entry point -- classic importScripts() is not supported.
-import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.8/full/pyodide.mjs";
+// Which Pyodide build (and so which Python version) to load is passed in as the worker's name
+// (see PythonCodeRunner.restartWebWorker); it's imported dynamically in loadPyodideAndPackages.
+const PYODIDE_VERSION = self.name;
 
 // Text accumulated since the last flush, per stream -- may or may not end in a newline yet.
 let stdoutText = "";
@@ -89,6 +91,11 @@ function blockingStdin() {
 }
 
 async function loadPyodideAndPackages() {
+  // loadPyodide finds the rest of the build (wasm, stdlib, packages) relative to this module's URL.
+  // The URL goes through a variable + @vite-ignore so Vite doesn't treat it as a local
+  // template-literal import (its dynamic-import-vars rewrite turns it into a relative path in dev).
+  const pyodideUrl = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.mjs`;
+  const { loadPyodide } = await import(/* @vite-ignore */ pyodideUrl);
   self.pyodide = await loadPyodide();
   // "raw" (per-byte) mode, not "batched" (per-line): Pyodide's batched handler is documented to
   // also fire on an explicit flush of an unterminated line, but doesn't reliably do so in

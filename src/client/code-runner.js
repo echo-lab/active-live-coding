@@ -1,9 +1,13 @@
+import { PYTHON_VERSIONS, resolvePythonVersion } from "../shared-constants.js";
+
 const MAX_RUNTIME = /*seconds=*/ 60 * 1000;
 const SAB_SIZE = 4096;
 const MAX_INPUT_CHARS = 1000; // worst-case UTF-8 expansion (x4) still fits in the 4088-byte text region
 
 export class PythonCodeRunner {
-  constructor() {
+  // pythonVersion: a key of PYTHON_VERSIONS (null/unknown falls back to the default).
+  constructor(pythonVersion = null) {
+    this.pythonVersion = resolvePythonVersion(pythonVersion);
     this.currentRunId = null;
     this.currentCallbacks = null;
     this.runtimeTimeoutHandle = null;
@@ -25,7 +29,8 @@ export class PythonCodeRunner {
     this.worker?.terminate();
     this.worker = new Worker(
       new URL("./pyodide-webworker.js", import.meta.url),
-      { type: "module" }
+      // The worker reads its name to decide which Pyodide build to load.
+      { type: "module", name: PYTHON_VERSIONS[this.pythonVersion] }
     );
     this.worker.onmessage = (event) => this._handleWorkerMessage(event.data);
   }
@@ -106,16 +111,26 @@ export class PythonCodeRunner {
     this._startRuntimeTimeout();
   }
 
+  // Switches to another Python version: any in-flight run is cancelled (Pyodide can't be swapped
+  // under a running program), and a fresh worker loads the matching Pyodide build.
+  setPythonVersion(pythonVersion) {
+    const resolved = resolvePythonVersion(pythonVersion);
+    if (resolved === this.pythonVersion) return;
+    this.pythonVersion = resolved;
+    if (this.currentRunId) this.cancel("[CANCELLED: PYTHON VERSION CHANGED]"); // cancel() restarts the worker itself
+    else this.restartWebWorker();
+  }
+
   // Cancels the current run (used by the Stop button). Since there's no way to interrupt a
   // running/blocked worker gracefully, this terminates and recreates it -- the same mechanism
   // already used for timeouts.
-  cancel() {
+  cancel(reason = "[CANCELLED BY USER]") {
     if (!this.currentRunId) return;
     const onEnd = this.currentCallbacks?.onEnd;
     this.currentRunId = null;
     this.currentCallbacks = null;
     this._clearRuntimeTimeout();
-    onEnd?.({ cancelled: true, error: "[CANCELLED BY USER]" });
+    onEnd?.({ cancelled: true, error: reason });
     this.restartWebWorker();
   }
 }

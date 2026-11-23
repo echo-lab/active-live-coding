@@ -164,4 +164,23 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   // Instructor -> lecture room: {sessionId, openFileIds, activeFileId}. The server also remembers
   // the latest one per lecture so late joiners start on the instructor's tabs.
   INSTRUCTOR_VIEW_STATE: "INSTRUCTOR_VIEW_STATE",
+  // Server -> lecture room, after the instructor picks a new Python version: {sessionId, pythonVersion}.
+  PYTHON_VERSION_CHANGED: "PYTHON_VERSION_CHANGED",
 });
+
+// MARK: Python versions
+// Each Pyodide release bundles exactly one CPython version, so picking a Python version for a
+// lecture just means loading the matching Pyodide build (see pyodide-webworker.js). Keys are the
+// Python versions offered in the instructor's settings menu (newest first); values are Pyodide
+// versions on the jsdelivr CDN.
+export const PYTHON_VERSIONS = Object.freeze({
+  "3.14": "314.0.8", // Python 3.14.2
+  "3.13": "0.29.5", // Python 3.13.2
+  "3.12": "0.27.8", // Python 3.12.7
+});
+export const DEFAULT_PYTHON_VERSION = "3.14";
+
+// A lecture's stored python_version is nullable: null (or anything we no longer offer) means the default.
+export function resolvePythonVersion(pythonVersion) {
+  return Object.hasOwn(PYTHON_VERSIONS, pythonVersion ?? "") ? pythonVersion : DEFAULT_PYTHON_VERSION;
+}

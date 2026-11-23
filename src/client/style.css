@@ -569,6 +569,21 @@ pre {
   color: #bbb;
 }
 
+.python-version-select {
+  font-size: 13px;
+  padding: 2px 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+}
+
+.python-version-select:disabled {
+  color: #bbb;
+  cursor: not-allowed;
+}
+
 .review-link-icon {
   flex-shrink: 0;
 }

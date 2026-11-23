@@ -96,11 +96,10 @@ async function initialize({
   sessionNumber,
   sessionName = null,
   files = [],
-  playgroundCodeInfo,
   exercises = [],
-  studentSessionId,
   versionBlocks = [],
   instructorView = null,
+  pythonVersion = null,
 }) {
   currentSessionNumber = sessionNumber;
   // Joins the lecture room and keeps this socket in it across reconnects (see utils.js).
@@ -156,7 +155,12 @@ async function initialize({
     workspace.setFollowOffscreenMode(autoScrollCheckbox.checked ? "scroll" : "cues");
   });
 
-  let codeRunner = new PythonCodeRunner();
+  let codeRunner = new PythonCodeRunner(pythonVersion);
+  // The instructor picked another Python version for the lecture: the next run uses it.
+  socket.on(SOCKET_MESSAGE_TYPE.PYTHON_VERSION_CHANGED, ({ sessionId, pythonVersion: version }) => {
+    if (Number(sessionId) !== sessionNumber) return;
+    codeRunner.setPythonVersion(version);
+  });
   let consoleOutput = new Console(codeOutputsEl, { authorLabels: true });
 
   let runInteractions = new RunInteractions({

@@ -22,7 +22,13 @@ import {
 import { createSimulatedResponses } from "./simulate-responses.js";
 import { suggestMcqChoices } from "./suggest-mcq-choices.js";
 import { createGroupSummary } from "./group-responses.js";
-import { SOCKET_MESSAGE_TYPE, validateFilePath, isPathUnder } from "../shared-constants.js";
+import {
+  SOCKET_MESSAGE_TYPE,
+  validateFilePath,
+  isPathUnder,
+  PYTHON_VERSIONS,
+  resolvePythonVersion,
+} from "../shared-constants.js";
 import { eventsDb } from "./events-database.js";
 import { EventBuffer } from "./event-buffer.js";
 import {
@@ -187,6 +193,7 @@ app.post("/lecture-session", async (req, res) => {
         files,
         sessionNumber: sesh.id,
         uuid: sesh.uuid,
+        pythonVersion: resolvePythonVersion(sesh.python_version),
         exercises,
         versionBlocks,
         instructorView: instructorViews.get(sesh.id) ?? null,
@@ -345,6 +352,33 @@ function liveFiles(lectureId, transaction) {
 function matchFiles(files, path, isDirectory) {
   return isDirectory ? files.filter((f) => isPathUnder(f.name, path)) : files.filter((f) => f.name === path);
 }
+
+// MARK: Python version
+// Sets the Python version a lecture's code runs on (instructor and students alike).
+app.post("/lecture/python-version", async (req, res) => {
+  const { lectureId, userId, pythonVersion } = req.body;
+  if (!Object.hasOwn(PYTHON_VERSIONS, pythonVersion ?? "")) {
+    return res.json({ error: `Unsupported Python version: ${pythonVersion}` });
+  }
+  try {
+    const response = await db.transaction(async (t) => {
+      const { lecture, error } = await getInstructorLecture(lectureId, userId, t);
+      if (error) return { error };
+      await lecture.update({ python_version: pythonVersion }, { transaction: t });
+      return { pythonVersion };
+    });
+    if (!response.error) {
+      io.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.PYTHON_VERSION_CHANGED, {
+        sessionId: lectureId,
+        pythonVersion,
+      });
+    }
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to set Python version:", error);
+    res.json({ error: error.message });
+  }
+});
 
 app.post("/file", async (req, res) => {
   const { lectureId, userId, path } = req.body;
@@ -577,6 +611,7 @@ app.post("/current-session-student", async (req, res) => {
         return {
           sessionNumber: lecture.id,
           studentSessionId: sesh.id,
+          pythonVersion: resolvePythonVersion(lecture.python_version),
           files,
           exercises,
           versionBlocks,
@@ -607,6 +642,7 @@ app.post("/current-session-student", async (req, res) => {
         return {
           sessionNumber: lecture.id,
           studentSessionId: sesh.id,
+          pythonVersion: resolvePythonVersion(lecture.python_version),
           files,
           exercises,
           versionBlocks,

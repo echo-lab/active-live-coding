@@ -13,7 +13,7 @@ import {
   recordEvent,
   setupDropdownMenu,
 } from "./shared-interactions.js";
-import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
+import { EVENT_TYPES, SOCKET_MESSAGE_TYPE, PYTHON_VERSIONS, DEFAULT_PYTHON_VERSION } from "../shared-constants.js";
 import { LectureFileSystem } from "./file-system.js";
 import { InstructorWorkspace } from "./workspace.js";
 import { InstructorActivitiesPanel } from "./activities-panel.js";
@@ -150,6 +150,7 @@ function initialize({
   exercises = [],
   versionBlocks = [],
   instructorView = null,
+  pythonVersion = null,
 }) {
   endButton.disabled = false;
   sessionDetails.textContent = `Session: ${sessionNumber}`;
@@ -240,8 +241,49 @@ function initialize({
     pollCreatePopover.openForSelection({ code, at });
   }
 
-  let codeRunner = new PythonCodeRunner();
+  let codeRunner = new PythonCodeRunner(pythonVersion);
   let consoleOutput = new Console(outputCodeContainer);
+
+  // MARK: Python version
+  // Gear-menu select. The choice is saved on the lecture and broadcast to every client in it
+  // (students and any other instructor tab) via PYTHON_VERSION_CHANGED.
+  const pythonVersionSelect = document.querySelector("#python-version-select");
+  for (const version of Object.keys(PYTHON_VERSIONS)) {
+    const option = document.createElement("option");
+    option.value = version;
+    option.textContent = version === DEFAULT_PYTHON_VERSION ? `${version} (default)` : version;
+    pythonVersionSelect.append(option);
+  }
+  pythonVersionSelect.value = codeRunner.pythonVersion;
+  pythonVersionSelect.disabled = false;
+  pythonVersionSelect.addEventListener("change", async () => {
+    const previous = codeRunner.pythonVersion;
+    const requested = pythonVersionSelect.value;
+    pythonVersionSelect.disabled = true;
+    let res;
+    try {
+      const response = await fetch("/lecture/python-version", {
+        body: JSON.stringify({ lectureId: sessionNumber, userId, pythonVersion: requested }),
+        ...POST_JSON_REQUEST,
+      });
+      res = await response.json();
+    } catch (error) {
+      res = { error: error.message };
+    }
+    if (res.error) {
+      console.error("Failed to change Python version:", res.error);
+      alert(`Could not change the Python version: ${res.error}`);
+      pythonVersionSelect.value = previous;
+    } else {
+      codeRunner.setPythonVersion(res.pythonVersion);
+    }
+    if (!locked && !endButton.disabled) pythonVersionSelect.disabled = false;
+  });
+  socket.on(SOCKET_MESSAGE_TYPE.PYTHON_VERSION_CHANGED, ({ sessionId, pythonVersion: version }) => {
+    if (Number(sessionId) !== sessionNumber) return;
+    codeRunner.setPythonVersion(version);
+    pythonVersionSelect.value = codeRunner.pythonVersion;
+  });
 
   let runInteractions = new RunInteractions({
     runButtonEl,
@@ -258,6 +300,7 @@ function initialize({
     );
     if (!confirmed) return;
     endButton.disabled = true;
+    pythonVersionSelect.disabled = true;
     sessionDetails.textContent += " (Terminated)";
     sessionEndedWarning.hidden = false;
     workspace.endSession();
@@ -277,6 +320,7 @@ function initialize({
     activitiesManager.endSession();
     endButton.disabled = true;
     runButtonEl.disabled = true;
+    pythonVersionSelect.disabled = true;
     socket.disconnect();
     showStaleTabOverlay({ title, message, sessionName });
   }

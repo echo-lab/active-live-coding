@@ -250,6 +250,12 @@ LectureSession.init(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    // Python version the lecture's code runs on (a key of PYTHON_VERSIONS in shared-constants.js).
+    // Null means DEFAULT_PYTHON_VERSION -- see resolvePythonVersion.
+    python_version: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
   { sequelize },
 );
