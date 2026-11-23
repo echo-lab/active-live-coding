@@ -32,6 +32,13 @@
                   <span class="toggle-slider"></span>
                 </span>
               </label>
+              <label class="settings-dropdown-item" title="Use AI to sort student responses into groups of similar answers when an exercise ends.">
+                Group responses with AI
+                <span class="toggle-switch">
+                  <input type="checkbox" id="group-responses-checkbox">
+                  <span class="toggle-slider"></span>
+                </span>
+              </label>
               <label class="settings-dropdown-item" title="The Python version your code and your students' code runs on.">
                 Python version
                 <select id="python-version-select" class="python-version-select" disabled></select>
@@ -106,6 +113,18 @@
         <div id="start-session-error"></div>
       </div>
     </div>
+    <dialog id="group-responses-dialog" class="confirm-dialog" aria-labelledby="group-responses-dialog-title">
+      <h3 id="group-responses-dialog-title">Group student responses with AI?</h3>
+      <p>
+        When an exercise ends, student responses can be sent to an AI model (OpenAI) that sorts
+        them into groups of similar answers.
+      </p>
+      <p class="confirm-dialog-hint">You can change this anytime in Settings (gear icon).</p>
+      <div class="confirm-dialog-actions">
+        <button type="button" data-choice="no">Don't group</button>
+        <button type="button" data-choice="yes" class="confirm-dialog-primary">Group responses</button>
+      </div>
+    </dialog>
     <script type="module" src="/src/client/instructor.js"></script>
   </body>
 </html>

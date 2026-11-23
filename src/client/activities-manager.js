@@ -1,5 +1,5 @@
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
-import { POST_JSON_REQUEST, shouldSimulateResponses } from "./utils.js";
+import { POST_JSON_REQUEST, resolveGroupResponsesSetting, shouldSimulateResponses } from "./utils.js";
 import { recordEvent } from "./shared-interactions.js";
 
 // MARK: Instructor
@@ -287,6 +287,14 @@ export class InstructorActivitiesManager extends EventTarget {
     this.dispatchEvent(new CustomEvent("exerciseFinished", { detail: { exercise: ex } }));
 
     if (ex.type === "POLL_MCQ") return;
+
+    // The server won't group 3 or fewer responses, so only consult (and maybe ask for) the
+    // instructor's AI-grouping preference when grouping would actually happen.
+    const shouldGroup = ex.ExerciseResponses.length > 3 && (await resolveGroupResponsesSetting());
+    if (!shouldGroup) {
+      this.dispatchEvent(new CustomEvent("summaryReady", { detail: { exerciseId: ex.id, groups: null } }));
+      return;
+    }
 
     fetch("/exercise/summary", {
       body: JSON.stringify({ instructorId: this.userId, exerciseId: ex.id }),

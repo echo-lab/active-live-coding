@@ -1,7 +1,7 @@
 import "./style.css";
 
 import { io } from "socket.io-client";
-import { POST_JSON_REQUEST, getUserID, joinLectureRoom, setupSimulateResponsesCheckbox, showStaleTabOverlay, takeLectureFromUrl } from "./utils.js";
+import { POST_JSON_REQUEST, getUserID, joinLectureRoom, setupGroupResponsesCheckbox, setupSimulateResponsesCheckbox, showStaleTabOverlay, takeLectureFromUrl } from "./utils.js";
 
 import { PythonCodeRunner } from "./code-runner.js";
 import {
@@ -51,6 +51,7 @@ const outputCodeContainer = document.querySelector("#all-code-outputs");
 const consoleResizer = document.querySelector("#resize-console");
 const codeOutputsContainer = document.querySelector("#output-container");
 setupSimulateResponsesCheckbox("#simulate-responses-checkbox");
+setupGroupResponsesCheckbox();
 
 makeConsoleResizable(codeOutputsContainer, consoleResizer);
 setupDropdownMenu(document.querySelector("#settings-menu-btn"), document.querySelector("#settings-menu"));

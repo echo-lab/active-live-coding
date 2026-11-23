@@ -217,6 +217,68 @@ export function setupSimulateResponsesCheckbox(cls) {
   );
 }
 
+// MARK: AI response grouping
+// Instructor preference (gear menu) for whether finished POLL / CODE_VARIANT exercises get their
+// responses grouped by an LLM. Unset (null) until the instructor either flips the toggle or answers
+// the first-use dialog; the toggle shows ON while unset.
+const GROUP_RESPONSES_KEY = "group_responses";
+const GROUP_RESPONSES_CHECKBOX_SELECTOR = "#group-responses-checkbox";
+
+export function getGroupResponsesSetting() {
+  const val = localStorage.getItem(GROUP_RESPONSES_KEY);
+  if (val === "true") return true;
+  if (val === "false") return false;
+  return null;
+}
+
+export function setGroupResponsesSetting(enabled) {
+  localStorage.setItem(GROUP_RESPONSES_KEY, String(enabled));
+  const checkbox = document.querySelector(GROUP_RESPONSES_CHECKBOX_SELECTOR);
+  if (checkbox) checkbox.checked = enabled;
+}
+
+export function setupGroupResponsesCheckbox() {
+  const checkbox = document.querySelector(GROUP_RESPONSES_CHECKBOX_SELECTOR);
+  checkbox.checked = getGroupResponsesSetting() !== false;
+  checkbox.addEventListener("change", () => setGroupResponsesSetting(checkbox.checked));
+}
+
+let pendingGroupResponsesChoice = null;
+
+// Resolves to the saved setting, or -- if it's unset -- asks the instructor via the
+// #group-responses-dialog modal, saves their answer, and resolves to it. Concurrent callers
+// share one dialog.
+export function resolveGroupResponsesSetting() {
+  const saved = getGroupResponsesSetting();
+  if (saved != null) return Promise.resolve(saved);
+  const dialog = document.querySelector("#group-responses-dialog");
+  if (!dialog) return Promise.resolve(true);
+  if (pendingGroupResponsesChoice) return pendingGroupResponsesChoice;
+
+  pendingGroupResponsesChoice = new Promise((resolve) => {
+    const yesBtn = dialog.querySelector("[data-choice='yes']");
+    const noBtn = dialog.querySelector("[data-choice='no']");
+    const preventEscape = (e) => e.preventDefault();
+    const choose = (enabled) => {
+      yesBtn.removeEventListener("click", onYes);
+      noBtn.removeEventListener("click", onNo);
+      dialog.removeEventListener("cancel", preventEscape);
+      dialog.close();
+      setGroupResponsesSetting(enabled);
+      pendingGroupResponsesChoice = null;
+      resolve(enabled);
+    };
+    const onYes = () => choose(true);
+    const onNo = () => choose(false);
+    yesBtn.addEventListener("click", onYes);
+    noBtn.addEventListener("click", onNo);
+    dialog.addEventListener("cancel", preventEscape);
+    dialog.showModal();
+    yesBtn.focus();
+  });
+  return pendingGroupResponsesChoice;
+}
+
 export const EXAMPLE_CODE = `# Here is some example code
 
 # Slow version
