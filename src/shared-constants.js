@@ -56,9 +56,10 @@ so this row (and any other events still queued at the time) is stored uncompress
 gzipped. The payload is just a timestamp.
 
 INSTRUCTOR_VIEW_FILES: happens whenever the instructor's open tabs or active tab change (opening,
-switching, or closing a file tab). The payload is a timestamp, `openFileIds` (in tab order), and
-`activeFileId` (null if no tab is open). Used by the replay page to show which file the instructor
-was looking at.
+switching, or closing a file tab), or they switch variants in a version block. The payload is a
+timestamp, `openFileIds` (in tab order), `activeFileId` (null if no tab is open), and
+`selectedVariants` ({versionBlockId: variantId}; absent in older logs). Used by the replay page to
+show which file the instructor was looking at.
 */
 export const EVENT_TYPES = Object.freeze({
   CODE_RUN: 0,
@@ -164,7 +165,8 @@ export const SOCKET_MESSAGE_TYPE = Object.freeze({
   FILE_CREATED: "FILE_CREATED",
   FILES_RENAMED: "FILES_RENAMED",
   FILES_DELETED: "FILES_DELETED",
-  // Instructor -> lecture room: {sessionId, openFileIds, activeFileId}. The server also remembers
+  // Instructor -> lecture room: {sessionId, openFileIds, activeFileId, selectedVariants} (selectedVariants:
+  // {versionBlockId: variantId}, the variant shown in each version block). The server also remembers
   // the latest one per lecture so late joiners start on the instructor's tabs.
   INSTRUCTOR_VIEW_STATE: "INSTRUCTOR_VIEW_STATE",
   // Server -> lecture room, after the instructor picks a new Python version: {sessionId, pythonVersion}.

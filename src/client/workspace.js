@@ -291,11 +291,12 @@ export class Workspace extends EventTarget {
     return fileId != null ? this.editorFor(fileId) : null;
   }
 
-  // Switches to the exercise's file (if it has one) and scrolls its code into view.
-  scrollToExercise(ex) {
+  // Switches to the exercise's file (if it has one) and scrolls its code into view. `source` is
+  // reported in "viewchange" (see StudentWorkspace for "exercise-auto").
+  scrollToExercise(ex, { source = "exercise" } = {}) {
     const fileId = this.fileIdForExercise(ex);
     if (fileId == null) return;
-    this.openFile(fileId, { source: "exercise" });
+    this.openFile(fileId, { source });
     const editor = this.editorFor(fileId);
     if (ex.type === "CODE_VARIANT") editor.scrollToVersionBlock(ex.VersionBlockId);
     else editor.scrollToPollMarker(ex.id);
@@ -389,15 +390,28 @@ export class InstructorWorkspace extends Workspace {
     this._broadcastView();
   }
 
+  // The view students follow: the open tabs, plus the variant shown in each version block.
   _broadcastView() {
     if (this.ended) return;
-    const view = { openFileIds: this.openIds, activeFileId: this.activeId };
+    const view = { openFileIds: this.openIds, activeFileId: this.activeId, selectedVariants: this._selectedVariants() };
     this.socket.emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, { sessionId: this.sessionNumber, ...view });
     recordEvent(EVENT_TYPES.INSTRUCTOR_VIEW_FILES, view);
   }
 
+  // {versionBlockId: variantId} for every live version block.
+  _selectedVariants() {
+    const selected = {};
+    for (const editor of this.editors.values()) {
+      for (const [id, widget] of Object.entries(editor.versionBlocks ?? {})) {
+        if (widget.selectedVariantId != null) selected[id] = widget.selectedVariantId;
+      }
+    }
+    return selected;
+  }
+
   _createEditor(file, node, versionBlocks) {
     return new InstructorCodeEditor({
+      onVariantSelectionChange: () => this._broadcastView(),
       node,
       socket: this.socket,
       doc: file.doc,
@@ -449,18 +463,23 @@ export class InstructorWorkspace extends Workspace {
 // version block it names). In "review" mode (socket: null) it's static -- apart from load(), which
 // swaps in a whole new snapshot (the admin replay).
 //
-// Following: by default the student's tabs mirror the instructor's (INSTRUCTOR_VIEW_STATE). The
-// student stops following as soon as they pick a file or tab themselves, open an exercise in a file
-// the instructor isn't showing, or the instructor switches away from a file where the student has
-// started answering a still-active code exercise (typing alone never unfollows) -- from then on,
-// instructor edits still stream in, but tab changes no longer move the student. setFollowing(true)
-// snaps back to the instructor's current tabs. Dispatches "followchange" ({detail: {following}}).
+// Following: by default the student's tabs -- and the variant shown in each version block -- mirror
+// the instructor's (INSTRUCTOR_VIEW_STATE). The student stops following as soon as they pick a file,
+// tab, or variant themselves, open an exercise in a file the instructor isn't showing, or land on
+// their own "My Answer" tab (which the instructor doesn't have): a code exercise starting switches
+// them there -- except in presenting mode (followOffscreenMode "scroll"), where the tab is added
+// but not selected, so a projected view keeps following. From then on, instructor edits still
+// stream in, but tab/variant changes no longer move the student. setFollowing(true) snaps back to
+// the instructor's current tabs and variants. Dispatches "followchange" ({detail: {following}}).
 //
 // Awareness cues (live mode; see instructor-awareness-config.js): while not following, the
-// instructor's file is marked in the tree and tabs, files they type in glow, and in their file,
-// edge bars point at them when they're scrolled out of view. While following, what happens when
-// the instructor is scrolled out of view is the student's choice (followOffscreenMode, gear menu):
-// "cues" shows the same edge bars; "scroll" scrolls the editor to keep the instructor in view.
+// instructor's file is marked in the tree and tabs, and their variant in each version block; files
+// and variants they type in glow, as does the "Follow instructor" button (via "instructoractivity"
+// {detail: {outOfView}} -- outOfView: the edit is in a file or variant the student isn't viewing);
+// and in their file, edge bars point at them when they're scrolled out of view. While following,
+// what happens when the instructor is scrolled out of view is the student's choice
+// (followOffscreenMode, gear menu): "cues" shows the same edge bars; "scroll" scrolls the editor to
+// keep the instructor in view.
 export class StudentWorkspace extends Workspace {
   constructor({ socket = null, mode = "live", instructorView = null, onOpenPollMarker, makeVersionBlockWidget = null, ...rest }) {
     super({ ...rest, editableTree: false });
@@ -469,12 +488,17 @@ export class StudentWorkspace extends Workspace {
     this.onOpenPollMarker = onOpenPollMarker;
     this.makeVersionBlockWidget = makeVersionBlockWidget;
     this.lastInstructorView = instructorView;
-    this.following = true;
-    this.answeredExerciseIds = new Set(); // exercises the student has typed an answer into
     this.followOffscreenMode = getFollowOffscreenMode();
+    // Joining mid-exercise opens the student's own answer (see _autoSelectAnswer), so they start
+    // out not following.
+    this.following = !(
+      mode === "live" &&
+      (this.activitiesManager?.getActiveExercises() ?? []).some((ex) => this._autoSelectAnswer(ex))
+    );
     this.sessionEnded = false;
 
     this.addEventListener("viewchange", ({ detail: { source, activeId } }) => {
+      // "exercise-auto": revealing an exercise the instructor is revealing too -- never unfollows.
       if (source === "user") this.setFollowing(false);
       // Revealing an exercise only breaks away if it lands somewhere the instructor isn't.
       else if (source === "exercise" && activeId !== this.lastInstructorView?.activeFileId) this.setFollowing(false);
@@ -495,7 +519,30 @@ export class StudentWorkspace extends Workspace {
     }
 
     this._start(instructorView);
+    if (this.following) this._applyInstructorVariants();
     this._updateInstructorMarkers();
+  }
+
+  // Whether opening the "My Answer" tab for `ex` also switches to it (and so stops following): for
+  // an active code exercise, unless the student is presenting the instructor's view
+  // (followOffscreenMode "scroll"); for a finished one, only if they aren't following anyway.
+  _autoSelectAnswer(ex) {
+    if (ex.type !== "CODE_VARIANT") return false;
+    if (ex.end_ts == null) return this.followOffscreenMode !== "scroll";
+    return !this.following;
+  }
+
+  // A new code exercise switched the student to "My Answer" (see StudentVersionBlockWidget).
+  _bindActivitiesManager(manager) {
+    if (this._followBoundManager !== manager && this.mode === "live") {
+      this._onExerciseCreatedForFollow ??= ({ detail: { exercise } }) => {
+        if (exercise.type === "CODE_VARIANT" && this._autoSelectAnswer(exercise)) this.setFollowing(false);
+      };
+      this._followBoundManager?.removeEventListener("exerciseCreated", this._onExerciseCreatedForFollow);
+      manager?.addEventListener("exerciseCreated", this._onExerciseCreatedForFollow);
+      this._followBoundManager = manager;
+    }
+    super._bindActivitiesManager(manager);
   }
 
   _routeInstructorMessage(type, msg) {
@@ -510,13 +557,17 @@ export class StudentWorkspace extends Workspace {
         if (msg.fileId == null) return;
         this.editorFor(msg.fileId)?.handleSocketMessage(type, msg);
         // A code exercise's file is found through its version block.
-        return this._updateExerciseMarkers();
+        this._updateExerciseMarkers();
+        return this._onVariantsChanged();
       default: {
         // Variant messages and VERSION_BLOCK_DELETED name a version block, not a file.
         const editor = this.editorForVersionBlock(msg.versionBlockId);
-        if (type === SOCKET_MESSAGE_TYPE.VARIANT_EDIT && editor) this._onInstructorActivity(editor.fileId, editor, msg.versionBlockId);
+        if (type === SOCKET_MESSAGE_TYPE.VARIANT_EDIT && editor) {
+          this._onInstructorActivity(editor.fileId, editor, msg.versionBlockId, msg.variantId);
+        }
         editor?.handleSocketMessage(type, msg);
         if (type === SOCKET_MESSAGE_TYPE.VERSION_BLOCK_DELETED) this._updateExerciseMarkers();
+        if (type === SOCKET_MESSAGE_TYPE.VARIANT_ADDED || type === SOCKET_MESSAGE_TYPE.VARIANT_DELETED) this._onVariantsChanged();
         return;
       }
     }
@@ -556,14 +607,25 @@ export class StudentWorkspace extends Workspace {
     this._updateInstructorMarkers();
   }
 
-  // The instructor just edited `fileId` (in a variant of `versionBlockId`, if given): glow its tree
-  // row / tab, and let the editor's edge bars / auto-scroll know. Main-doc edits reach the editor's
-  // awareness plugin on their own.
-  _onInstructorActivity(fileId, editor = null, versionBlockId = null) {
+  // A version block or variant came or went: the instructor's selection may now be applicable.
+  _onVariantsChanged() {
+    if (this.following && !this.sessionEnded) this._applyInstructorVariants();
+    this._updateInstructorMarkers();
+  }
+
+  // The instructor just edited `fileId` (in variant `variantId` of `versionBlockId`, if given): glow
+  // its tree row / tab / variant tab, and let the editor's edge bars / auto-scroll know. Main-doc
+  // edits reach the editor's awareness plugin on their own.
+  _onInstructorActivity(fileId, editor = null, versionBlockId = null, variantId = null) {
     if (this._awarenessActive()) {
       const shouldFlash = (mode) => mode === "always" || (mode === "other-file" && fileId !== this.activeId);
       if (shouldFlash(INSTRUCTOR_AWARENESS.flashTreeOnEdit)) this.tree.pulseFile(fileId);
       if (shouldFlash(INSTRUCTOR_AWARENESS.flashTabOnEdit)) this.tabs.pulseTab(fileId);
+      const widget = versionBlockId != null ? editor?.getVersionBlock(versionBlockId) : null;
+      if (variantId != null) widget?.pulseVariant?.(variantId);
+      const outOfView =
+        fileId !== this.activeId || (variantId != null && widget?.isShowingVariant && !widget.isShowingVariant(variantId));
+      this.dispatchEvent(new CustomEvent("instructoractivity", { detail: { outOfView } }));
     }
     if (!this._edgeBarsActive() && !this._autoScrollActive()) return;
     if (editor && versionBlockId != null) {
@@ -573,37 +635,52 @@ export class StudentWorkspace extends Workspace {
     }
   }
 
-  // Marks (or unmarks, when the cues are off) the instructor's file, and has every editor recheck
-  // its edge bars.
+  // Marks (or unmarks, when the cues are off) the instructor's file and variants, and has every
+  // editor recheck its edge bars.
   _updateInstructorMarkers() {
-    const id = this._awarenessActive() ? (this.lastInstructorView?.activeFileId ?? null) : null;
+    const active = this._awarenessActive();
+    const id = active ? (this.lastInstructorView?.activeFileId ?? null) : null;
     this.tree.setInstructorFile(INSTRUCTOR_AWARENESS.markInstructorFile.tree ? id : null);
     this.tabs.setInstructorFile(INSTRUCTOR_AWARENESS.markInstructorFile.tab ? id : null);
+    for (const widget of this._studentWidgets()) {
+      widget.setInstructorVariant(active ? this._instructorVariantFor(widget) : null);
+    }
     for (const editor of this.editors.values()) editor.view?.dispatch({ effects: refreshAwarenessEffect.of(null) });
   }
 
-  _onInstructorView({ openFileIds, activeFileId }) {
-    this.lastInstructorView = { openFileIds, activeFileId };
-    if (this.following) {
-      // Don't pull the student away from an answer they're writing: stay put and stop following.
-      if (activeFileId !== this.activeId && this._hasAnswerInProgressIn(this.activeId)) this.setFollowing(false);
-      else this._applyInstructorView();
-    }
+  _onInstructorView({ openFileIds, activeFileId, selectedVariants = {} }) {
+    this.lastInstructorView = { openFileIds, activeFileId, selectedVariants };
+    if (this.following) this._applyInstructorView();
     this._updateInstructorMarkers();
-  }
-
-  // Whether `fileId` holds a still-active exercise the student has started answering.
-  _hasAnswerInProgressIn(fileId) {
-    if (fileId == null) return false;
-    return (this.activitiesManager?.getActiveExercises() ?? []).some(
-      (ex) => this.answeredExerciseIds.has(ex.id) && this.fileIdForExercise(ex) === fileId,
-    );
   }
 
   _applyInstructorView() {
     const view = this.lastInstructorView;
     if (!view) return;
     this._setView({ openIds: view.openFileIds ?? [], activeId: view.activeFileId }, { source: "instructor" });
+    this._applyInstructorVariants();
+  }
+
+  // Every version block widget that follows the instructor (the replay page mounts instructor-style
+  // widgets instead, which don't).
+  _studentWidgets() {
+    return this.allEditors()
+      .flatMap((editor) => editor.versionBlocks ?? [])
+      .filter((widget) => typeof widget.selectVariantById === "function");
+  }
+
+  // The variant the instructor is showing in `widget`'s block: their last announced selection, else
+  // the first variant (where every block starts).
+  _instructorVariantFor(widget) {
+    return this.lastInstructorView?.selectedVariants?.[widget.versionBlockId] ?? widget.variants[0]?.id ?? null;
+  }
+
+  _applyInstructorVariants() {
+    if (this.mode !== "live") return; // review pages open on the student's own answers
+    for (const widget of this._studentWidgets()) {
+      const id = this._instructorVariantFor(widget);
+      if (id != null) widget.selectVariantById(id);
+    }
   }
 
   // See Workspace.load. While following, opens the instructor's tabs as of the snapshot.
@@ -646,7 +723,10 @@ export class StudentWorkspace extends Workspace {
       onOpenPollMarker: this.onOpenPollMarker,
       reviewMode: this.mode === "review",
       makeVersionBlockWidget: this.makeVersionBlockWidget,
-      onAnswerEdit: (ex) => this.answeredExerciseIds.add(ex.id),
+      versionBlockOptions: {
+        onUserSelect: () => this.setFollowing(false),
+        autoSelectAnswer: (ex) => this._autoSelectAnswer(ex),
+      },
     });
   }
 

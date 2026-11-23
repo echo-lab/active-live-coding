@@ -9,6 +9,7 @@ import { followInstructorExtensions, setInstructorSelection } from "./cm-extensi
 import { EVENT_TYPES, SOCKET_MESSAGE_TYPE } from "../shared-constants.js";
 import { POST_JSON_REQUEST, PATCH_JSON_REQUEST, PUT_JSON_REQUEST } from "./utils.js";
 import { recordEvent } from "./shared-interactions.js";
+import { INSTRUCTOR_AWARENESS, GlowTracker, makeInstructorBadge } from "./instructor-awareness-config.js";
 
 // ============================================================
 // MARK: Module-level state
@@ -33,11 +34,18 @@ export function setVersionBlockReadOnly(v) {
 // MARK: Student Version
 export class StudentVersionBlockWidget extends WidgetType {
 
-  // onAnswerEdit(exercise): called whenever the student edits their own answer.
-  constructor({ versionBlockId, variants, activitiesManager = null, outerView = null, reviewMode = false, onAnswerEdit = null }) {
+  // onUserSelect(): the student picked a different tab (a variant or "My Answer") themselves.
+  // autoSelectAnswer(exercise): whether opening the "My Answer" tab for `exercise` should also
+  //   switch to it (default: always).
+  constructor({ versionBlockId, variants, activitiesManager = null, outerView = null, reviewMode = false, onUserSelect = null, autoSelectAnswer = null }) {
     super();
     this.versionBlockId = versionBlockId;
-    this._onAnswerEdit = onAnswerEdit;
+    this._onUserSelect = onUserSelect;
+    this._autoSelectAnswer = autoSelectAnswer ?? (() => true);
+    // Instructor awareness: the variant the instructor has selected (null: don't mark it), and
+    // glowing tabs while they type in a variant.
+    this._instructorVariantId = null;
+    this._glow = new GlowTracker();
     this.selectedIndex = 0;
     this.isMinimized = START_MINIMIZED;
     this.tabEls = [];
@@ -125,11 +133,62 @@ export class StudentVersionBlockWidget extends WidgetType {
     tab.addEventListener("mousedown", (e) => {
       e.preventDefault();
       const currentIndex = this.variants.findIndex(v => v.id === variant.id);
-      if (currentIndex >= 0) this._selectTab(currentIndex);
+      if (currentIndex < 0) return;
+      const changed = this._studentTabSelected || currentIndex !== this.selectedIndex;
+      this._selectTab(currentIndex);
+      if (changed) this._onUserSelect?.();
     });
 
     this.tabEls.splice(index, 0, tab);
     return tab;
+  }
+
+  _tabFor(variantId) {
+    return this.tabEls.find((t) => t.dataset.variantId === String(variantId)) ?? null;
+  }
+
+  // Whether the student is looking at this variant (not another one, or their own answer).
+  isShowingVariant(variantId) {
+    return !this._studentTabSelected && this.variants[this.selectedIndex]?.id === variantId;
+  }
+
+  // Shows the given variant (leaving "My Answer" if needed) -- e.g. to mirror the instructor while
+  // following. Returns false if there's no such variant (yet).
+  selectVariantById(variantId) {
+    const index = this.variants.findIndex((v) => v.id === variantId);
+    if (index < 0) return false;
+    this._selectTab(index);
+    return true;
+  }
+
+  // MARK: -- instructor awareness
+
+  // Marks the instructor's selected variant's tab (null: no mark) -- see markInstructorVariant.
+  setInstructorVariant(variantId) {
+    this._instructorVariantId = variantId;
+    this._applyInstructorMark();
+  }
+
+  _applyInstructorMark() {
+    for (const tab of this.tabEls) {
+      tab.classList.remove("instructor-here");
+      tab.querySelector(".instructor-badge")?.remove();
+    }
+    const id = this._instructorVariantId;
+    const mode = INSTRUCTOR_AWARENESS.markInstructorVariant;
+    if (id == null || mode === "never") return;
+    if (mode === "other-variant" && this.isShowingVariant(id)) return;
+    const tab = this._tabFor(id);
+    if (!tab) return;
+    tab.classList.add("instructor-here");
+    tab.append(makeInstructorBadge());
+  }
+
+  // The instructor just typed in this variant: glow its tab (see flashVariantOnEdit).
+  pulseVariant(variantId) {
+    const mode = INSTRUCTOR_AWARENESS.flashVariantOnEdit;
+    if (mode === "never" || (mode === "other-variant" && this.isShowingVariant(variantId))) return;
+    this._glow.pulse(variantId, () => this._tabFor(variantId));
   }
 
   _selectTab(index) {
@@ -144,6 +203,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     this.selectedIndex = index;
     this.tabEls[index]?.classList.add("selected");
     this._mountEditor(index);
+    this._applyInstructorMark();
   }
 
   _selectStudentTab() {
@@ -152,6 +212,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     this._studentTabEl?.classList.add("selected");
     this._studentTabSelected = true;
     if (this._studentAnswerEl) this._studentAnswerEl.hidden = false;
+    this._applyInstructorMark();
   }
 
   _mountEditor(index) {
@@ -201,7 +262,6 @@ export class StudentVersionBlockWidget extends WidgetType {
               hasStarted = true;
               recordEvent(EVENT_TYPES.STUDENT_START_EXERCISE, { exerciseId: exercise.id });
             }
-            this._onAnswerEdit?.(exercise);
           }),
           ...(readOnly ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : []),
         ],
@@ -217,9 +277,17 @@ export class StudentVersionBlockWidget extends WidgetType {
     label.className = "cm-version-block-tab-label";
     label.textContent = "My Answer";
     tab.appendChild(label);
-    tab.addEventListener("mousedown", (e) => { e.preventDefault(); this._selectStudentTab(); });
+    tab.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (this._studentTabSelected) return;
+      this._selectStudentTab();
+      this._onUserSelect?.();
+    });
     this._studentTabEl = tab;
 
+    // Review pages always open on the student's answer; live, the page decides (e.g. not while
+    // presenting the instructor's view to the class).
+    const select = this._reviewMode || this._autoSelectAnswer(exercise);
     if (this.variantContainer) {
       this.variantContainer.appendChild(el);
       this.tabsContainer.appendChild(tab);
@@ -228,7 +296,10 @@ export class StudentVersionBlockWidget extends WidgetType {
         if (priorAnswer) this._submitBtn.textContent = "Resubmit";
         this.variantContainer.classList.add("exercise-open");
       }
-      this._selectStudentTab();
+      if (select) this._selectStudentTab();
+    } else {
+      // Not rendered yet: toDOM picks this up.
+      this._studentTabSelected = select;
     }
     if (shouldScroll && this._outerView) {
       const from = this.getPosition(this._outerView.state);
@@ -346,7 +417,8 @@ export class StudentVersionBlockWidget extends WidgetType {
       this.tabsContainer.appendChild(this._studentTabEl);
       this._submitBtn.hidden = this._exerciseReadOnly;
       if (!this._exerciseReadOnly) container.classList.add("exercise-open");
-      this._selectStudentTab();
+      // Re-rendered (or activated before the first render): keep whichever tab was showing.
+      if (this._studentTabSelected) this._selectStudentTab();
     } else if (this._activitiesManager) {
       const ex = this._activitiesManager.getExerciseForVersionBlock(this.versionBlockId);
       if (ex) {
@@ -363,6 +435,7 @@ export class StudentVersionBlockWidget extends WidgetType {
     }
 
     this._setMinimized(this.isMinimized);
+    this._applyInstructorMark();
 
     return container;
   }
@@ -375,19 +448,23 @@ export class StudentVersionBlockWidget extends WidgetType {
     return this.variants.find(v => v.id === variantId)?.editor;
   }
 
+  // Adds the instructor's new variant without switching to it -- while following, the workspace
+  // switches to whichever variant the instructor selects.
   addVariant(v) {
+    if (this.variants.some((existing) => existing.id === v.id)) return;
     const variant = { ...v, ...this._makeVariantFollowingEditor(v) };
     this.variants.push(variant);
     if (!this.variantContainer) return;
     const newIndex = this.variants.length - 1;
     const tabEl = this._makeTabEl(newIndex);
+    tabEl.classList.remove("selected");
     this.variantContainer.appendChild(variant.el);
     if (this._myAnswerTab) {
       this.tabsContainer.insertBefore(tabEl, this._myAnswerTab);
     } else {
       this.tabsContainer.appendChild(tabEl);
     }
-    this._selectTab(newIndex);
+    this._applyInstructorMark();
   }
 
   renameVariant(variantId, name) {
@@ -406,19 +483,25 @@ export class StudentVersionBlockWidget extends WidgetType {
     const deletingSelected = variantId === selectedVariantId;
 
     this.tabEls[this.selectedIndex]?.classList.remove("selected");
-    this.variants.splice(index, 1)[0]?.el?.remove();
+    const [removed] = this.variants.splice(index, 1);
+    removed?.el?.remove();
+    removed?.editor?.view?.destroy();
     this.tabEls.splice(index, 1)[0]?.remove();
 
     if (deletingSelected) {
-      const newIndex = Math.max(0, index - 1);
-      this.selectedIndex = newIndex;
-      this.tabEls[newIndex]?.classList.add("selected");
-      this._mountEditor(newIndex);
+      this.selectedIndex = Math.max(0, index - 1);
+      // Someone on "My Answer" stays there; otherwise show the neighbouring variant.
+      if (!this._studentTabSelected) {
+        this.tabEls[this.selectedIndex]?.classList.add("selected");
+        this._mountEditor(this.selectedIndex);
+      }
     } else {
       const newIndex = this.variants.findIndex(v => v.id === selectedVariantId);
       this.selectedIndex = newIndex >= 0 ? newIndex : 0;
-      this.tabEls[this.selectedIndex]?.classList.add("selected");
+      if (!this._studentTabSelected) this.tabEls[this.selectedIndex]?.classList.add("selected");
     }
+    if (this._instructorVariantId === variantId) this._instructorVariantId = null;
+    this._applyInstructorMark();
   }
 
 }
@@ -429,9 +512,12 @@ export class StudentVersionBlockWidget extends WidgetType {
 
 // TODO: make another class for the students :)
 export class VersionBlockWidget extends WidgetType {
-  constructor({ versionBlockId, variants, socket = null, sessionNumber = null, activitiesManager = null, getInstructorCode, view, onDissolve, readOnly = false }) {
+  // onSelectionChange(): called whenever the selected variant changes (the instructor's page
+  // tells students which variant it's showing -- see InstructorWorkspace._broadcastView).
+  constructor({ versionBlockId, variants, socket = null, sessionNumber = null, activitiesManager = null, getInstructorCode, view, onDissolve, readOnly = false, onSelectionChange = null }) {
     super();
     this.versionBlockId = versionBlockId;
+    this._onSelectionChange = onSelectionChange;
     this.socket = socket;
     this.sessionNumber = sessionNumber;
     this.activitiesManager = activitiesManager;
@@ -844,6 +930,12 @@ export class VersionBlockWidget extends WidgetType {
     this.selectedIndex = index;
     this.tabEls[index]?.classList.add("selected");
     this._mountEditor(index);
+    this._onSelectionChange?.();
+  }
+
+  // The id of the variant currently shown.
+  get selectedVariantId() {
+    return this.variants[this.selectedIndex]?.id ?? null;
   }
 
   _mountEditor(index) {
@@ -870,8 +962,10 @@ export class VersionBlockWidget extends WidgetType {
     try {
       const variant = await this._createVariantBackend();
       if (!variant) return;
-      this._mountVariant(variant);
+      // Announce the variant before selecting it, so students know it by the time the
+      // instructor's selection reaches them.
       this._broadcastVariantAdded(variant);
+      this._mountVariant(variant);
       recordEvent(EVENT_TYPES.INSTRUCTOR_CREATE_VARIANT, {
         variantId: variant.id,
         versionBlockId: this.versionBlockId,
@@ -896,8 +990,8 @@ export class VersionBlockWidget extends WidgetType {
       const { error } = await res.json();
       if (error) { console.error("Failed to seed new variant's code:", error); return; }
       const variant = { ...created, code, docVersion: created.docVersion + 1 };
+      this._broadcastVariantAdded(variant); // before selecting it -- see _createVariant
       this._mountVariant(variant);
-      this._broadcastVariantAdded(variant);
       recordEvent(EVENT_TYPES.INSTRUCTOR_CREATE_VARIANT, {
         variantId: variant.id,
         versionBlockId: this.versionBlockId,
@@ -1027,6 +1121,7 @@ export class VersionBlockWidget extends WidgetType {
       this.selectedIndex = newIndex;
       this.tabEls[newIndex]?.classList.add("selected");
       this._mountEditor(newIndex);
+      this._onSelectionChange?.();
     } else {
       const newIndex = this.variants.findIndex((v) => v.id === selectedVariantId);
       this.selectedIndex = newIndex >= 0 ? newIndex : 0;

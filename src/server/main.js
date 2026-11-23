@@ -306,7 +306,7 @@ app.delete("/version-block/:id", async (req, res) => {
 // new rows' ids. Paths are stored flat ("dir/name.py"); directories only exist implicitly.
 
 // Lectures in which the latest INSTRUCTOR_VIEW_STATE is remembered: lectureId -> {openFileIds,
-// activeFileId}. In memory only -- it just picks which tabs a (re)joining client starts on.
+// activeFileId, selectedVariants}. In memory only -- it just picks which tabs a (re)joining client starts on.
 const instructorViews = new Map();
 
 async function getInstructorLecture(lectureId, userId, transaction) {
@@ -1221,11 +1221,15 @@ io.on("connection", async (socket) => {
     }),
   );
 
-  // msg: {sessionId, openFileIds, activeFileId}
+  // msg: {sessionId, openFileIds, activeFileId, selectedVariants: {versionBlockId: variantId}}
   socket.on(
     SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE,
     asInstructor((msg, lectureId) => {
-      instructorViews.set(lectureId, { openFileIds: msg.openFileIds ?? [], activeFileId: msg.activeFileId ?? null });
+      instructorViews.set(lectureId, {
+        openFileIds: msg.openFileIds ?? [],
+        activeFileId: msg.activeFileId ?? null,
+        selectedVariants: msg.selectedVariants ?? {},
+      });
       socket.to(lectureRoom(lectureId)).emit(SOCKET_MESSAGE_TYPE.INSTRUCTOR_VIEW_STATE, msg);
     }),
   );

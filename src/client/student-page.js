@@ -27,6 +27,7 @@ import { StudentActivePollPopover } from "./poll-active-popover.js";
 import { StudentPollCompletePopover } from "./poll-complete-popover.js";
 import { PollPopoverCoordinator } from "./poll-popover-coordinator.js";
 import { createHistoricalViewController } from "./historical-view-controller.js";
+import { INSTRUCTOR_AWARENESS, GlowTracker } from "./instructor-awareness-config.js";
 
 const codeContainersHost = document.querySelector("#code-containers");
 const fileTabsEl = document.querySelector("#file-tabs");
@@ -138,10 +139,19 @@ async function initialize({
     if (source === "user") historicalController.returnToLive();
   });
 
-  // Shown whenever the student has stopped following the instructor's tabs.
+  // Shown whenever the student has stopped following the instructor's tabs. (They may already have
+  // stopped while the workspace was set up -- e.g. joining mid-exercise.)
   const followBtn = document.querySelector("#follow-instructor-btn");
+  followBtn.hidden = workspace.following;
   workspace.addEventListener("followchange", ({ detail: { following } }) => {
     followBtn.hidden = following || !sessionActive;
+  });
+  // Glows while the instructor types somewhere the student isn't looking.
+  const followBtnGlow = new GlowTracker();
+  workspace.addEventListener("instructoractivity", ({ detail: { outOfView } }) => {
+    const mode = INSTRUCTOR_AWARENESS.flashFollowButtonOnEdit;
+    if (workspace.following || mode === "never" || (mode === "out-of-view" && !outOfView)) return;
+    followBtnGlow.pulse("follow", () => followBtn);
   });
   followBtn.addEventListener("click", () => {
     historicalController.returnToLive();
@@ -256,10 +266,15 @@ async function initialize({
     // Standalone polls (no code anchor) have no dedicated element to anchor to on the student
     // side -- the workspace pins the popover to the editor pane's top-right corner instead.
     getAnchor: (ex) => workspace.anchorForExercise(ex),
-    scrollToExercise: (ex) => {
+    // `auto`: a poll just finished. The instructor's page jumps to it too, so this never stops
+    // following ("exercise-auto").
+    scrollToExercise: (ex, { auto = false } = {}) => {
       historicalController.returnToLive();
-      workspace.scrollToExercise(ex);
+      workspace.scrollToExercise(ex, { source: auto ? "exercise-auto" : "exercise" });
     },
+    // A finished poll pops open on its own only if it won't pull a student who isn't following
+    // away from where they are.
+    shouldAutoOpenFinished: (ex) => workspace.following || workspace.fileIdForExercise(ex) === workspace.activeId,
     openHistoricalView: (ex) => historicalController.open(ex, activitiesManager),
     closeHistoricalView: () => historicalController.returnToLive(),
   });

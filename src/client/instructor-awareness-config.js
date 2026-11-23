@@ -20,6 +20,16 @@ export const INSTRUCTOR_AWARENESS = {
   flashTreeOnEdit: "other-file",
   flashTabOnEdit: "other-file",
 
+  // Version blocks: badge + tint the instructor's selected variant's tab, and glow a variant's tab
+  // while the instructor types in it:
+  //   "never" | "other-variant" (only if the student has a different tab selected) | "always"
+  markInstructorVariant: "other-variant",
+  flashVariantOnEdit: "other-variant",
+
+  // Glow the "Follow instructor" button when the instructor types:
+  //   "never" | "out-of-view" (in a file or variant the student isn't looking at) | "always"
+  flashFollowButtonOnEdit: "out-of-view",
+
   // In the instructor's file: edge bars at the top/bottom of the editor when the instructor's
   // cursor (showCursor) or an edit (flashOnEdit) is scrolled out of view.
   offscreen: { showCursor: true, flashOnEdit: true },

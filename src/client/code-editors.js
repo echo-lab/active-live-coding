@@ -63,9 +63,10 @@ export class StudentCodeEditor {
   // Initialize CodeMirror and (if `socket` is given) listen for instructor updates. Pages with
   // several files pass no socket and instead route each message to the right file's editor via
   // handleSocketMessage (see workspace.js).
-  constructor({node, doc, docVersion, fileId, fileName = null, socket = null, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null, onAnswerEdit = null}) {
+  constructor({node, doc, docVersion, fileId, fileName = null, socket = null, sessionId, extraExtensions = [], versionBlocks, activitiesManager = null, onOpenPollMarker, reviewMode = false, makeVersionBlockWidget = null, versionBlockOptions = {}}) {
     this.docVersion = docVersion;
-    this._onAnswerEdit = onAnswerEdit;
+    // Extra options for each StudentVersionBlockWidget (see its constructor).
+    this._versionBlockOptions = versionBlockOptions;
     this.fileId = fileId;
     this.fileName = fileName;
     this.sessionId = sessionId;
@@ -195,7 +196,7 @@ export class StudentCodeEditor {
     // console.log("adding version block: ", {from, to, versionBlockId, variants});
     const widget = this._makeVersionBlockWidget
       ? this._makeVersionBlockWidget({ versionBlockId, variants, view: this.view })
-      : new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode, onAnswerEdit: this._onAnswerEdit});
+      : new StudentVersionBlockWidget({versionBlockId, variants, activitiesManager: this.activitiesManager, outerView: this.view, reviewMode: this._reviewMode, ...this._versionBlockOptions});
     this.versionBlocks.push(widget);
     this.view.dispatch({
       effects: addVersionBlockEffect.of({from, to, widget}),
@@ -426,8 +427,11 @@ export class InstructorCodeEditor {
     onCreatePollRequested,
     onOpenPollMarker,
     fileName = null,
+    onVariantSelectionChange = null,
   }) {
     this.docVersion = startVersion;
+    // Called when any of this file's version blocks switches variants.
+    this.onVariantSelectionChange = onVariantSelectionChange;
     this.fileId = fileId;
     this.fileName = fileName;
     // Every change before this version has been durably written by the server.
@@ -474,6 +478,7 @@ export class InstructorCodeEditor {
         getInstructorCode: () => this.codeWithVariantAsPlaceholder(block.id),
         view: this.view,
         onDissolve: (opts) => this.dissolveVersionBlock(block.id, opts),
+        onSelectionChange: () => this.onVariantSelectionChange?.(),
       });
       this.versionBlocks[block.id] = widget;
       this.view.dispatch({
@@ -826,6 +831,7 @@ export class InstructorCodeEditor {
           getInstructorCode: () => this.codeWithVariantAsPlaceholder(versionBlockId),
           view: this.view,
           onDissolve: (opts) => this.dissolveVersionBlock(versionBlockId, opts),
+          onSelectionChange: () => this.onVariantSelectionChange?.(),
         });
       this.versionBlocks[versionBlockId] = widget;
       const isAtDocEnd = lineTo >= state.doc.length;

@@ -95,8 +95,11 @@ export function isAnchorDeleted(ex) {
 
 // MARK: Student Panel
 export class StudentActivitiesPanel {
-  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView, closeHistoricalView, reviewMode = false }) {
+  // shouldAutoOpenFinished(ex): whether a poll that just finished should pop open its results
+  // (and reveal its code) on its own -- default: always.
+  constructor(manager, { student_id, onPollPanelOpenChange, activePopover, completePopover, getAnchor, scrollToExercise, openHistoricalView, closeHistoricalView, shouldAutoOpenFinished = null, reviewMode = false }) {
     this.manager = manager;
+    this._shouldAutoOpenFinished = shouldAutoOpenFinished ?? (() => true);
     this.student_id = student_id;
     this.onPollPanelOpenChange = onPollPanelOpenChange;
     this._activePopover = activePopover;
@@ -140,7 +143,7 @@ export class StudentActivitiesPanel {
     this.manager.addEventListener("exerciseFinished", ({ detail: { exercise } }) => {
       this._renderList();
       if (exercise.type !== "POLL" && exercise.type !== "POLL_MCQ") return;
-      this._openFinished(exercise);
+      this._openFinished(exercise, { auto: true });
     });
 
     this.manager.addEventListener("exerciseUpdated", () => {
@@ -179,10 +182,12 @@ export class StudentActivitiesPanel {
     this._notifyPollHighlight(ex.id);
   }
 
-  // Scrolls the anchored code into view, then opens the stage-3 review popover.
-  _openFinished(ex) {
+  // Scrolls the anchored code into view, then opens the stage-3 review popover. `auto`: the poll
+  // just finished (rather than the student asking to see it).
+  _openFinished(ex, { auto = false } = {}) {
     if (isAnchorDeleted(ex)) return;
-    this._scrollToExercise?.(ex);
+    if (auto && !this._shouldAutoOpenFinished(ex)) return;
+    this._scrollToExercise?.(ex, { auto });
     this._openCompletePopover(ex);
   }
 

@@ -228,6 +228,17 @@
   background-color: var(--instructor-tint);
 }
 
+/* The instructor's variant in a version block (when the student has another one selected). */
+.cm-version-block-tab.instructor-here {
+  background-color: var(--instructor-tint);
+  border-color: var(--instructor-accent);
+}
+
+.cm-version-block-tab .instructor-badge {
+  margin-left: 0;
+  margin-right: 4px;
+}
+
 .file-tree-row.active.instructor-here {
   background-image: linear-gradient(var(--instructor-tint), var(--instructor-tint));
 }
@@ -255,8 +266,21 @@
   animation: instructor-flash-row var(--instructor-flash-ms, 600ms) ease-out;
 }
 
-.code-tab.file-tab.instructor-activity {
+.code-tab.file-tab.instructor-activity,
+.cm-version-block-tab.instructor-activity {
   animation: instructor-flash-tab var(--instructor-flash-ms, 600ms) ease-out;
+}
+
+/* "Follow instructor" while the instructor types somewhere the student isn't looking. */
+@keyframes instructor-flash-button {
+  from {
+    background-color: var(--instructor-glow);
+    border-color: var(--instructor-accent);
+  }
+}
+
+.follow-instructor-btn.instructor-activity {
+  animation: instructor-flash-button var(--instructor-flash-ms, 600ms) ease-out;
 }
 
 /* Edge bars: the instructor is above/below the visible part of this file. */
