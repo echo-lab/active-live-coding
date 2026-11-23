@@ -1,12 +1,13 @@
 import OpenAI from "openai";
 import { EXERCISE_TYPE, SimulatedExerciseResponse } from "./models.js";
 import { db } from "./database.js";
+import { OTHER_FILES_NOTE, CONTEXT_OPEN, CONTEXT_CLOSE, annotatedPollFile } from "./prompt-utils.js";
 
 const N = 100; // How many simulated responses to create :)
 
 const client = new OpenAI(); // reads OPENAI_API_KEY from env
 
-export async function createSimulatedResponses(exercise, additionalContext) {
+export async function createSimulatedResponses(exercise) {
   let prompt;
 
   if (exercise.type === EXERCISE_TYPE.CODE_VARIANT) {
@@ -14,11 +15,11 @@ export async function createSimulatedResponses(exercise, additionalContext) {
   }
 
   if (exercise.type === EXERCISE_TYPE.POLL) {
-    prompt = createPollPrompt(exercise, additionalContext);
+    prompt = createPollPrompt(exercise);
   }
 
   if (exercise.type === EXERCISE_TYPE.POLL_MCQ) {
-    prompt = createPollMcqPrompt(exercise, additionalContext);
+    prompt = createPollMcqPrompt(exercise);
     console.log("PROMPT: \n", prompt);
   }
 
@@ -51,12 +52,12 @@ export async function createSimulatedResponses(exercise, additionalContext) {
   return records;
 }
 
-function createPollPrompt(exercise, additionalContext) {
-  const { instructions, instructor_code } = exercise;
+function createPollPrompt(exercise) {
+  const { instructions } = exercise;
 
   return `Your job is to simulate student responses to an in-class poll exercise.
   The instructor has posed a question or prompt to students during a live coding lecture.
-  I will provide the instructor's question (INSTRUCTIONS), the instructor's full code at the time of the poll (INSTRUCTOR_CODE), and optionally the specific code the instructor had selected when creating the poll (SELECTED_CODE).
+  I will provide the instructor's question (INSTRUCTIONS) and the instructor's code at the time of the poll (INSTRUCTOR_CODE).
 
   Give your response in JSON format as a list of strings which contain possible student responses. You should produce ${N} responses in total.
   Try to vary the responses somewhat, but keep them plausible -- it's okay if some are very similar.
@@ -67,14 +68,17 @@ function createPollPrompt(exercise, additionalContext) {
   <INSTRUCTIONS>
   ${instructions}
   </INSTRUCTIONS>
-  ${additionalContext ? `<INSTRUCTOR_CODE>\n  ${additionalContext}\n  </INSTRUCTOR_CODE>` : ""}
-  ${instructor_code ? `<SELECTED_CODE>\n  ${instructor_code}\n  </SELECTED_CODE>` : ""}
+
+Below is the file the instructor was working with, which may additionally be annotated with '${CONTEXT_OPEN}' and '${CONTEXT_CLOSE}' tags to mark a region of code associated with the question:
+<INSTRUCTOR_CODE>
+${annotatedPollFile(exercise)}
+</INSTRUCTOR_CODE>
+${OTHER_FILES_NOTE}
   `;
 }
 
-function createPollMcqPrompt(exercise, additionalContext) {
-  const { instructions, instructor_code, default_answer } = exercise;
-  const full_instructor_code = additionalContext;
+function createPollMcqPrompt(exercise) {
+  const { instructions, default_answer } = exercise;
   const choices = JSON.parse(default_answer);
   const choicesString = choices.map((c, i) => `<CHOICE id=${i}>${c}</CHOICE>`).join("\n");
 
@@ -85,7 +89,7 @@ function createPollMcqPrompt(exercise, additionalContext) {
   Distribute picks plausibly across the choices — most students should choose a reasonable answer, but some may pick incorrect options (especially for difficult questions).
   Only respond with the JSON-parsable list (e.g., "[0, 2, 4, 4, 1, 4, 2, 2, 3]").
   
-  I will provide some context, including: the instructor's directions (INSTRUCTIONS), the possible answer choices (CHOICES) where each choice is wrapped in a CHOICE tag with an id, the code the instructor highlighted, if any (SELECTED_CODE), and the full contents of the instructor's code editor (INSTRUCTOR_CODE), which may contain irrelevant information.
+  I will provide some context, including: the instructor's directions (INSTRUCTIONS), the possible answer choices (CHOICES) where each choice is wrapped in a CHOICE tag with an id, and the instructor's code at the time of the poll (INSTRUCTOR_CODE), which may contain irrelevant information.
 
   <INSTRUCTIONS>
   ${instructions}
@@ -93,8 +97,11 @@ function createPollMcqPrompt(exercise, additionalContext) {
   <CHOICES>
   ${choicesString}
   </CHOICES>
-  ${full_instructor_code ? `<INSTRUCTOR_CODE>\n  ${full_instructor_code}\n  </INSTRUCTOR_CODE>` : ""}
-  ${instructor_code ? `<SELECTED_CODE>\n  ${instructor_code}\n  </SELECTED_CODE>` : ""}
+Below is the file the instructor was working with, which may additionally be annotated with '${CONTEXT_OPEN}' and '${CONTEXT_CLOSE}' tags to mark a region of code associated with the question:
+<INSTRUCTOR_CODE>
+${annotatedPollFile(exercise)}
+</INSTRUCTOR_CODE>
+${OTHER_FILES_NOTE}
   `;
 }
 
@@ -117,9 +124,10 @@ function createVariantPrompt(exercise) {
   Here is the instructor's code and the code being replaced.
   <INSTRUCTOR_CODE>
   ${instructor_code}
-  </ INSTRUCTOR_CODE>
+  </INSTRUCTOR_CODE>
   <ORIGINAL>
   ${default_answer}
-  </ ORIGINAL>
+  </ORIGINAL>
+  ${OTHER_FILES_NOTE}
   `;
 }

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { EXERCISE_TYPE } from "./models.js";
+import { OTHER_FILES_NOTE, CONTEXT_OPEN, CONTEXT_CLOSE, annotatedPollFile } from "./prompt-utils.js";
 
 const client = new OpenAI(); // reads OPENAI_API_KEY from env
 
@@ -40,17 +41,19 @@ function buildPrompt(exercise, allResponses) {
 }
 
 function buildPromptPoll(exercise, allResponses) {
-  const { instructions, instructor_code } = exercise;
-
-
   return `You are analyzing student responses to an in-class discussion question and coming up with reasonable groupings.
 
 The question the instructor asked students:
 <Question>
-${instructions}
+${exercise.instructions}
 </Question>
 
-${ instructor_code ?  `The instructor provided the following code as context: <Code>${instructor_code}</Code>`: ''}
+The question was asked during a live-coding lecture.
+Below is the file the instructor was working with, which may additionally be annotated with '${CONTEXT_OPEN}' and '${CONTEXT_CLOSE}' tags to mark a region of code associated with the question:
+<File>
+${annotatedPollFile(exercise)}
+</File>
+${OTHER_FILES_NOTE}
 
 Here are the student responses, each with a unique ID and their answer:
 <Student responses>
@@ -58,7 +61,9 @@ ${allResponses.map((r) => `<response id='${r.id}'>${r.answer}</response>`).join(
 </Student responses>
 
 Group these responses into approximately 2-8 groups based on their conceptual approach or common theme (e.g., similar idea, same misconception, same type of answer).
+These groups are used by the instructor to make sense of all the student responses.
 Each group should have a very short description (<6 words) and a list of the response IDs that belong to it.
+The short description should be non-judgmental, as it is possible that students will see it.
 Every response should appear in exactly one group, and it's okay if the last group is "miscellaneous".
 Note that for a given problem, there might be more than one solution -- if more than one approach is used, try to highlight that.
 
@@ -87,6 +92,7 @@ Here is the instructor's code:
 <Instructor code>
 ${instructor_code}
 </Instructor code>
+${OTHER_FILES_NOTE}
 
 The blank slot in the code editor is originally filled with a default value, which may have additional instructions or may be meaningless or even empty.
 Here is the default fill:
@@ -100,15 +106,17 @@ ${allResponses.map((r) => `ID: ${r.id}\nAnswer: ${r.answer}`).join("\n\n")}
 </Student responses>
 
 
-Group these responses into approximately 2-5 groups based on their conceptual approach or common theme (e.g., same strategy, same mistake, same pattern).
+Group these responses into approximately 2-7 groups based on their conceptual approach or common theme (e.g., same strategy, same mistake, same pattern).
+These groups are used by the instructor to make sense of all the student responses. 
 Each group should have a very short description (<6 words) and a list of the response IDs that belong to it.
+The short description should be non-judgmental, as it is possible that students will see it.
 Every response should appear in exactly one group, and it's okay if the last group is "misc".
 
 Return your answer as a JSON array with no additional text. Each element should be an object with:
-- "description": a short string (a few words) describing what this group of responses has in common
+- "description": a short string (a few words) with the short description for the group
 - "response_ids": an array of response ID strings (e.g. ["S03", "Danny"])
 
-Example format:
+Example output format:
 [
   { "description": "for loop", "response_ids": ["real_1", "sim_3"] },
   { "description": "list comprehension", "response_ids": ["real_2", "sim_1", "sim_2"] }
