@@ -1,7 +1,8 @@
 // pyodide-webworker.js
 
-importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js");
-// importScripts("https://cdn.jsdelivr.net/pyodide/v314.0.8/full/pyodide.js");
+// Pyodide is ES-module-only (pyodide.asm.mjs), so this must run as a module worker (see
+// code-runner.js) and load the .mjs entry point -- classic importScripts() is not supported.
+import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.8/full/pyodide.mjs";
 
 // Text accumulated since the last flush, per stream -- may or may not end in a newline yet.
 let stdoutText = "";

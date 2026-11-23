@@ -24,7 +24,8 @@ export class PythonCodeRunner {
     console.log("Restarting web worker");
     this.worker?.terminate();
     this.worker = new Worker(
-      new URL("./pyodide-webworker.js", import.meta.url)
+      new URL("./pyodide-webworker.js", import.meta.url),
+      { type: "module" }
     );
     this.worker.onmessage = (event) => this._handleWorkerMessage(event.data);
   }

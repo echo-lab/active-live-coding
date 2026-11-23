@@ -5,6 +5,11 @@ export default defineConfig({
   server: {
 	  allowedHosts: ["livecoding.cs.vt.edu"],
   },
+  // The Pyodide worker is a module worker (it uses an ES `import`), so build workers as ES modules
+  // rather than Vite's default IIFE.
+  worker: {
+    format: "es",
+  },
   build: {
     rollupOptions: {
       input: {
