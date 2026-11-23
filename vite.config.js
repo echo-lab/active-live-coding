@@ -13,13 +13,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        instructor: resolve(__dirname, "pages/instructor.html"),
-        studentPage: resolve(__dirname, "pages/student-page.html"),
-        reviewLecture: resolve(__dirname, "pages/review-lecture.html"),
-        lectureList: resolve(__dirname, "pages/lecture-list.html"),
-        listSessions: resolve(__dirname, "pages/analysis/sessions.html"),
-        sessionDeets: resolve(__dirname, "pages/analysis/session.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        instructor: resolve(import.meta.dirname, "pages/instructor.html"),
+        studentPage: resolve(import.meta.dirname, "pages/student-page.html"),
+        reviewLecture: resolve(import.meta.dirname, "pages/review-lecture.html"),
+        lectureList: resolve(import.meta.dirname, "pages/lecture-list.html"),
+        listSessions: resolve(import.meta.dirname, "pages/analysis/sessions.html"),
+        sessionDeets: resolve(import.meta.dirname, "pages/analysis/session.html"),
       },
     },
   },
